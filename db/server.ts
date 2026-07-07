@@ -1,0 +1,2325 @@
+/**
+ * Persistent DB search daemon — loads Hugging Face model once, stays alive.
+ * Starts with npm run dev. Accepts search queries via HTTP on localhost:6952.
+ */
+import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { spawnSync, spawn } from 'child_process';
+import { embedQuery } from './embedder.js';
+import { getDb, getDbFor, resetDb, resetDbFor } from './db.js';
+import { fromBuffer, cosine } from './embedder.js';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync } from 'fs';
+import { join, dirname, resolve, isAbsolute } from 'path';
+
+const PORT = parseInt(process.env.DB_SERVER_PORT ?? '6952');
+const ACTIVE_AGENTS = new Set<string>();
+const LOGS_DIR = join(process.cwd(), '.agent_logs');
+
+const VERSION_INFO = (() => {
+  let version = 'unknown';
+  try {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8'));
+    version = String(pkg.version ?? 'unknown');
+  } catch { /* fall through */ }
+  let commit: string | null = null;
+  try {
+    const r = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: process.cwd(), encoding: 'utf-8', timeout: 2000 });
+    if (r.status === 0) commit = (r.stdout || '').trim() || null;
+  } catch { /* git optional */ }
+  return {
+    version,
+    build: {
+      commit,
+      builtAt: new Date().toISOString(),
+      node: process.version,
+    },
+    environment: process.env.NODE_ENV || 'development',
+  };
+})();
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise(res => { let d = ''; req.on('data', c => d += c); req.on('end', () => res(d)); });
+}
+
+function keywordSearch(query: string, topK: number, projectId: string = 'default') {
+  const db = getDbFor(projectId);
+  const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  const scoreExpr = words.map(() =>
+    `((LOWER(n.name) LIKE ? OR LOWER(n.notes) LIKE ? OR LOWER(n.signature) LIKE ? OR LOWER(f.path) LIKE ?) * 1)`
+  ).join(' + ');
+  const params = words.flatMap(w => [`%${w}%`, `%${w}%`, `%${w}%`, `%${w}%`]);
+  const rows = db.prepare(`
+    SELECT n.name, n.type, n.start_line, n.signature, f.path, (${scoreExpr}) as score
+    FROM nodes n JOIN files f ON n.file_id = f.id
+    WHERE (${scoreExpr}) > 0
+    ORDER BY score DESC LIMIT ?
+  `).all(...params, ...params, topK) as any[];
+  return rows.map(r => ({ score: r.score, name: r.name, type: r.type, path: r.path, line: r.start_line, signature: r.signature }));
+}
+
+async function semanticSearch(query: string, topK: number, projectId: string = 'default') {
+  const vec = await embedQuery(query);
+  if (!vec) return keywordSearch(query, topK, projectId);
+
+  const db = getDbFor(projectId);
+  const rows = db.prepare(`
+    SELECT n.name, n.type, n.start_line, n.signature, n.embedding, f.path
+    FROM nodes n JOIN files f ON n.file_id = f.id
+    WHERE n.embedding IS NOT NULL
+  `).all() as any[];
+
+  return rows
+    .map(r => ({ score: cosine(vec, fromBuffer(r.embedding)), ...r }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+    .map(r => ({ score: +r.score.toFixed(4), name: r.name, type: r.type, path: r.path, line: r.start_line, signature: r.signature }));
+}
+
+import { getAllTasks, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, type RunConfig } from './tasks.js';
+
+// ── project scoping helpers ────────────────────────────────────────────────────
+// Every project-scoped route reads ?project=<id> (default 'default'); body routes may
+// also carry projectId. When a git route omits its `repo`, we default it to the
+// project's repoPath (falling back to the host cwd).
+function projectIdOf(req: IncomingMessage, body?: any): string {
+  try { const p = new URL(req.url!, 'http://x').searchParams.get('project'); if (p) return p; } catch { /* bad url */ }
+  if (body && body.projectId) return String(body.projectId);
+  return 'default';
+}
+function projectRepoPath(projectId: string): string {
+  try { const p = getProject(projectId); if (p?.repoPath) return p.repoPath; } catch { /* no db */ }
+  return process.cwd();
+}
+
+// ── Repo run-config: detect (heuristic + Opus) and execute install/run/build/test ──
+type RunKey = 'install' | 'run' | 'build' | 'test';
+interface RunProc {
+  id: string; which: RunKey; cmd: string; projectId: string; cwd: string;
+  log: string; running: boolean; exitCode: number | null; pid?: number; startedAt: string;
+}
+const runProcs = new Map<string, RunProc>();
+const RUN_LOG_CAP = 200_000; // keep the last ~200KB of output per run
+
+function pkgManager(root: string): 'pnpm' | 'yarn' | 'npm' | 'bun' {
+  if (existsSync(join(root, 'pnpm-lock.yaml'))) return 'pnpm';
+  if (existsSync(join(root, 'yarn.lock'))) return 'yarn';
+  if (existsSync(join(root, 'bun.lockb'))) return 'bun';
+  return 'npm';
+}
+
+/** File-based stack detection. Returns a best-guess config + a human label, or null. */
+function heuristicDetect(root: string): { config: RunConfig; source: string } | null {
+  const has = (f: string) => { try { return existsSync(join(root, f)); } catch { return false; } };
+  // Node / JS-TS
+  if (has('package.json')) {
+    const pm = pkgManager(root);
+    let scripts: Record<string, string> = {};
+    try { scripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts || {}; } catch { /* ignore */ }
+    const rc = pm === 'yarn' ? 'yarn' : `${pm} run`;
+    const runScript = scripts.dev ? 'dev' : scripts.start ? 'start' : scripts.serve ? 'serve' : '';
+    const run = !runScript ? '' : (runScript === 'start' && pm === 'npm') ? 'npm start' : `${rc} ${runScript}`;
+    return { config: {
+      install: `${pm} install`,
+      run,
+      build: scripts.build ? `${rc} build` : '',
+      test: scripts.test ? (pm === 'npm' ? 'npm test' : `${pm} test`) : '',
+    }, source: `node (${pm})` };
+  }
+  // Python
+  if (has('pyproject.toml') && has('poetry.lock'))
+    return { config: { install: 'poetry install', run: 'poetry run python main.py', build: '', test: 'poetry run pytest' }, source: 'python (poetry)' };
+  if (has('requirements.txt')) {
+    const entry = ['manage.py', 'main.py', 'app.py', 'run.py'].find(f => has(f)) || 'main.py';
+    const run = entry === 'manage.py' ? 'python manage.py runserver' : `python ${entry}`;
+    return { config: { install: 'pip install -r requirements.txt', run, build: '', test: 'pytest' }, source: 'python (pip)' };
+  }
+  // Java
+  if (has('pom.xml')) return { config: { install: 'mvn install -DskipTests', run: 'mvn spring-boot:run', build: 'mvn package', test: 'mvn test' }, source: 'java (maven)' };
+  if (has('build.gradle') || has('build.gradle.kts')) return { config: { install: 'gradle build -x test', run: 'gradle bootRun', build: 'gradle build', test: 'gradle test' }, source: 'java (gradle)' };
+  // Go / Rust / Ruby
+  if (has('go.mod')) return { config: { install: 'go mod download', run: 'go run .', build: 'go build ./...', test: 'go test ./...' }, source: 'go' };
+  if (has('Cargo.toml')) return { config: { install: 'cargo fetch', run: 'cargo run', build: 'cargo build', test: 'cargo test' }, source: 'rust (cargo)' };
+  if (has('Gemfile')) return { config: { install: 'bundle install', run: 'bundle exec ruby app.rb', build: '', test: 'bundle exec rspec' }, source: 'ruby' };
+  // .NET
+  try { if (readdirSync(root).some(f => f.endsWith('.csproj') || f.endsWith('.sln'))) return { config: { install: 'dotnet restore', run: 'dotnet run', build: 'dotnet build', test: 'dotnet test' }, source: 'dotnet' }; } catch { /* ignore */ }
+  return null;
+}
+
+/** Deeper detection: spawn `claude -p` in the repo and parse a JSON answer. Best-effort. */
+async function detectViaClaude(root: string): Promise<{ config: RunConfig; source: string } | null> {
+  const bin = process.env.CLAUDE_BIN || 'claude';
+  const prompt = 'Inspect the project in the current directory and determine the shell commands to set it up and run it. '
+    + 'Output ONLY one JSON object, no prose, with string keys install, run, build, test (empty string if not applicable). '
+    + 'Example: {"install":"pnpm i","run":"pnpm run dev","build":"pnpm run build","test":"pnpm test"}';
+  return await new Promise((resolve) => {
+    let out = ''; let done = false;
+    const finish = (v: { config: RunConfig; source: string } | null) => { if (!done) { done = true; resolve(v); } };
+    try {
+      const proc = spawn(bin, ['-p', prompt], { cwd: root, shell: true });
+      proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+      proc.on('error', () => finish(null));
+      proc.on('exit', () => {
+        const m = out.match(/\{[\s\S]*\}/);
+        if (!m) return finish(null);
+        try {
+          const j = JSON.parse(m[0]);
+          finish({ config: { install: j.install || '', run: j.run || '', build: j.build || '', test: j.test || '' }, source: 'opus' });
+        } catch { finish(null); }
+      });
+      setTimeout(() => { try { proc.kill(); } catch { /* gone */ } finish(null); }, 60_000);
+    } catch { finish(null); }
+  });
+}
+
+/** Heuristic first; fall back to Opus when the stack is unknown or the run command is ambiguous. */
+async function detectRunConfig(root: string): Promise<{ config: RunConfig; source: string }> {
+  const h = heuristicDetect(root);
+  if (h && h.config.run) return h;
+  const c = await detectViaClaude(root);
+  if (c && (c.config.run || c.config.install)) return c;
+  return h || { config: { install: '', run: '', build: '', test: '' }, source: 'unknown' };
+}
+
+/** Kill a run's process tree (grandchildren too — dev servers fork). */
+function killRun(rp: RunProc): void {
+  if (!rp.pid) return;
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(rp.pid), '/T', '/F'], { stdio: 'ignore' });
+    else process.kill(-rp.pid, 'SIGKILL');
+  } catch { /* already gone */ }
+}
+
+// Run DB migrations at startup (safe to re-run)
+console.log('[db-server] Running DB migrations...');
+try {
+  const _db = getTasksDb();
+  initTasksSchema(_db);
+  runMigrations(_db);
+  console.log('[db-server] DB ready.');
+} catch (e) {
+  console.error('[db-server] Migration error:', e);
+}
+
+// ── Per-agent log hygiene ────────────────────────────────────────────────────
+// Each agent writes its own <name>.log (overwritten fresh per run). Old ones from
+// prior sessions / the 32-slot pool just accumulate, so we prune them — on boot
+// (nothing is running) and in Heal (keeping only agents that are currently busy).
+function pruneAgentLogs(keep: Set<string>): number {
+  if (!existsSync(LOGS_DIR)) return 0;
+  let n = 0;
+  for (const f of readdirSync(LOGS_DIR)) {
+    if (!f.endsWith('.log')) continue;
+    const nm = f.replace(/\.log$/, '');
+    if (nm === 'orchestrator' || nm === '__system__' || keep.has(nm)) continue; // keep system + busy
+    try { unlinkSync(join(LOGS_DIR, f)); n++; } catch { /* locked */ }
+  }
+  return n;
+}
+try { const cleared = pruneAgentLogs(new Set()); if (cleared) console.log(`[db-server] 🧹 cleared ${cleared} stale agent log(s) on boot`); } catch { /* optional */ }
+
+// ── DB self-heal gate ────────────────────────────────────────────────────────
+// Every 30s we integrity-check the databases and pause the affected requests:
+//  • BOARD (tasks.db / logs.db) is durable → NEVER auto-rebuilt (that would delete
+//    your tasks). On corruption we PAUSE its get/update requests (503) and alert,
+//    so nothing reads or writes a malformed board. Clears itself when healthy.
+//  • CODE INDEX (local.db) is derived → on corruption we auto-rebuild it via
+//    `db:build`, PAUSE /search while it rebuilds, then drop the stale handle.
+let boardCorrupt: string | null = null;   // e.g. 'tasks.db' — pauses get/update
+// Per-project code-index rebuild flags — a project's index-<pid>.db rebuild in flight.
+// While ANY project is rebuilding, /search is paused (the gate runs before the body,
+// so it can't know which project a POST /search targets).
+// Completely purge a project's data: its embeddings DB file, code-index config, tasks, tokens,
+// and the project row (deleteProject cascades the DB rows). Never touches the repo FOLDER — that
+// is deleted separately and only when it lives inside the managed projects/ directory.
+function purgeProjectData(id: string): void {
+  try { resetDbFor(id); } catch { /* handle already closed */ }
+  try { deleteProject(id); } catch (e: any) { console.warn(`[db-server] purge project rows [${id}]: ${e?.message}`); }
+  for (const suf of ['', '-wal', '-shm']) {
+    try { const f = join(process.cwd(), 'db', `index-${id}.db${suf}`); if (existsSync(f)) rmSync(f, { force: true }); } catch { /* file busy/missing */ }
+  }
+}
+
+const indexRebuilding = new Map<string, boolean>();
+// Live index-build output per project — the Index tab polls /code-index/progress to show it.
+const indexLogs = new Map<string, string[]>();
+function pushIndexLog(pid: string, chunk: string) {
+  const arr = indexLogs.get(pid); if (!arr) return;
+  for (const seg of chunk.split(/\r?\n/)) { const s = seg.trim(); if (s) arr.push(s); }
+  if (arr.length > 500) indexLogs.set(pid, arr.slice(-500));
+}
+const isRebuilding = (pid: string): boolean => indexRebuilding.get(pid) === true;
+const anyRebuilding = (): boolean => { for (const v of indexRebuilding.values()) if (v) return true; return false; };
+
+// ── system activity ── what the orchestrator/db-server is doing right now, surfaced
+// to the UI's bottom-right status widget (cloning, reading/remembering a repo, etc).
+// Keyed per project so each project's widget reflects its own clone/index activity.
+type Activity = { kind: string; label: string; detail?: string; since: number };
+const systemActivity = new Map<string, Activity>();
+function setActivity(projectId: string, kind: string, label: string, detail?: string) { systemActivity.set(projectId, { kind, label, detail, since: Date.now() }); }
+function clearActivity(projectId: string, kind: string) { if (systemActivity.get(projectId)?.kind === kind) systemActivity.delete(projectId); }
+
+// Live clone progress, keyed by project — the Clone tab polls /git/clone-progress to
+// stream git's output (Receiving/Resolving %). Collapses consecutive progress lines.
+interface CloneProgress { lines: string[]; done: boolean; ok: boolean | null; dir: string; startedAt: number }
+const cloneProgress = new Map<string, CloneProgress>();
+function pushCloneOutput(projectId: string, chunk: string) {
+  const p = cloneProgress.get(projectId); if (!p) return;
+  for (const seg of chunk.split(/[\r\n]+/)) {
+    const line = seg.trim(); if (!line) continue;
+    // Git progress lines ("Receiving objects: 42% ...") repeat — replace the last if same label.
+    const label = line.split(':')[0];
+    const last = p.lines[p.lines.length - 1];
+    if (last && /%/.test(line) && last.split(':')[0] === label) p.lines[p.lines.length - 1] = line;
+    else p.lines.push(line);
+  }
+  if (p.lines.length > 300) p.lines = p.lines.slice(-300);
+}
+
+function dbQuickCheckOk(conn: any): boolean {
+  try {
+    const r: any = conn.prepare('PRAGMA quick_check').get();
+    const val = r ? (r.quick_check ?? Object.values(r)[0]) : 'unknown';
+    return val === 'ok';
+  } catch { return false; }
+}
+
+function indexResponds(projectId: string = 'default'): boolean {
+  // Cheap liveness probe — a malformed image throws here without a full scan.
+  try { getDbFor(projectId).prepare('SELECT count(*) AS n FROM files').get(); return true; }
+  catch { return false; }
+}
+
+function rebuildIndex(reason: string, projectId: string = 'default'): void {
+  if (isRebuilding(projectId)) return;
+  indexRebuilding.set(projectId, true);
+  // Rebuild the project's target repo (its code_index root defaults to its repoPath).
+  const ci = getCodeIndexConfig(projectId);
+  const root = ci.root || projectRepoPath(projectId);
+  const env: Record<string, string | undefined> = { ...process.env };
+  env.CODE_INDEX_ROOT = root;
+  if (ci.glob) env.CODE_INDEX_GLOB = ci.glob;
+  // The builder writes into the project's own index file via DB_FILE (getDb honors it).
+  env.DB_FILE = projectId === 'default' ? (process.env.DB_FILE ?? 'local.db') : `index-${projectId}.db`;
+  setActivity(projectId, 'indexing', 'Reading & remembering repo', root);
+  indexLogs.set(projectId, [`$ db:build  (${root})`, 'Reading & remembering the repo…']);
+  console.warn(`[db-server] 🛠 code index ${reason} [${projectId}] — rebuilding ${root} via db:build (DB_FILE=${env.DB_FILE}); /search paused`);
+  const p = spawn('npm', ['run', 'db:build'], { cwd: process.cwd(), shell: true, stdio: ['ignore', 'pipe', 'pipe'], env });
+  p.stdout?.on('data', d => pushIndexLog(projectId, d.toString()));
+  p.stderr?.on('data', d => pushIndexLog(projectId, d.toString()));
+  const done = (msg: string, ok: boolean) => { indexRebuilding.set(projectId, false); clearActivity(projectId, 'indexing'); pushIndexLog(projectId, ok ? '✓ Index rebuilt — agents can now search this repo' : msg); try { resetDbFor(projectId); } catch { /* noop */ } console.log(`[db-server] ${msg}`); };
+  p.on('exit', (code) => done(code === 0 ? `✅ code index rebuilt [${projectId}] — /search resumed` : `⚠ db:build exited ${code} [${projectId}] — /search resumed (may be degraded)`, code === 0));
+  p.on('error', (err: any) => done(`⚠ db:build failed to start [${projectId}]: ${err?.message} — /search resumed`, false));
+}
+
+function runDbIntegrityCheck(): void {
+  // Durable board DBs — corruption pauses get/update; never auto-rebuilt.
+  let bad: string | null = null;
+  try {
+    // tasks.db is the durable board and stays small — worth a full quick_check.
+    if (!dbQuickCheckOk(getTasksDb())) bad = 'tasks.db';
+    // logs.db can grow large — cheap liveness probe (a malformed image throws here).
+    else { try { getLogsDb().prepare('SELECT 1 AS n').get(); } catch { bad = 'logs.db'; } }
+  } catch { bad = 'tasks.db'; }
+  if (bad && bad !== boardCorrupt) console.error(`[db-server] 🩺 DB CORRUPT: ${bad} — get/update PAUSED; restore from git/backup, then restart`);
+  else if (!bad && boardCorrupt) console.log('[db-server] ✅ board DB healthy again — get/update resumed');
+  boardCorrupt = bad;
+
+  // Code index (may be large) — cheap probe; auto-rebuild on failure. Periodic self-heal
+  // watches the DEFAULT project's index; other projects rebuild on demand.
+  if (!isRebuilding('default') && !indexResponds('default')) rebuildIndex('is corrupt', 'default');
+}
+
+setInterval(runDbIntegrityCheck, 30_000);
+setTimeout(runDbIntegrityCheck, 3_000); // one early check shortly after boot
+
+// ── Review previews ──────────────────────────────────────────────────────────
+// Build a task's branch and serve it statically on a free port so a human can see
+// the REAL built feature before approving the merge, backed by an ISOLATED db-server
+// on its own port using the worktree's own db/ copy (never the live tasks.db), so it
+// runs safely alongside the pipeline with zero DB contention. Torn down on
+// approve/reject or after a timeout. Cross-platform: node_modules is junction-linked
+// into the worktree (works on Windows without admin, and on Ubuntu).
+interface Preview { status: 'building' | 'ready' | 'error'; url?: string; port?: number; apiPort?: number; error?: string; logTail?: string; logName?: string; proc?: any; backendProc?: any; buildProc?: any; startedAt: number; }
+const previews = new Map<string, Preview>();
+let nextPreviewPort = parseInt(process.env.PREVIEW_PORT_BASE || '4310');
+const PREVIEW_TTL_MS = 30 * 60 * 1000;
+// Host the preview links resolve to. Localhost for dev; on a VPS set PREVIEW_HOST to
+// the public hostname/IP (and PREVIEW_PROTOCOL=https behind TLS) so the "Open Preview"
+// link and the built bundle's API calls point at a browser-reachable address.
+const PREVIEW_HOST = process.env.PREVIEW_HOST || 'localhost';
+const PREVIEW_PROTO = process.env.PREVIEW_PROTOCOL || 'http';
+const previewBase = (p: number) => `${PREVIEW_PROTO}://${PREVIEW_HOST}:${p}`;
+
+function teardownPreview(taskId: string): void {
+  const p = previews.get(taskId);
+  if (!p) return;
+  try { p.proc?.kill(); } catch { /* gone */ }
+  try { p.backendProc?.kill(); } catch { /* gone */ }
+  try { p.buildProc?.kill(); } catch { /* gone */ }
+  previews.delete(taskId);
+  console.log(`[db-server] 🧹 preview torn down for ${taskId}`);
+}
+
+function startPreview(taskId: string): void {
+  const existing = previews.get(taskId);
+  if (existing && existing.status !== 'error') return; // already building/ready
+  const wt = join(process.cwd(), '.worktrees', taskId);
+  if (!existsSync(wt)) { previews.set(taskId, { status: 'error', error: 'worktree not found — is the task in review?', startedAt: Date.now() }); return; }
+
+  // Junction-link node_modules from the main repo (worktrees don't include it).
+  try { const nm = join(wt, 'node_modules'); if (!existsSync(nm)) symlinkSync(join(process.cwd(), 'node_modules'), nm, 'junction'); }
+  catch (e: any) { console.warn(`[db-server] preview node_modules link: ${e?.message}`); }
+
+  const port = nextPreviewPort++;      // frontend (static) port
+  const apiPort = nextPreviewPort++;   // isolated backend port
+  // Capture the build/serve/backend output to a log so a FAILED build is diagnosable
+  // (it also shows up as a `preview-<id>` chip in the Logs tab).
+  const logName = `preview-${taskId}`;
+  const previewLog = join(LOGS_DIR, `${logName}.log`);
+  try { writeFileSync(previewLog, `── PREVIEW BUILD ${new Date().toISOString()} · ${taskId} · ui ${port} · api ${apiPort} ──\n`); } catch { /* dir missing */ }
+  const toLog = (): any => { try { return openSync(previewLog, 'a'); } catch { return 'ignore'; } };
+  const tail = (): string => { try { return readFileSync(previewLog, 'utf-8').split('\n').filter(Boolean).slice(-15).join('\n'); } catch { return ''; } };
+  previews.set(taskId, { status: 'building', port, apiPort, logName, startedAt: Date.now() });
+  console.log(`[db-server] 🛠 building preview for ${taskId} — ui ${port}, api ${apiPort} (log: ${logName})`);
+
+  const build = spawn('npx', ['vite', 'build'], { cwd: wt, shell: true, stdio: ['ignore', toLog(), toLog()] });
+  previews.set(taskId, { status: 'building', port, apiPort, logName, buildProc: build, startedAt: Date.now() });
+
+  build.on('exit', (code) => {
+    if (code !== 0) {
+      previews.set(taskId, { status: 'error', error: `vite build failed (exit ${code})`, logTail: tail(), logName, port, apiPort, startedAt: Date.now() });
+      console.warn(`[db-server] ✗ preview build failed for ${taskId} (exit ${code}) — see ${logName}.log`);
+      return;
+    }
+    // Repoint the built bundle's API calls to the isolated preview backend (the URL is a
+    // literal in the bundle → swap the port), so no frontend source refactor is needed.
+    try { repointApi(join(wt, 'dist'), previewBase(apiPort)); } catch (e: any) { console.warn(`[db-server] repoint: ${e?.message}`); }
+    // Isolated backend: cwd = worktree → its OWN db/ copy (separate files), NEVER the real
+    // tasks.db. Runs the branch's server code with zero DB contention on the live board.
+    const backend = spawn('npx', ['tsx', 'db/server.ts'], { cwd: wt, shell: true, stdio: ['ignore', toLog(), toLog()], env: { ...process.env, DB_SERVER_PORT: String(apiPort), DB_FILE: 'local.db' } });
+    const serve = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { cwd: wt, shell: true });
+    let ready = false;
+    const markReady = () => { if (ready) return; ready = true; previews.set(taskId, { status: 'ready', url: previewBase(port), port, apiPort, logName, proc: serve, backendProc: backend, startedAt: Date.now() }); console.log(`[db-server] ✅ preview ready for ${taskId} → ${previewBase(port)} (api ${apiPort})`); };
+    const onData = (d: any) => { try { appendFileSync(previewLog, String(d)); } catch { /* */ } if (/localhost:\d+/.test(String(d))) markReady(); };
+    serve.stdout?.on('data', onData); serve.stderr?.on('data', onData);
+    setTimeout(markReady, 5000); // fallback: preview + backend bind fast
+    setTimeout(() => teardownPreview(taskId), PREVIEW_TTL_MS);
+    serve.on('exit', () => { const p = previews.get(taskId); if (p?.proc === serve) { try { backend.kill(); } catch { /* gone */ } previews.delete(taskId); } });
+  });
+  build.on('error', (e: any) => previews.set(taskId, { status: 'error', error: `build failed to start: ${e?.message}`, logTail: tail(), logName, startedAt: Date.now() }));
+}
+
+/** Repoint the built bundle's hard-coded API URL at the isolated preview backend. */
+function repointApi(distDir: string, apiBase: string): void {
+  if (!existsSync(distDir)) return;
+  const walk = (dir: string) => {
+    for (const f of readdirSync(dir)) {
+      const p = join(dir, f);
+      if (statSync(p).isDirectory()) { walk(p); continue; }
+      if (!/\.(js|html)$/.test(f)) continue;
+      const c = readFileSync(p, 'utf-8');
+      if (c.includes('http://127.0.0.1:6952')) writeFileSync(p, c.split('http://127.0.0.1:6952').join(apiBase));
+    }
+  };
+  walk(distDir);
+}
+
+// Model warmup is opt-in (EMBED_WARMUP=1). Otherwise the embedder lazy-loads
+// on the first semantic search — dev startup stays instant.
+if (process.env.EMBED_WARMUP === '1') {
+  console.log('[db-server] Warming up Hugging Face model...');
+  embedQuery('warmup').then(() => console.log('[db-server] Model ready.'));
+} else {
+  console.log('[db-server] Embedding model: lazy (loads on first search; set EMBED_WARMUP=1 to pre-warm)');
+}
+
+const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+  // CORS — this server holds credentials and has no auth, so we do NOT open it to any origin.
+  // Allowed: same-host (covers the app on another port, incl. LAN) and localhost. A malicious
+  // web page you visit therefore can't script this API. Override with CORS_ALLOW_ORIGIN
+  // (a specific origin, or '*' to restore the old wide-open behavior). Non-browser callers
+  // (curl, the agents) send no Origin and are unaffected — CORS only gates browsers.
+  {
+    const origin = req.headers.origin;
+    if (origin) {
+      const oHost = origin.replace(/^https?:\/\//, '').split(':')[0].toLowerCase();
+      const reqHost = String(req.headers.host || '').split(':')[0].toLowerCase();
+      const isLocal = oHost === 'localhost' || oHost === '127.0.0.1' || oHost === '[::1]';
+      const sameHost = !!oHost && oHost === reqHost;
+      const override = process.env.CORS_ALLOW_ORIGIN;
+      if (override === '*' || isLocal || sameHost) { res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin'); }
+      else if (override) { res.setHeader('Access-Control-Allow-Origin', override); }
+      // else: no ACAO header → the browser blocks the cross-origin read.
+    }
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  console.log(`[db-server] ${req.method} ${req.url}`);
+
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+
+  res.setHeader('Content-Type', 'application/json');
+
+  // DB self-heal gate — pause only the affected DB requests while a DB is unavailable.
+  // Status/diagnostic routes (/health, /version, /heal, /agent-status) always pass through.
+  {
+    const u = req.url || '';
+    const isBoardReq = u.startsWith('/tasks') || u.startsWith('/db/') || u.startsWith('/task-logs');
+    if (boardCorrupt && isBoardReq) {
+      res.statusCode = 503;
+      res.setHeader('Retry-After', '5');
+      res.end(JSON.stringify({ error: 'DB temporarily unavailable', reason: `${boardCorrupt} failed integrity check — restore/restart needed`, retryAfter: 5 }));
+      return;
+    }
+    if (anyRebuilding() && u.startsWith('/search')) {
+      res.statusCode = 503;
+      res.setHeader('Retry-After', '5');
+      res.end(JSON.stringify({ error: 'Code index rebuilding — retry shortly', retryAfter: 5 }));
+      return;
+    }
+  }
+
+  if (req.method === 'GET' && req.url === '/health') {
+    res.end(JSON.stringify({ ok: true })); return;
+  }
+
+  if (req.method === 'GET' && req.url === '/version') {
+    res.end(JSON.stringify(VERSION_INFO)); return;
+  }
+
+  // --- Spec file API (read-only, specs dir only — inline review context) ---
+  if (req.method === 'GET' && req.url?.startsWith('/spec/')) {
+    const name = decodeURIComponent(req.url.split('/')[2] || '');
+    if (!/^[\w.\-]+\.md$/.test(name)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'bad name' })); return; }
+    const p = join(process.cwd(), 'next_changes', 'specs', name);
+    try {
+      res.end(JSON.stringify({ name, content: existsSync(p) ? readFileSync(p, 'utf-8') : null }));
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // --- ACCEPT: human says "work completed" → mark DONE + reclaim ALL its disk/DB space ---
+  // Purges log rows, removes the task's worktree, deletes its branch (only if
+  // merged), and drops its prompt files. One click = zero residue.
+  if (req.method === 'POST' && req.url?.match(/^\/tasks\/[^/]+\/accept$/)) {
+    const taskId = decodeURIComponent(req.url.split('/')[2]);
+    const report: Record<string, any> = { taskId };
+    try {
+      const { updateTask: upd, purgeTaskLogs: purge } = await import('./tasks.js');
+      upd(taskId, { status: 'DONE', completed: new Date().toISOString(), reviewNote: null, leaseExpiresAt: null, nextRetryAt: null });
+      report.status = 'DONE';
+      report.logsPurged = purge(taskId);
+
+      const git = (args: string[]) => spawnSync('git', args, { cwd: process.cwd(), encoding: 'utf-8', timeout: 15000 });
+      const branch = `task/${taskId}`;
+      const hasBranch = git(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`]).status === 0;
+      if (hasBranch) {
+        const merged = git(['merge-base', '--is-ancestor', branch, 'HEAD']).status === 0;
+        if (merged) {
+          git(['worktree', 'remove', `.worktrees/${taskId}`, '--force']);
+          git(['branch', '-D', branch]);
+          report.branch = 'deleted (was merged)';
+        } else {
+          report.branch = 'KEPT — not merged into current branch yet (orchestrator will merge, then clean up)';
+        }
+      } else {
+        report.branch = 'none';
+      }
+
+      // Prompt files for this task
+      try {
+        const dir = join(process.cwd(), 'data', 'task-prompts');
+        if (existsSync(dir)) {
+          for (const f of (await import('fs')).readdirSync(dir)) {
+            if (f.includes(taskId)) (await import('fs')).unlinkSync(join(dir, f));
+          }
+        }
+        report.prompts = 'cleaned';
+      } catch { report.prompts = 'skip'; }
+
+      res.end(JSON.stringify(report));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message, ...report }));
+    }
+    return;
+  }
+
+  // --- Review preview: build the task's branch & serve it on a free port ---
+  if (req.url?.match(/^\/tasks\/[^/]+\/preview$/)) {
+    const taskId = decodeURIComponent(req.url.split('/')[2]);
+    if (req.method === 'POST') { startPreview(taskId); const p = previews.get(taskId); res.end(JSON.stringify({ status: p?.status || 'building' })); return; }
+    if (req.method === 'GET') { const p = previews.get(taskId); res.end(JSON.stringify(p ? { status: p.status, url: p.url, port: p.port, apiPort: p.apiPort, error: p.error, logTail: p.logTail, logName: p.logName } : { status: 'none' })); return; }
+    if (req.method === 'DELETE') { teardownPreview(taskId); res.end(JSON.stringify({ ok: true })); return; }
+  }
+
+  // --- APPROVE: human OK'd the preview → merge the branch (orchestrator picks it up) ---
+  if (req.method === 'POST' && req.url?.match(/^\/tasks\/[^/]+\/approve$/)) {
+    const taskId = decodeURIComponent(req.url.split('/')[2]);
+    try {
+      teardownPreview(taskId);
+      updateTask(taskId, { stage: 'merge', status: 'WORKING', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, reviewNote: null });
+      res.end(JSON.stringify({ ok: true, status: 'merging' }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // --- REJECT: send it back to the dev with a reason ---
+  if (req.method === 'POST' && req.url?.match(/^\/tasks\/[^/]+\/reject$/)) {
+    const taskId = decodeURIComponent(req.url.split('/')[2]);
+    try {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      teardownPreview(taskId);
+      updateTask(taskId, { stage: 'build', status: 'WORKING', qaVerdict: null, reviewNote: body.reason || 'rejected by reviewer', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
+      res.end(JSON.stringify({ ok: true, status: 'rebuilding' }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // --- Purge task logs (called on human approval — "work accepted") ---
+  if (req.method === 'DELETE' && req.url?.startsWith('/task-logs/')) {
+    const taskId = decodeURIComponent(req.url.split('/')[2] || '');
+    try {
+      const { purgeTaskLogs } = await import('./tasks.js');
+      res.end(JSON.stringify({ purged: purgeTaskLogs(taskId) }));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // --- Task Logs API (DB based — per task history for the detail view) ---
+  if (req.method === 'GET' && req.url?.startsWith('/task-logs/')) {
+    const taskId = decodeURIComponent(req.url.split('/')[2] || '');
+    try {
+      const { getAgentLogs } = await import('./tasks.js');
+      res.end(JSON.stringify({ logs: getAgentLogs(taskId, 100) }));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // --- Agent Logs API (File based) ---
+  if (req.method === 'GET' && req.url?.startsWith('/agent-logs/')) {
+    const agentName = decodeURIComponent((req.url.split('/')[2] || '').split('?')[0]);
+    const logPath = join(LOGS_DIR, `${agentName}.log`);
+    try {
+      if (!existsSync(logPath)) {
+        res.end(JSON.stringify([]));
+        return;
+      }
+      // Strip null-byte padding (workspace filesystem corruption) so real lines show.
+      const content = readFileSync(logPath, 'utf-8').replace(/\0/g, '');
+      const lines = content.split('\n').filter(l => l.trim()).map((l, i) => ({
+        id: i,
+        message: l.replace(/\s+$/, ''),
+        timestamp: new Date().toISOString() // Approximate
+      }));
+      res.end(JSON.stringify(lines));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // --- Heal: recovery sweep — reset stuck jobs, prune orphans, restart dispatch ---
+  if (req.method === 'POST' && req.url === '/heal') {
+    try {
+      const { getAllTasks, updateTask, getHeartbeat } = await import('./tasks.js');
+      const steps: { step: string; status: 'ok' | 'fixed' | 'warn'; detail: string }[] = [];
+      const tasks = getAllTasks();
+
+      // 1 — stuck in-progress tasks. Reset ONLY if the lease is expired/missing (agent dead).
+      // A live agent's lease is renewed by the watchdog every ~3s, so a future lease = actively
+      // working — leave it alone, otherwise heal would spawn a 2nd agent on the same worktree.
+      const now = Date.now();
+      const isActive = (t: any) => t.leaseExpiresAt && new Date(t.leaseExpiresAt).getTime() >= now;
+      const stuck = tasks.filter((t: any) => t.status === 'WORKING' && (t.started || t.claimedBy) && !isActive(t));
+      const activeCount = tasks.filter((t: any) => t.status === 'WORKING' && (t.started || t.claimedBy) && isActive(t)).length;
+      for (const t of stuck) updateTask(t.id, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: 'healed: reset to re-dispatch' });
+      steps.push({
+        step: 'Stuck in-progress tasks',
+        status: stuck.length ? 'fixed' : 'ok',
+        detail: stuck.length
+          ? `reset ${stuck.length} (${stuck.map((t: any) => t.id).join(', ')}) → re-assigned`
+          : (activeCount ? `none stuck · ${activeCount} actively working (left running)` : 'none stuck'),
+      });
+
+      // 2 — dead-lettered tasks (retries exhausted) → fresh budget
+      // Dead-lettered tasks now sit in BLOCKED (with the reason); revive them to WORKING with a fresh budget.
+      const dead = tasks.filter((t: any) => (t.status === 'WORKING' || t.status === 'BLOCKED') && t.nextRetryAt && new Date(t.nextRetryAt).getFullYear() > 3000);
+      for (const t of dead) updateTask(t.id, { status: 'WORKING', nextRetryAt: null, attempts: 0, lastError: 'healed: retry budget reset' });
+      steps.push({ step: 'Dead-lettered tasks', status: dead.length ? 'fixed' : 'ok', detail: dead.length ? `revived ${dead.length}` : 'none' });
+
+      // 3 — orphan git worktrees / branches from deleted tasks
+      let pruned = 0; const pn: string[] = [];
+      try {
+        const list = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: process.cwd(), encoding: 'utf-8' }).stdout || '';
+        const live = new Set(tasks.map((t: any) => t.id));
+        for (const block of list.split(/\n\n+/)) {
+          const m = block.match(/^worktree (.+)$/m); if (!m) continue;
+          const p = m[1].trim(); if (!p.includes('.worktrees')) continue;
+          const name = p.split(/[\\/]/).pop() || ''; const id = name.replace(/^plan-/, '');
+          if (id && !live.has(id)) { spawnSync('git', ['worktree', 'remove', p, '--force'], { cwd: process.cwd() }); if (!name.startsWith('plan-')) spawnSync('git', ['branch', '-D', `task/${id}`], { cwd: process.cwd() }); pruned++; pn.push(name); }
+        }
+        spawnSync('git', ['worktree', 'prune'], { cwd: process.cwd() });
+      } catch { /* git optional */ }
+      steps.push({ step: 'Orphan worktrees', status: pruned ? 'fixed' : 'ok', detail: pruned ? `pruned ${pruned} (${pn.join(', ')})` : 'none' });
+
+      // 4 — database integrity: SQLite quick_check catches "disk image malformed" early.
+      const dbBad: string[] = [];
+      try {
+        const { getTasksDb, getLogsDb } = await import('./tasks.js');
+        for (const [dbName, conn] of [['tasks.db', getTasksDb()], ['logs.db', getLogsDb()]] as [string, any][]) {
+          try {
+            const r: any = conn.prepare('PRAGMA quick_check').get();
+            const val = r ? (r.quick_check ?? Object.values(r)[0]) : 'unknown';
+            if (val !== 'ok') dbBad.push(dbName);
+          } catch { dbBad.push(dbName); }
+        }
+      } catch { /* optional */ }
+      steps.push({ step: 'Database integrity', status: dbBad.length ? 'warn' : 'ok', detail: dbBad.length ? `corrupt: ${dbBad.join(', ')} — rebuild/restore needed` : 'tasks.db + logs.db healthy' });
+
+      // 5 — stale agent logs (keep only agents currently working)
+      const busyAgents = new Set<string>(tasks.filter((t: any) => t.status === 'WORKING' && t.claimedBy).map((t: any) => t.claimedBy));
+      const clearedLogs = pruneAgentLogs(busyAgents);
+      steps.push({ step: 'Stale agent logs', status: clearedLogs ? 'fixed' : 'ok', detail: clearedLogs ? `cleared ${clearedLogs}` : 'none' });
+
+      // 6 — orchestrator liveness — heal can reset jobs but CANNOT spawn agents
+      // (that's the orchestrator's job, a separate process). Be honest if it's down.
+      let hbAge = Infinity; let hbDetail = 'never started';
+      try { const h: any = getHeartbeat(); if (h?.lastBeatAt) { hbAge = Math.round((Date.now() - new Date(h.lastBeatAt).getTime()) / 1000); hbDetail = `last beat ${hbAge}s ago · circuit ${h.circuit}`; } } catch { /* optional */ }
+      try { const s = getBoardSettings() || {}; updateBoardSettings({ ...s, agentStatus: 'STARTED' }); } catch { /* non-fatal */ }
+      const orchDown = hbAge > 90;
+      steps.push({
+        step: 'Orchestrator',
+        status: orchDown ? 'warn' : 'ok',
+        detail: orchDown
+          ? `DOWN (${hbDetail}) — nothing will run until you start it: npm run db:orchestrator`
+          : `${hbDetail} · alive — reset jobs dispatch in a few seconds`,
+      });
+
+      // 7 — context memory GC. Reclaims files left in project context by abruptly-killed
+      // agents (age-out stale unpinned + evict over-cap). Prunes by staleness/size, never
+      // by "is an agent still holding it" — a dead process can't clean up after itself.
+      try {
+        const { sweepAllContext } = await import('../agentic/index.ts');
+        const swept = sweepAllContext();
+        const freed = Object.values(swept).reduce((s: number, r: any) => s + (r.freedTokens || 0), 0);
+        const projs = Object.keys(swept).length;
+        steps.push({ step: 'Context memory GC', status: freed ? 'fixed' : 'ok', detail: freed ? `freed ${freed} tok across ${projs} project(s)` : (projs ? `${projs} project(s) within budget` : 'no context yet') });
+      } catch (e: any) { steps.push({ step: 'Context memory GC', status: 'warn', detail: `sweep failed: ${e.message}` }); }
+
+      res.end(JSON.stringify({ ok: true, healed: steps.filter(s => s.status === 'fixed').length, steps }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // --- Log file list (Logs tab chips) ---
+  if (req.method === 'GET' && req.url === '/agent-log-files') {
+    try {
+      const { readdirSync, statSync } = await import('fs');
+      const { getAllTasks } = await import('./tasks.js');
+      const live = getAllTasks().filter((t: any) => t.status === 'WORKING' && t.claimedBy);
+      // Derive the role from the task's live STAGE (authoritative, from the DB) rather than
+      // parsing the log header — the parse could go stale and stick on the first stage.
+      const STAGE_ROLE: Record<string, string> = { plan: 'architect', build: 'dev', qa: 'qa', review: 'review', merge: 'merge' };
+      const byAgent = new Map<string, any>();
+      for (const t of live) if (t.claimedBy) byAgent.set(t.claimedBy, t);
+      const files = existsSync(LOGS_DIR)
+        ? readdirSync(LOGS_DIR).filter(f => f.endsWith('.log')).map(f => {
+            const p = join(LOGS_DIR, f);
+            const st = statSync(p);
+            const name = f.replace(/\.log$/, '');
+            const isSystem = name === 'orchestrator' || name === '__system__';
+            const task = byAgent.get(name);
+            let now = '';
+            if (!isSystem) now = task ? `${STAGE_ROLE[task.stage as string] || task.stage || 'working'} · ${task.id}` : 'idle';
+            return { name, kind: isSystem ? 'system' : 'agent', sizeKB: Math.round(st.size / 1024), modified: st.mtime.toISOString(), now, busy: !!task };
+          }).sort((a, b) => a.name.localeCompare(b.name))
+        : [];
+      res.end(JSON.stringify({ files }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // --- Agents config (Agents tab) ---
+  if (req.url === '/agents' && req.method === 'GET') {
+    try {
+      const { getAgents } = await import('../agentic/index.ts');
+      res.end(JSON.stringify({ agents: getAgents().map((a: any) => ({ ...a, enabled: a.enabled ? 1 : 0, isSystem: a.isSystem ? 1 : 0 })) }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.url === '/agents' && req.method === 'PUT') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const { upsertAgent } = await import('../agentic/index.ts');
+      upsertAgent({ ...body, enabled: !!body.enabled, isSystem: !!body.isSystem });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.url === '/agents/reset' && req.method === 'POST') {
+    try { const { resetAgents } = await import('../agentic/index.ts'); resetAgents(); res.end(JSON.stringify({ ok: true })); }
+    catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  const agentDel = req.url?.match(/^\/agents\/([^/]+)$/);
+  if (agentDel && req.method === 'DELETE') {
+    try { const { deleteAgent } = await import('../agentic/index.ts'); deleteAgent(decodeURIComponent(agentDel[1])); res.end(JSON.stringify({ ok: true })); }
+    catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // --- Project explorer + context memory (Context tab) ---
+  // File tree for the project's repo (git-tracked files; respects .gitignore).
+  if (req.method === 'GET' && req.url?.startsWith('/files')) {
+    try {
+      const root = projectRepoPath(projectIdOf(req));
+      // The 'default' project's repoPath is the orchestrator's own repo (the host cwd).
+      // Context is for USER projects (one per git repo) — never expose the host's files here.
+      if (root === process.cwd()) { res.end(JSON.stringify({ root, files: [], isHost: true })); return; }
+      // Prefer git (respects .gitignore, fast). Fall back to a bounded fs walk when the
+      // project isn't a git repo — skips heavy/generated dirs, caps at 5000 files.
+      const r = spawnSync('git', ['-C', root, 'ls-files'], { encoding: 'utf-8', timeout: 8000, maxBuffer: 32 * 1024 * 1024 });
+      let files = (r.stdout || '').split('\n').map(s => s.trim()).filter(Boolean);
+      if (files.length === 0) {
+        const SKIP = new Set(['node_modules', '.git', 'dist', '.worktrees', '.agent_logs', '.vite', '.ignored', 'coverage', '.next']);
+        const out: string[] = [];
+        const walk = (dir: string, rel: string) => {
+          if (out.length >= 5000) return;
+          let entries: any[] = [];
+          try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+          for (const e of entries) {
+            if (out.length >= 5000) return;
+            if (e.name.startsWith('.') && e.name !== '.env.example') { if (SKIP.has(e.name)) continue; }
+            if (SKIP.has(e.name)) continue;
+            const childRel = rel ? `${rel}/${e.name}` : e.name;
+            if (e.isDirectory()) walk(join(dir, e.name), childRel);
+            else out.push(childRel);
+          }
+        };
+        walk(root, '');
+        files = out;
+      }
+      res.end(JSON.stringify({ root, files: files.sort() }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  // Read one file (preview + token estimate). ?path=<repo-relative>
+  if (req.method === 'GET' && req.url?.startsWith('/file?')) {
+    try {
+      const { estimateTokens } = await import('../agentic/index.ts');
+      const u = new URL(req.url, 'http://x');
+      const rel = u.searchParams.get('path') || '';
+      const root = projectRepoPath(projectIdOf(req));
+      const abs = join(root, rel);
+      if (!abs.startsWith(root) || rel.includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
+      const bytes = statSync(abs).size;
+      const tooBig = bytes > 512 * 1024;
+      const content = tooBig ? '' : readFileSync(abs, 'utf-8');
+      res.end(JSON.stringify({ path: rel, bytes, tokens: estimateTokens(bytes), truncated: tooBig, content }));
+    } catch (e: any) { res.statusCode = 404; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  // Context memory — what is in agents' working memory right now (per project).
+  if (req.url?.startsWith('/context')) {
+    try {
+      const ctx = await import('../agentic/index.ts');
+      const project = projectIdOf(req);
+      const u = new URL(req.url, 'http://x');
+      const cap = Number(u.searchParams.get('cap')) || ctx.DEFAULT_CONTEXT_CAP;
+
+      if (req.method === 'GET' && /^\/context(\?.*)?$/.test(req.url)) {
+        res.end(JSON.stringify({ files: ctx.listContext(project), stats: ctx.contextStats(project, cap) }));
+        return;
+      }
+      if (req.method === 'GET' && req.url.startsWith('/context/ops')) {
+        res.end(JSON.stringify({ ops: ctx.getContextOps(project, Number(u.searchParams.get('limit')) || 100) }));
+        return;
+      }
+      if (req.method === 'GET' && req.url.startsWith('/context/usage')) {
+        res.end(JSON.stringify({ usage: ctx.getFileUsage(project, Number(u.searchParams.get('limit')) || 50) }));
+        return;
+      }
+      if (req.method === 'POST' && req.url.startsWith('/context/sweep')) {
+        res.end(JSON.stringify({ result: ctx.sweepContext(project, { cap }) }));
+        return;
+      }
+      if (req.method === 'POST' && req.url.startsWith('/context/pin')) {
+        const b = JSON.parse(await readBody(req));
+        res.end(JSON.stringify({ ok: ctx.setPinned(project, b.path, !!b.pinned, b.actor || 'user') }));
+        return;
+      }
+      if (req.method === 'POST' && /^\/context(\?.*)?$/.test(req.url)) {
+        const t0 = Date.now();
+        const b = JSON.parse(await readBody(req));
+        const root = projectRepoPath(project);
+        const abs = join(root, b.path);
+        if (!abs.startsWith(root) || String(b.path).includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
+        const bytes = statSync(abs).size;                 // read cost is timed into durationMs
+        const tokens = ctx.estimateTokens(bytes);
+        const r = ctx.keepInContext({ projectId: project, path: b.path, tokens, addedBy: b.addedBy || 'user', pinned: b.pinned, taskId: b.taskId ?? null, durationMs: Date.now() - t0, cap });
+        res.end(JSON.stringify({ file: r.file, evicted: r.evicted, stats: ctx.contextStats(project, cap) }));
+        return;
+      }
+      if (req.method === 'DELETE' && req.url.startsWith('/context')) {
+        res.end(JSON.stringify({ ok: ctx.removeFromContext(project, u.searchParams.get('path') || '', 'user', 'user removed') }));
+        return;
+      }
+      res.statusCode = 404; res.end(JSON.stringify({ error: 'unknown context route' }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // --- DB browser (Database tab) — allowlisted tables across tasks.db + logs.db ---
+  if (req.url === '/db/tables' && req.method === 'GET') {
+    try {
+      const { getTasksDb, getLogsDb } = await import('./tasks.js');
+      const defs = [
+        { n: 'tasks', d: getTasksDb() }, { n: 'board_settings', d: getTasksDb() },
+        { n: 'agents', d: getTasksDb() }, { n: 'memory', d: getTasksDb() },
+        { n: 'agent_logs', d: getLogsDb() }, { n: 'agent_db_usage', d: getLogsDb() },
+      ];
+      const tables = defs.map(t => { let rows = 0; try { rows = (t.d.prepare(`SELECT COUNT(*) c FROM ${t.n}`).get() as any)?.c ?? 0; } catch { } return { name: t.n, rows }; });
+      res.end(JSON.stringify({ tables }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  const dbRow = req.url?.match(/^\/db\/table\/([a-zA-Z_]+)(?:\/([^/?]+))?/);
+  if (dbRow) {
+    const table = dbRow[1]; const rowid = dbRow[2];
+    try {
+      const { getTasksDb, getLogsDb } = await import('./tasks.js');
+      const TASKS = ['tasks', 'board_settings', 'agents', 'memory']; const LOGS = ['agent_logs', 'agent_db_usage'];
+      const conn = TASKS.includes(table) ? getTasksDb() : LOGS.includes(table) ? getLogsDb() : null;
+      if (!conn) { res.statusCode = 400; res.end(JSON.stringify({ error: 'table not allowed' })); return; }
+      if (req.method === 'POST' && rowid === 'bulk-delete') {
+        const { rowids } = JSON.parse(await readBody(req)); const stmt = conn.prepare(`DELETE FROM ${table} WHERE rowid = ?`);
+        for (const r of rowids || []) stmt.run(r); res.end(JSON.stringify({ ok: true, deleted: (rowids || []).length })); return;
+      }
+      if (req.method === 'POST' && rowid === 'bulk-update') {
+        const { rowids, set } = JSON.parse(await readBody(req)); const col = Object.keys(set || {})[0];
+        if (col) { const stmt = conn.prepare(`UPDATE ${table} SET ${col} = ? WHERE rowid = ?`); for (const r of rowids || []) stmt.run(set[col], r); }
+        res.end(JSON.stringify({ ok: true })); return;
+      }
+      if (req.method === 'GET' && !rowid) {
+        const u = new URL(req.url!, 'http://x');
+        const limit = Math.min(200, parseInt(u.searchParams.get('limit') || '25')); const offset = parseInt(u.searchParams.get('offset') || '0');
+        const q = u.searchParams.get('q') || ''; const sort = u.searchParams.get('sort'); const dir = u.searchParams.get('dir') === 'asc' ? 'ASC' : 'DESC';
+        const columns = (conn.prepare(`PRAGMA table_info(${table})`).all() as any[]).map(c => ({ name: c.name, type: c.type, pk: c.pk }));
+        let where = ''; const params: any[] = [];
+        if (q) { where = 'WHERE ' + columns.map(c => `CAST(${c.name} AS TEXT) LIKE ?`).join(' OR '); for (const _ of columns) params.push(`%${q}%`); }
+        const total = (conn.prepare(`SELECT COUNT(*) c FROM ${table} ${where}`).get(...params) as any)?.c ?? 0;
+        const orderBy = (sort && columns.some(c => c.name === sort)) ? `ORDER BY ${sort} ${dir}` : 'ORDER BY rowid DESC';
+        const rows = conn.prepare(`SELECT rowid as _rowid, * FROM ${table} ${where} ${orderBy} LIMIT ? OFFSET ?`).all(...params, limit, offset);
+        res.end(JSON.stringify({ columns, rows, total })); return;
+      }
+      if (req.method === 'POST' && !rowid) {
+        const body = JSON.parse(await readBody(req)); const keys = Object.keys(body);
+        if (keys.length) conn.prepare(`INSERT INTO ${table} (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...keys.map(k => body[k]));
+        res.end(JSON.stringify({ ok: true })); return;
+      }
+      if (req.method === 'PUT' && rowid) {
+        const body = JSON.parse(await readBody(req)); const keys = Object.keys(body).filter(k => k !== '_rowid');
+        if (keys.length) conn.prepare(`UPDATE ${table} SET ${keys.map(k => `${k} = ?`).join(',')} WHERE rowid = ?`).run(...keys.map(k => body[k]), rowid);
+        res.end(JSON.stringify({ ok: true })); return;
+      }
+      if (req.method === 'DELETE' && rowid) { conn.prepare(`DELETE FROM ${table} WHERE rowid = ?`).run(rowid); res.end(JSON.stringify({ ok: true })); return; }
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); return; }
+  }
+
+  // --- Agent Status API ---
+  if (req.method === 'GET' && req.url === '/agent-status') {
+    res.end(JSON.stringify(Array.from(ACTIVE_AGENTS)));
+    return;
+  }
+
+  // --- Agent Stop (legacy UI-tracking no-op) ---
+  // The real controls are the per-task lifecycle routes below (/tasks/:id/{start,pause,
+  // resume,stop}) and the orchestrator routes (/orchestrator/{start,pause}). Agent
+  // processes are owned by the orchestrator (a separate process) — the server never spawns
+  // them. The dead `/agent-start/` antigravity spawner was removed. This endpoint just
+  // clears any stale UI-tracking entry and returns ok so old clients don't error.
+  if (req.method === 'POST' && req.url?.startsWith('/agent-stop/')) {
+    const agentName = req.url.split('/')[2];
+    ACTIVE_AGENTS.delete(agentName);
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
+  // --- Tasks API ---
+  if (req.url?.startsWith('/tasks')) {
+
+    try {
+      if (req.method === 'GET' && req.url?.match(/^\/tasks(\?.*)?$/)) {
+        const tasks = getAllTasks(projectIdOf(req));
+        res.end(JSON.stringify(tasks));
+        return;
+      }
+      if (req.method === 'PUT' && req.url === '/tasks/bulk-priority') {
+        const body = JSON.parse(await readBody(req));
+        bulkUpdatePriorities(body);
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      const idMatch = req.url.match(/^\/tasks\/([^/]+)$/);
+      const triggerMatch = req.url.match(/^\/tasks\/([^/]+)\/trigger$/);
+
+      // ── per-task lifecycle control (project-scoped via ?project=) ──────────────────
+      // The server and orchestrator are SEPARATE processes sharing tasks.db. The server
+      // can't kill an agent directly, so these routes only set DB flags; the orchestrator
+      // (which owns the agent processes) reads them and enforces:
+      //   start  → queue for dispatch (fresh: WORKING, control cleared, attempts reset)
+      //   pause  → hold from the NEXT dispatch (a running agent is LEFT running)
+      //   resume → clear the hold and re-queue for dispatch
+      //   stop   → kill-now request: the orchestrator kills any live agent, then parks the
+      //            task (AVAILABLE + control='paused') out of dispatch until resumed/started
+      const lifecycleMatch = req.url.match(/^\/tasks\/([^/]+)\/(start|pause|resume|stop)$/);
+      if (lifecycleMatch && req.method === 'POST') {
+        const taskId = decodeURIComponent(lifecycleMatch[1]);
+        const action = lifecycleMatch[2];
+        if (action === 'start') {
+          updateTask(taskId, { status: 'WORKING', control: null, started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0 });
+          res.end(JSON.stringify({ ok: true }));
+        } else if (action === 'pause') {
+          updateTask(taskId, { control: 'paused' });
+          res.end(JSON.stringify({ ok: true }));
+        } else if (action === 'resume') {
+          updateTask(taskId, { control: null, status: 'WORKING', started: null, claimedBy: null });
+          res.end(JSON.stringify({ ok: true }));
+        } else { // stop — orchestrator kills the agent + halts the task
+          updateTask(taskId, { control: 'stop' });
+          res.end(JSON.stringify({ ok: true, stopping: true }));
+        }
+        return;
+      }
+
+      if (triggerMatch) {
+        const taskId = triggerMatch[1];
+        if (req.method === 'POST') {
+          const task = getAllTasks().find(t => t.id === taskId);
+          if (task) {
+            updateTask(taskId, { status: 'WORKING', claimedBy: 'dev', started: new Date().toISOString() });
+            console.log(`[db-server] Task triggered: ${task.title}`);
+
+            // Build a rich agent prompt from the task
+            const agentPrompt = [
+              `TASK: ${task.title}`,
+              task.description ? `\nDESCRIPTION:\n${task.description}` : '',
+              `\nTASK_ID: ${task.id}`,
+              `\nWhen done, mark as complete:\ncurl -X PUT http://127.0.0.1:6952/tasks/${task.id} -H "Content-Type: application/json" -d '{"status":"DONE","completed":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'"`
+            ].filter(Boolean).join('');
+
+            const logPath = join(LOGS_DIR, 'dev.log');
+            appendFileSync(logPath, `[${new Date().toISOString()}] Triggered: ${task.title}\n`);
+
+            res.end(JSON.stringify({ ok: true, agentPrompt }));
+          } else {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'Task not found' }));
+          }
+          return;
+        }
+      }
+
+      // Generic POST /tasks — create new task (must come after triggerMatch)
+      if (req.method === 'POST' && req.url?.match(/^\/tasks(\?.*)?$/)) {
+        const body = JSON.parse(await readBody(req));
+        createTask({ ...body, projectId: projectIdOf(req, body) });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (idMatch) {
+        const taskId = idMatch[1];
+        if (req.method === 'PUT') {
+          const body = JSON.parse(await readBody(req));
+          // ETC: an agent-supplied {etc: <minutes>} sets a countdown (capped at 30 min,
+          // matching the hard runtime kill) and stamps when it was set.
+          if (body.etc !== undefined) {
+            const mins = Math.max(1, Math.min(30, Math.round(Number(body.etc) || 0)));
+            body.etcMinutes = mins;
+            body.etcSetAt = new Date().toISOString();
+            delete body.etc;
+          }
+          updateTask(taskId, body);
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+        if (req.method === 'DELETE') {
+          console.log(`[db-server] Deleting task: ${taskId}`);
+          deleteTask(taskId);
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+      }
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+      return;
+    }
+  }
+
+  if (req.url === '/settings') {
+    try {
+      if (req.method === 'GET') {
+        const settings = getBoardSettings();
+        res.end(JSON.stringify(settings || {}));
+        return;
+      }
+      if (req.method === 'PUT') {
+        const body = JSON.parse(await readBody(req));
+        updateBoardSettings(body);
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+      return;
+    }
+  }
+  // -----------------
+
+  if (req.method === 'GET' && req.url === '/db-usage') {
+    try {
+      const { getDbUsageSummary } = await import('./tasks.js');
+      res.end(JSON.stringify({ usage: getDbUsageSummary() }));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/search') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      // Attribute index usage to the calling agent (audit: who uses the DB vs greps)
+      if (body.agentName) {
+        try {
+          const { recordDbUsage } = await import('./tasks.js');
+          recordDbUsage(body.agentName, body.taskId ?? null, body.query ?? '');
+        } catch { /* audit must never break search */ }
+      }
+      const results = await semanticSearch(body.query, body.topK ?? 10, projectIdOf(req, body));
+      res.end(JSON.stringify({ results }));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ── CHAT INTAKE ── turn one natural-language message into many tasks.
+  // Decomposition runs through `claude -p` (same CLI/auth the agents use — no
+  // API key needed). Created tasks land as WORKING so the orchestrator starts them.
+  if (req.method === 'POST' && req.url === '/intake') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const message = String(body.message || '').trim();
+      if (!message) { res.statusCode = 400; res.end(JSON.stringify({ error: 'message required' })); return; }
+
+      const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
+      const decompPrompt = [
+        'You are a task-intake assistant for a software build queue.',
+        'Break the USER REQUEST into concrete, independent, buildable tasks (1 per distinct piece of work).',
+        'For EACH task provide: title (short imperative), description (1-3 sentences),',
+        'scenarios (array of testable GIVEN/WHEN/THEN strings), and dod (a short human-verifiable acceptance checklist as ONE string).',
+        'Respond with ONLY minified JSON, no markdown fences, no prose:',
+        '{"tasks":[{"title":"...","description":"...","scenarios":["GIVEN ... WHEN ... THEN ..."],"dod":"..."}]}',
+        '',
+        'USER REQUEST:',
+        message,
+      ].join('\n');
+
+      const proc = spawnSync(CLAUDE_BIN, ['-p', decompPrompt, '--dangerously-skip-permissions'], {
+        encoding: 'utf8', timeout: 150000, maxBuffer: 16 * 1024 * 1024,
+      });
+      const out = (proc.stdout || '') + (proc.stderr || '');
+      const start = out.indexOf('{'); const end = out.lastIndexOf('}');
+      let parsed: any = null;
+      if (start >= 0 && end > start) { try { parsed = JSON.parse(out.slice(start, end + 1)); } catch { /* fall through */ } }
+      const tasks = Array.isArray(parsed?.tasks) ? parsed.tasks : [];
+      if (!tasks.length) {
+        res.statusCode = 502;
+        res.end(JSON.stringify({ error: 'Could not parse tasks from the model', raw: out.slice(0, 600) }));
+        return;
+      }
+
+      const created: any[] = [];
+      const base = Date.now();
+      const intakeProject = projectIdOf(req, body);
+      const autoStart = body.autoStart !== false; // default: start agents immediately
+      tasks.forEach((t: any, i: number) => {
+        const id = 'CHAT-' + (base + i).toString(36).toUpperCase().slice(-5) + Math.random().toString(36).slice(2, 4).toUpperCase();
+        const scenarios: string[] = Array.isArray(t.scenarios) ? t.scenarios.map(String) : [];
+        const description = (String(t.description || '') +
+          (scenarios.length ? '\n\nAcceptance scenarios:\n- ' + scenarios.join('\n- ') : '')).trim();
+        const task = {
+          id,
+          title: String(t.title || 'Untitled task').slice(0, 200),
+          description,
+          status: autoStart ? 'WORKING' : 'AVAILABLE',
+          priority: i,
+          dod: String(t.dod || scenarios.join(' ') || t.description || t.title || '').slice(0, 2000),
+          started: null,
+          claimedBy: null,
+          attempts: 0,
+          projectId: intakeProject,
+        };
+        createTask(task as any);
+        created.push({ id, title: task.title, status: task.status });
+      });
+
+      console.log(`[db-server] Intake: created ${created.length} task(s) from chat`);
+      res.end(JSON.stringify({ ok: true, created }));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ─── Git / GitHub-token endpoints ───────────────────────────────────────────
+  // SECURITY: the GitHub token is stored in PLAINTEXT in the local sqlite
+  // board_settings table (id='git_config'). It is NEVER returned raw over HTTP —
+  // GET masks it, and clone output has the token stripped before it is returned.
+
+  const maskToken = (t?: string): string => {
+    if (!t) return '';
+    if (t.length <= 8) return '••••';
+    return t.slice(0, 4) + '••••' + t.slice(-4);
+  };
+
+  if (req.method === 'GET' && req.url === '/git/config') {
+    try {
+      const cfg = getGitConfig();
+      res.end(JSON.stringify({
+        configured: !!cfg.token,
+        username: cfg.username || '',
+        host: cfg.host || 'github.com',
+        tokenMasked: maskToken(cfg.token),
+      }));
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'PUT' && req.url === '/git/config') {
+    try {
+      const body = await readBody(req);
+      const b = body ? JSON.parse(body) : {};
+      // Blank/absent token → coerce to undefined so setGitConfig PRESERVES the stored one.
+      const token = (typeof b.token === 'string' && b.token.trim() !== '') ? b.token.trim() : undefined;
+      setGitConfig({ token, username: b.username, host: b.host });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'DELETE' && req.url === '/git/config') {
+    try {
+      setGitConfig({ token: '' }); // '' → explicit clear of the token
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && req.url?.startsWith('/git/status')) {
+    try {
+      const url = new URL(req.url, 'http://x');
+      const repo = url.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const r = spawnSync('git', ['status', '--porcelain=v1', '-b'], { cwd: repo, encoding: 'utf8' });
+      if (r.error || r.status !== 0) {
+        res.end(JSON.stringify({ ok: false, error: (r.stderr || r.error?.message || 'git error').trim(), repo }));
+        return;
+      }
+      const lines = (r.stdout || '').split('\n').filter(l => l.length > 0);
+      let branch = '';
+      let ahead = 0;
+      let behind = 0;
+      const files: Array<{ path: string; x: string; y: string; staged: boolean; label: string }> = [];
+      const labelFor = (x: string, y: string): string => {
+        if (x === '?' && y === '?') return 'Untracked';
+        if (x === 'R' || y === 'R') return 'Renamed';
+        if (x === 'C' || y === 'C') return 'Copied';
+        if (x === 'A' || y === 'A') return 'Added';
+        if (x === 'D' || y === 'D') return 'Deleted';
+        if (x === 'U' || y === 'U') return 'Conflicted';
+        if (x === 'M' || y === 'M') return 'Modified';
+        if (x === 'T' || y === 'T') return 'TypeChanged';
+        return 'Modified';
+      };
+      for (const line of lines) {
+        if (line.startsWith('##')) {
+          // e.g. "## main...origin/main [ahead 1, behind 2]" or "## main"
+          const info = line.slice(3).trim();
+          branch = info.split('...')[0].split(' ')[0].trim();
+          const am = info.match(/ahead (\d+)/);
+          const bm = info.match(/behind (\d+)/);
+          if (am) ahead = parseInt(am[1], 10);
+          if (bm) behind = parseInt(bm[1], 10);
+          continue;
+        }
+        const x = line[0];
+        const y = line[1];
+        let path = line.slice(3);
+        // Renamed/copied entries look like "old -> new" — take the new path.
+        if (path.includes(' -> ')) path = path.split(' -> ')[1];
+        const staged = x !== ' ' && x !== '?';
+        files.push({ path, x, y, staged, label: labelFor(x, y) });
+      }
+      res.end(JSON.stringify({ ok: true, repo, branch, ahead, behind, clean: files.length === 0, files }));
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && req.url?.startsWith('/git/diff')) {
+    try {
+      const url = new URL(req.url, 'http://x');
+      const repo = url.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const file = url.searchParams.get('file') || '';
+      const r = spawnSync('git', ['diff', 'HEAD', '--', file], { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+      let diff = r.stdout || '';
+      if (!diff.trim() && file) {
+        // Untracked/new file: `git diff HEAD` shows nothing. Try no-index vs /dev/null.
+        const r2 = spawnSync('git', ['diff', '--no-index', '--', '/dev/null', file], { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+        diff = (r2.stdout || '').trim() ? r2.stdout : '(untracked new file)';
+      }
+      res.end(JSON.stringify({ ok: true, diff }));
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/clone') {
+    try {
+      const body = await readBody(req);
+      const b = body ? JSON.parse(body) : {};
+      const url: string = String(b.url || '');
+      let dir: string = String(b.dir || '');
+      if (!url || !dir) { res.statusCode = 400; res.end(JSON.stringify({ error: 'url and dir are required' })); return; }
+      // Resolve a RELATIVE target against the projects base (sibling of the orchestrator repo,
+      // or PROJECTS_DIR) — never inside the orchestrator's own repo. Absolute paths are honored.
+      if (!isAbsolute(dir)) dir = join(process.env.PROJECTS_DIR || join(process.cwd(), 'projects'), dir);
+      const cloneProject = projectIdOf(req, b);
+      // 'app:'<recordId> → mint a short-lived GitHub App installation token; else PAT/global.
+      let cfg: { token?: string; username?: string; host?: string };
+      const tokenId = b.tokenId ? String(b.tokenId) : '';
+      if (tokenId.startsWith('app:')) {
+        const minted = await mintInstallationToken(tokenId.slice(4));
+        if (!minted) { res.statusCode = 400; res.end(JSON.stringify({ error: 'could not mint GitHub App installation token — is the app installed?' })); return; }
+        cfg = { token: minted.token, username: minted.username, host: minted.host };
+      } else {
+        const tok = tokenId ? getGitTokenRaw(tokenId) : null;
+        cfg = tok ? { token: tok.token, username: tok.username, host: tok.host } : getGitConfig();
+      }
+      let authUrl = url;
+      if (cfg.token && url.startsWith('https://')) {
+        const user = cfg.username || 'x-access-token';
+        authUrl = url.replace('https://', `https://${encodeURIComponent(user)}:${encodeURIComponent(cfg.token)}@`);
+      }
+      // Ensure the parent dir exists so `git clone` into a nested path doesn't fail with
+      // "could not create leading directories". git creates the leaf dir itself.
+      try { const parent = dirname(dir); if (parent && parent !== '.') mkdirSync(parent, { recursive: true }); } catch { /* clone will surface a clearer error */ }
+      const branch: string = String(b.branch || '').trim();
+      // Async clone so the event loop stays free — the status widget can show "cloning".
+      setActivity(cloneProject, 'cloning', 'Cloning repository', url);
+      cloneProgress.set(cloneProject, { lines: [`$ git clone ${branch ? `-b ${branch} ` : ''}${url}`], done: false, ok: null, dir, startedAt: Date.now() });
+      const cloneArgs = ['-c', 'credential.helper=', 'clone', '--progress', ...(branch ? ['-b', branch] : []), authUrl, dir];
+      const stripTok = (s: string) => cfg.token ? s.split(cfg.token).join('***').split(encodeURIComponent(cfg.token)).join('***') : s;
+      const r = await new Promise<{ status: number | null; out: string }>((resolve) => {
+        // `-c credential.helper=` disables any (possibly broken) global helper — we auth
+        // purely via the token baked into authUrl, so git must never call an external helper.
+        const proc = spawn('git', cloneArgs, { shell: false });
+        let out = '';
+        const onData = (d: any) => { const s = stripTok(d.toString()); out += s; pushCloneOutput(cloneProject, s); };
+        proc.stdout?.on('data', onData);
+        proc.stderr?.on('data', onData);
+        proc.on('exit', code => resolve({ status: code, out }));
+        proc.on('error', err => resolve({ status: 1, out: String(err?.message || err) }));
+      });
+      clearActivity(cloneProject, 'cloning');
+      const prog = cloneProgress.get(cloneProject);
+      if (prog) { prog.done = true; prog.ok = r.status === 0; prog.lines.push(r.status === 0 ? '✓ Clone complete' : `✗ Clone failed (exit ${r.status})`); }
+      let output = r.out;
+      // NEVER echo the token back — strip it (and its url-encoded form) from output.
+      if (cfg.token) {
+        output = output.split(cfg.token).join('***');
+        output = output.split(encodeURIComponent(cfg.token)).join('***');
+      }
+      // Persist the clone as a PROJECT so it's remembered (repo + folder + branch) and shows
+      // up in the switcher / Repo / Context — never lost. First clone reuses the Default slot.
+      let project: any = null;
+      if (r.status === 0) {
+        try {
+          const name = (dir.replace(/[\\/]+$/, '').split(/[\\/]+/).pop() || 'repo');
+          const branchName = branch || (spawnSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim() || undefined;
+          const existing = listProjects().find(p => p.repoPath && resolve(p.repoPath) === resolve(dir));
+          const projs = listProjects();
+          const onlyDefault = projs.length === 1 && projs[0].id === 'default';
+          if (existing) { updateProject(existing.id, { repoPath: dir, branch: branchName, cloneUrl: url }); project = getProject(existing.id); }
+          else if (onlyDefault) { updateProject('default', { name, repoPath: dir, branch: branchName, cloneUrl: url }); project = getProject('default'); }
+          else { project = createProject({ name, repoPath: dir, branch: branchName, cloneUrl: url }); }
+        } catch (e: any) { console.warn(`[db-server] clone→project persist: ${e?.message}`); }
+      }
+      res.end(JSON.stringify({ ok: r.status === 0, dir, output: output.trim(), project }));
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // Live clone progress — the Clone tab polls this while a clone runs.
+  if (req.method === 'GET' && (req.url || '').split('?')[0] === '/git/clone-progress') {
+    const p = cloneProgress.get(projectIdOf(req));
+    res.end(JSON.stringify(p ? { lines: p.lines, done: p.done, ok: p.ok, dir: p.dir } : { lines: [], done: true, ok: null }));
+    return;
+  }
+
+  // Delete a cloned repo folder (with guards). Frees the clone target so it can be re-cloned.
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/delete-repo') {
+    try {
+      const b = JSON.parse(await readBody(req) || '{}');
+      const target = String(b.dir || '').trim();
+      if (!target) { res.statusCode = 400; res.end(JSON.stringify({ error: 'dir is required' })); return; }
+      // Resolve a RELATIVE dir against the SAME base clone uses (projects base = parent of the
+      // orchestrator repo, or PROJECTS_DIR) — otherwise delete targets the wrong folder.
+      const base = process.env.PROJECTS_DIR || join(process.cwd(), 'projects');
+      const abs = isAbsolute(target) ? resolve(target) : resolve(base, target);
+      const key = (p: string) => resolve(p).replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
+      // HARD GUARD on the FOLDER: this app may delete a folder ONLY when it is strictly inside the
+      // managed projects/ directory. The app repo, its parent, a drive root, the base itself, and
+      // ANY path outside projects/ (a pre-existing repo elsewhere on disk) are NEVER removed from
+      // disk. Project DATA (tasks/embeddings/record) is still purged either way.
+      const inside = key(abs).startsWith(key(base) + '/') && key(abs) !== key(base);
+      let folderDeleted = false;
+      if (inside && existsSync(abs)) { rmSync(abs, { recursive: true, force: true }); folderDeleted = true; }
+      cloneProgress.delete(projectIdOf(req, b));
+      // Completely remove the PROJECT that pointed at this folder — its tasks, embeddings DB, and
+      // record — except the un-deletable 'default' (its repo is reset to the host).
+      let removedProject: string | null = null;
+      try {
+        const owner = listProjects().find(p => p.repoPath && key(p.repoPath) === key(abs));
+        if (owner) {
+          if (owner.id === 'default') updateProject('default', { name: 'Default', repoPath: process.cwd(), branch: '', cloneUrl: '' });
+          else { purgeProjectData(owner.id); removedProject = owner.id; }
+        }
+      } catch (e: any) { console.warn(`[db-server] delete-repo project purge: ${e?.message}`); }
+      res.end(JSON.stringify({ ok: true, folderDeleted, deleted: folderDeleted ? abs : null, folderKept: !inside, removedProject }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // Clone a git URL into a folder named exactly after the repo, then create (or, for the
+  // first import, rename the Default slot to) the project pointing at it. Folder name ==
+  // repository name == project label, so nothing can drift.
+  if (req.method === 'POST' && req.url === '/git/clone-import') {
+    try {
+      const b = JSON.parse(await readBody(req) || '{}');
+      const url: string = String(b.url || '').trim();
+      if (!url) { res.statusCode = 400; res.end(JSON.stringify({ error: 'url is required' })); return; }
+      const name = (url.replace(/[\\/]+$/, '').split(/[\\/:]+/).filter(Boolean).pop() || '').replace(/\.git$/i, '');
+      if (!name) { res.statusCode = 400; res.end(JSON.stringify({ error: 'could not derive a repo name from the url' })); return; }
+      // Clone as a sibling of this repo (override with PROJECTS_DIR) → e.g. C:\code\<name>.
+      const base = process.env.PROJECTS_DIR || join(process.cwd(), 'projects');
+      const dir = join(base, name);
+
+      let cloned = false, output = '';
+      if (existsSync(dir)) {
+        // Adopt an existing checkout; refuse a non-git folder to avoid clobbering user data.
+        if (!existsSync(join(dir, '.git'))) { res.statusCode = 409; res.end(JSON.stringify({ error: `folder already exists and is not a git repo: ${dir}` })); return; }
+        output = `adopted existing repo at ${dir}`;
+      } else {
+        let cfg: { token?: string; username?: string; host?: string };
+        const tokenId = b.tokenId ? String(b.tokenId) : '';
+        if (tokenId.startsWith('app:')) {
+          const minted = await mintInstallationToken(tokenId.slice(4));
+          if (!minted) { res.statusCode = 400; res.end(JSON.stringify({ error: 'could not mint GitHub App installation token' })); return; }
+          cfg = { token: minted.token, username: minted.username, host: minted.host };
+        } else {
+          const tok = tokenId ? getGitTokenRaw(tokenId) : null;
+          cfg = tok ? { token: tok.token, username: tok.username, host: tok.host } : getGitConfig();
+        }
+        let authUrl = url;
+        if (cfg.token && url.startsWith('https://')) authUrl = url.replace('https://', `https://${encodeURIComponent(cfg.username || 'x-access-token')}:${encodeURIComponent(cfg.token)}@`);
+        try { mkdirSync(base, { recursive: true }); } catch { /* clone surfaces a clearer error */ }
+        const r = await new Promise<{ status: number | null; out: string }>((resolve) => {
+          const proc = spawn('git', ['-c', 'credential.helper=', 'clone', authUrl, dir], { shell: false });
+          let out = ''; proc.stdout?.on('data', d => out += d); proc.stderr?.on('data', d => out += d);
+          proc.on('exit', code => resolve({ status: code, out })); proc.on('error', err => resolve({ status: 1, out: String(err?.message || err) }));
+        });
+        output = r.out;
+        if (cfg.token) { output = output.split(cfg.token).join('***').split(encodeURIComponent(cfg.token)).join('***'); }
+        if (r.status !== 0) { res.statusCode = 500; res.end(JSON.stringify({ error: `git clone failed: ${output.trim().slice(-500)}` })); return; }
+        cloned = true;
+      }
+
+      // First import reuses the seeded Default slot; else a new project.
+      const projects = listProjects();
+      const onlyDefault = projects.length === 1 && projects[0].id === 'default';
+      let project;
+      if (onlyDefault) { updateProject('default', { name, repoPath: dir, emoji: b.emoji }); project = getProject('default'); }
+      else { project = createProject({ name, repoPath: dir, emoji: b.emoji }); }
+      res.end(JSON.stringify({ ok: true, project, cloned, dir, output: output.trim() }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/git/create-repo') {
+    try {
+      const body = await readBody(req);
+      const b = body ? JSON.parse(body) : {};
+      // Repo creation via GitHub App is not wired up yet — require a PAT for this op.
+      if (b.tokenId && String(b.tokenId).startsWith('app:')) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: 'repo creation via GitHub App not supported yet — use a PAT' }));
+        return;
+      }
+      const tokC = b.tokenId ? getGitTokenRaw(String(b.tokenId)) : null;
+      const cfg = tokC ? { token: tokC.token } : getGitConfig();
+      if (!cfg.token) { res.statusCode = 400; res.end(JSON.stringify({ error: 'No GitHub token configured' })); return; }
+      const name = String(b.name || '');
+      if (!name) { res.statusCode = 400; res.end(JSON.stringify({ error: 'name is required' })); return; }
+      const gh = await fetch('https://api.github.com/user/repos', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + cfg.token,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'ai-agents',
+        },
+        body: JSON.stringify({ name, private: !!b.private }),
+      });
+      const data: any = await gh.json().catch(() => ({}));
+      if (!gh.ok) {
+        res.end(JSON.stringify({ ok: false, error: data?.message || `GitHub API error ${gh.status}` }));
+        return;
+      }
+      res.end(JSON.stringify({
+        ok: true,
+        repo: { full_name: data.full_name, clone_url: data.clone_url, html_url: data.html_url },
+      }));
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ── git commit ── stage + commit in a repo/worktree. Author = repo git config.
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/commit') {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      const message = String(b.message || '').trim();
+      if (!message) { res.statusCode = 400; res.end(JSON.stringify({ error: 'commit message is required' })); return; }
+      if (b.addAll !== false) spawnSync('git', ['add', '-A'], { cwd: repo, encoding: 'utf8' });
+      const r = spawnSync('git', ['commit', '-m', message], { cwd: repo, encoding: 'utf8' });
+      const output = ((r.stdout || '') + (r.stderr || '')).trim();
+      let hash = '';
+      if (r.status === 0) { const h = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8' }); hash = (h.stdout || '').trim(); }
+      res.end(JSON.stringify({ ok: r.status === 0, hash, output }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── git push ── push a branch to origin using the stored token for https auth.
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/push') {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      // 'app:'<recordId> → mint a GitHub App installation token; else PAT/global config.
+      let cfg: { token?: string; username?: string; host?: string };
+      const pushTokenId = b.tokenId ? String(b.tokenId) : '';
+      if (pushTokenId.startsWith('app:')) {
+        const minted = await mintInstallationToken(pushTokenId.slice(4));
+        if (!minted) { res.statusCode = 400; res.end(JSON.stringify({ error: 'could not mint GitHub App installation token — is the app installed?' })); return; }
+        cfg = { token: minted.token, username: minted.username, host: minted.host };
+      } else {
+        const tokP = pushTokenId ? getGitTokenRaw(pushTokenId) : null;
+        cfg = tokP ? { token: tokP.token, username: tokP.username, host: tokP.host } : getGitConfig();
+      }
+      const cur = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' });
+      const branch = String(b.branch || (cur.stdout || '').trim() || 'HEAD');
+      const originR = spawnSync('git', ['remote', 'get-url', String(b.remote || 'origin')], { cwd: repo, encoding: 'utf8' });
+      const origin = (originR.stdout || '').trim();
+      if (!origin) { res.statusCode = 400; res.end(JSON.stringify({ error: 'no origin remote — set one or clone first' })); return; }
+      let authUrl = origin;
+      if (cfg.token && origin.startsWith('https://')) {
+        const user = cfg.username || 'x-access-token';
+        authUrl = origin.replace('https://', `https://${encodeURIComponent(user)}:${encodeURIComponent(cfg.token)}@`);
+      }
+      // Push HEAD to the named branch and set upstream so future pushes are simple.
+      const r = spawnSync('git', ['push', '-u', authUrl, `HEAD:${branch}`], { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+      let output = ((r.stdout || '') + (r.stderr || '')).trim();
+      if (cfg.token) { output = output.split(cfg.token).join('***').split(encodeURIComponent(cfg.token)).join('***'); }
+      res.end(JSON.stringify({ ok: r.status === 0, branch, output }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── git pull ── fetch + merge origin into the current branch (token auth for private https).
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/pull') {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      let cfg: { token?: string; username?: string; host?: string };
+      const tid = b.tokenId ? String(b.tokenId) : '';
+      if (tid.startsWith('app:')) { const m = await mintInstallationToken(tid.slice(4)); if (!m) { res.statusCode = 400; res.end(JSON.stringify({ error: 'could not mint GitHub App token' })); return; } cfg = { token: m.token, username: m.username, host: m.host }; }
+      else { const t = tid ? getGitTokenRaw(tid) : null; cfg = t ? { token: t.token, username: t.username, host: t.host } : getGitConfig(); }
+      const cur = (spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout || '').trim();
+      const origin = (spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: repo, encoding: 'utf8' }).stdout || '').trim();
+      if (!origin) { res.statusCode = 400; res.end(JSON.stringify({ error: 'no origin remote' })); return; }
+      let authUrl = origin;
+      if (cfg.token && origin.startsWith('https://')) authUrl = origin.replace('https://', `https://${encodeURIComponent(cfg.username || 'x-access-token')}:${encodeURIComponent(cfg.token)}@`);
+      const r = spawnSync('git', ['-c', 'credential.helper=', 'pull', '--no-edit', authUrl, cur], { cwd: repo, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+      let output = ((r.stdout || '') + (r.stderr || '')).trim();
+      if (cfg.token) { output = output.split(cfg.token).join('***').split(encodeURIComponent(cfg.token)).join('***'); }
+      res.end(JSON.stringify({ ok: r.status === 0, branch: cur, output }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── remote branches ── list a REMOTE's branches without cloning (for the Clone picker).
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/remote-branches') {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const url = String(b.url || '').trim();
+      if (!url) { res.statusCode = 400; res.end(JSON.stringify({ error: 'url is required' })); return; }
+      let cfg: { token?: string; username?: string };
+      const tid = b.tokenId ? String(b.tokenId) : '';
+      if (tid.startsWith('app:')) { const m = await mintInstallationToken(tid.slice(4)); cfg = m ? { token: m.token, username: m.username } : {}; }
+      else { const t = tid ? getGitTokenRaw(tid) : null; cfg = t ? { token: t.token, username: t.username } : getGitConfig(); }
+      let authUrl = url;
+      if (cfg.token && url.startsWith('https://')) authUrl = url.replace('https://', `https://${encodeURIComponent(cfg.username || 'x-access-token')}:${encodeURIComponent(cfg.token)}@`);
+      const r = spawnSync('git', ['-c', 'credential.helper=', 'ls-remote', '--heads', '--symref', authUrl], { encoding: 'utf8', timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
+      if (r.status !== 0) { let out = ((r.stdout || '') + (r.stderr || '')).trim(); if (cfg.token) out = out.split(cfg.token).join('***'); res.statusCode = 400; res.end(JSON.stringify({ error: 'could not list branches', output: out.slice(-400) })); return; }
+      const lines = (r.stdout || '').split('\n');
+      let def = ''; const branches: string[] = [];
+      for (const ln of lines) {
+        const sym = ln.match(/^ref:\s+refs\/heads\/(\S+)\s+HEAD/); if (sym) { def = sym[1]; continue; }
+        const m = ln.match(/refs\/heads\/(\S+)$/); if (m) branches.push(m[1]);
+      }
+      res.end(JSON.stringify({ ok: true, default: def, branches: Array.from(new Set(branches)).sort() }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── git branches ── list local + remote branches and the current one.
+  if (req.method === 'GET' && (req.url || '').split('?')[0] === '/git/branches') {
+    try {
+      const u = new URL(req.url!, 'http://x');
+      const repo = u.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const cur = (spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout || '').trim();
+      const local = (spawnSync('git', ['branch', '--format=%(refname:short)'], { cwd: repo, encoding: 'utf8' }).stdout || '').split('\n').map(s => s.trim()).filter(Boolean);
+      const remote = (spawnSync('git', ['branch', '-r', '--format=%(refname:short)'], { cwd: repo, encoding: 'utf8' }).stdout || '').split('\n').map(s => s.trim()).filter(b => b && !b.includes('HEAD ->')).map(b => b.replace(/^origin\//, ''));
+      const all = Array.from(new Set([...local, ...remote])).sort();
+      res.end(JSON.stringify({ ok: true, current: cur, branches: all, local }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── git checkout ── switch to an existing branch (creates a local tracking branch if remote-only).
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/checkout') {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      const branch = String(b.branch || '').trim();
+      if (!branch) { res.statusCode = 400; res.end(JSON.stringify({ error: 'branch is required' })); return; }
+      const r = spawnSync('git', ['checkout', branch], { cwd: repo, encoding: 'utf8' });
+      const output = ((r.stdout || '') + (r.stderr || '')).trim();
+      res.end(JSON.stringify({ ok: r.status === 0, branch, output }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── agent worktrees ── list OUR .worktrees/* and join the task board so the
+  // user sees which agent (claimedBy) did which task, its branch, and whether merged.
+  if (req.method === 'GET' && req.url?.startsWith('/git/worktrees')) {
+    try {
+      const wtProject = projectIdOf(req);
+      const repoRoot = projectRepoPath(wtProject);
+      const list = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
+      const wtDir = join(repoRoot, '.worktrees');
+      const tasks = getAllTasks(wtProject);
+      const byId = new Map(tasks.map((t: any) => [t.id, t]));
+      const out: any[] = [];
+      for (const block of (list.stdout || '').split('\n\n')) {
+        const pm = block.match(/^worktree (.+)$/m);
+        const bm = block.match(/^branch (.+)$/m);
+        const hm = block.match(/^HEAD (.+)$/m);
+        if (!pm) continue;
+        const path = pm[1].trim();
+        if (!path.startsWith(wtDir)) continue; // only agent worktrees
+        const ref = (bm ? bm[1].trim() : '').replace('refs/heads/', '');
+        const name = path.split(/[\\/]/).pop() || '';
+        const isPlan = name.startsWith('plan-');
+        const taskId = name.replace(/^plan-/, '');
+        const task: any = byId.get(taskId) || byId.get(name);
+        // last commit subject/author/sha on this worktree's HEAD
+        const lc = spawnSync('git', ['log', '-1', '--pretty=format:%h%x1f%an%x1f%ad%x1f%s', '--date=iso', 'HEAD'], { cwd: path, encoding: 'utf8' });
+        const [sha = '', author = '', date = '', subject = ''] = (lc.stdout || '').split('\x1f');
+        // merged into main HEAD?
+        let merged = false;
+        if (ref) { const anc = spawnSync('git', ['merge-base', '--is-ancestor', ref, 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }); merged = anc.status === 0; }
+        out.push({
+          path, name, taskId, branch: ref, isPlan,
+          head: hm ? hm[1].trim().slice(0, 7) : sha,
+          lastCommit: { sha, author, date, subject },
+          merged,
+          agent: task?.claimedBy || null,
+          title: task?.title || null,
+          status: task?.status || null,
+          stage: task?.stage || null,
+        });
+      }
+      res.end(JSON.stringify({ ok: true, worktrees: out }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── git log ── commit history for a repo/worktree/branch (who committed what).
+  if (req.method === 'GET' && req.url?.startsWith('/git/log')) {
+    try {
+      const url = new URL(req.url, 'http://x');
+      const repo = url.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const ref = url.searchParams.get('ref') || '';
+      const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 300);
+      const args = ['log', `-n${limit}`, '--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%P%x1f%s', '--date=iso'];
+      if (ref) args.push(ref);
+      const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+      if (r.error || r.status !== 0) { res.end(JSON.stringify({ ok: false, error: (r.stderr || r.error?.message || 'git error').trim() })); return; }
+      const commits = (r.stdout || '').split('\n').filter(Boolean).map(line => {
+        const [hash, shortHash, author, email, date, parents, subject] = line.split('\x1f');
+        const parentList = (parents || '').trim().split(/\s+/).filter(Boolean);
+        return { hash, shortHash, author, email, date, subject, merge: parentList.length > 1 };
+      });
+      res.end(JSON.stringify({ ok: true, repo, ref, commits }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── git show ── a single commit's files + diff (drill-down from the log view).
+  if (req.method === 'GET' && req.url?.startsWith('/git/show')) {
+    try {
+      const url = new URL(req.url, 'http://x');
+      const repo = url.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const hash = url.searchParams.get('hash') || '';
+      if (!hash) { res.statusCode = 400; res.end(JSON.stringify({ error: 'hash is required' })); return; }
+      const ns = spawnSync('git', ['show', '--no-color', '--name-status', '--pretty=format:%an%x1f%ae%x1f%ad%x1f%s', '--date=iso', hash], { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+      const lines = (ns.stdout || '').split('\n');
+      const [author = '', email = '', date = '', subject = ''] = (lines[0] || '').split('\x1f');
+      const files = lines.slice(1).filter(Boolean).filter(l => /^[A-Z]\d*\t/.test(l)).map(l => {
+        const parts = l.split('\t');
+        return { status: parts[0][0], path: parts[parts.length - 1] };
+      });
+      const diffR = spawnSync('git', ['show', '--no-color', hash], { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+      res.end(JSON.stringify({ ok: true, hash, author, email, date, subject, files, diff: diffR.stdout || '' }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── multi-token management ── list/add/update/delete labeled PATs (tokens masked on read).
+  if (req.method === 'GET' && req.url?.startsWith('/git/tokens') && !/^\/git\/tokens\/[^/?]+/.test(req.url)) {
+    try {
+      const pid = projectIdOf(req);
+      const toks: any[] = listGitTokensRaw(pid).map(t => ({
+        id: t.id, label: t.label, scope: t.scope, username: t.username || '', host: t.host,
+        createdAt: t.createdAt, tokenMasked: maskToken(t.token), source: 'pat',
+      }));
+      // Append INSTALLED GitHub Apps as pseudo-tokens so the pickers can offer them.
+      // Their id is 'app:'+recordId; git ops mint an installation token on demand.
+      for (const a of listGithubAppsRaw(pid)) {
+        if (!a.installationId) continue;
+        toks.push({
+          id: 'app:' + a.id, label: 'GitHub App: ' + (a.name || a.slug || a.id),
+          scope: 'readwrite', username: 'x-access-token', host: 'github.com',
+          source: 'github-app', tokenMasked: 'auto (installation token)', createdAt: a.createdAt,
+        });
+      }
+      res.end(JSON.stringify({ ok: true, tokens: toks }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.method === 'POST' && req.url?.startsWith('/git/tokens') && !/^\/git\/tokens\/[^/?]+/.test(req.url)) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      if (!b.token || !String(b.token).trim()) { res.statusCode = 400; res.end(JSON.stringify({ error: 'token is required' })); return; }
+      const row = addGitToken({ label: b.label, token: String(b.token).trim(), scope: b.scope, username: b.username, host: b.host }, projectIdOf(req, b));
+      res.end(JSON.stringify({ ok: true, id: row.id }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  {
+    const m = req.url?.match(/^\/git\/tokens\/([^/?]+)(?:\?.*)?$/);
+    if (m && req.method === 'PUT') {
+      try {
+        const b = JSON.parse((await readBody(req)) || '{}');
+        updateGitToken(decodeURIComponent(m[1]), { label: b.label, token: b.token, scope: b.scope, username: b.username, host: b.host });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+    if (m && req.method === 'DELETE') {
+      try { deleteGitToken(decodeURIComponent(m[1])); res.end(JSON.stringify({ ok: true })); }
+      catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+  }
+
+  // ── per-agent token assignment ── which PAT each agent authenticates git with.
+  if (req.method === 'GET' && req.url?.startsWith('/git/assignments')) {
+    try {
+      const assignments = getTokenAssignments(projectIdOf(req));
+      let agents: any[] = [];
+      try { const { getAgents } = await import('../agentic/index.ts'); agents = getAgents().map((a: any) => ({ role: a.role, label: a.label })); }
+      catch { /* agents optional */ }
+      res.end(JSON.stringify({ ok: true, assignments, agents }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.method === 'PUT' && req.url?.startsWith('/git/assignments')) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      if (!b.agent) { res.statusCode = 400; res.end(JSON.stringify({ error: 'agent is required' })); return; }
+      setTokenAssignment(String(b.agent), b.tokenId ? String(b.tokenId) : null, projectIdOf(req, b));
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── create branch ── git checkout -b <name> [from] in a repo/worktree.
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/branch') {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      const name = String(b.name || '').trim();
+      if (!name) { res.statusCode = 400; res.end(JSON.stringify({ error: 'branch name is required' })); return; }
+      const args = ['checkout', '-b', name];
+      if (b.from && String(b.from).trim()) args.push(String(b.from).trim());
+      const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+      const output = ((r.stdout || '') + (r.stderr || '')).trim();
+      res.end(JSON.stringify({ ok: r.status === 0, branch: name, output }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ─── GitHub App integration (Coolify-style manifest flow) ───────────────────
+  // ADDED ALONGSIDE the PATs above (PATs untouched). The browser POSTs a manifest to
+  // GitHub, GitHub auto-generates the App + private key and redirects to our callback,
+  // we convert it, the user installs it, and thereafter we auto-mint short-lived
+  // installation tokens for clone/push — no hand-crafted PAT.
+  // SECURITY: the App's private key / secrets are stored plaintext locally (same model
+  // as PATs) and NEVER sent raw over HTTP; minted tokens are stripped from git output.
+  const DB_PUBLIC_URL = process.env.DB_PUBLIC_URL || `http://127.0.0.1:${PORT}`;
+  const APP_UI_URL = process.env.APP_UI_URL || 'http://localhost:6951';
+
+  // POST /git/github-app/manifest → create a pending record + return the manifest the
+  // browser submits to GitHub. `state` (the record id) is echoed back to our callback.
+  if (req.method === 'POST' && req.url?.startsWith('/git/github-app/manifest')) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const pid = projectIdOf(req, b);
+      const short = Math.random().toString(36).slice(2, 8);
+      const name = (b.name && String(b.name).trim()) || `ai-agents-${short}`;
+      const { id } = createPendingGithubApp(pid, name);
+      const org = b.org ? String(b.org).trim() : '';
+      const postUrl = org
+        ? `https://github.com/organizations/${encodeURIComponent(org)}/settings/apps/new?state=${encodeURIComponent(id)}`
+        : `https://github.com/settings/apps/new?state=${encodeURIComponent(id)}`;
+      const default_permissions = b.permissions && typeof b.permissions === 'object'
+        ? b.permissions
+        : { contents: 'write', administration: 'write', metadata: 'read', pull_requests: 'write', workflows: 'write' };
+      // Prefer the host the browser is actually on (sent by the frontend) so the OAuth
+      // callback resolves over LAN/remote, not just 127.0.0.1. Fall back to env/defaults.
+      const dbBase = (b.dbPublicUrl && /^https?:\/\//.test(b.dbPublicUrl)) ? String(b.dbPublicUrl).replace(/\/$/, '') : DB_PUBLIC_URL;
+      const uiUrl = (b.appUiUrl && /^https?:\/\//.test(b.appUiUrl)) ? String(b.appUiUrl).replace(/\/$/, '') : APP_UI_URL;
+      const manifest = {
+        name,
+        url: uiUrl,
+        redirect_url: `${dbBase}/git/github-app/callback`,
+        // setup_url: where GitHub sends the browser AFTER the user installs the app. It
+        // appends ?installation_id=&setup_action=; we encode our record id in the path so
+        // the handler can mark the right app installed and bounce back to the UI.
+        setup_url: `${dbBase}/git/github-app/setup/${encodeURIComponent(id)}`,
+        setup_on_update: true,
+        public: false,
+        default_permissions,
+        default_events: [],
+      };
+      res.end(JSON.stringify({ ok: true, state: id, postUrl, manifest }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // POST /git/github-app/manual → connect an ALREADY-EXISTING GitHub App by App ID + a
+  // freshly-generated private key (.pem). Used when the manifest flow was interrupted, or
+  // the user already made an app. We store it like a manifest-created app, then try to
+  // auto-detect its installation so it's immediately usable. The user supplies exactly one
+  // app — we never enumerate their other apps.
+  if (req.method === 'POST' && req.url?.startsWith('/git/github-app/manual')) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const pid = projectIdOf(req, b);
+      const appId = String(b.appId || '').trim();
+      const privateKey = String(b.privateKey || '').trim();
+      const name = (b.name && String(b.name).trim()) || `github-app-${appId || 'manual'}`;
+      const slug = b.slug ? String(b.slug).trim() : undefined;
+      if (!/^\d+$/.test(appId)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'App ID must be numeric (find it on the app\'s settings page).' })); return; }
+      if (!/BEGIN[\s\S]*PRIVATE KEY[\s\S]*END/.test(privateKey)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Private key must be a full PEM (-----BEGIN ... PRIVATE KEY-----).' })); return; }
+      const { id } = createPendingGithubApp(pid, name);
+      updateGithubApp(id, { appId, privateKey, name, slug, state: 'created' });
+      // Best-effort auto-detect: sign a JWT with the key and look up installations.
+      let installed = false; let account: string | null = null; let detectError: string | null = null;
+      try {
+        const installs = await listAppInstallations(appId, privateKey);
+        if (installs.length) {
+          const inst = installs.sort((a: any, c: any) => new Date(c.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+          account = inst?.account?.login || null;
+          updateGithubApp(id, { installationId: String(inst.id), account, state: 'installed' });
+          installed = true;
+        }
+      } catch (e: any) { detectError = e?.message || 'could not reach GitHub to detect installation'; }
+      res.end(JSON.stringify({ ok: true, id, installed, account, detectError }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // GET /git/github-app/callback?code=&state= → GitHub redirects the BROWSER here after
+  // "Create GitHub App". We convert the manifest code into the App (id, slug, pem, …),
+  // then serve an HTML page that bounces the browser to the install screen.
+  if (req.method === 'GET' && req.url?.startsWith('/git/github-app/callback')) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    const htmlPage = (title: string, bodyHtml: string, redirectTo?: string) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${redirectTo ? `<meta http-equiv="refresh" content="2;url=${redirectTo}">` : ''}<style>body{font-family:system-ui,sans-serif;max-width:640px;margin:64px auto;padding:0 20px;line-height:1.5;color:#111}a{color:#0969da}.card{border:1px solid #d0d7de;border-radius:12px;padding:24px}</style></head><body><div class="card">${bodyHtml}</div>${redirectTo ? `<script>setTimeout(function(){location.href=${JSON.stringify(redirectTo)}},1500)</script>` : ''}</body></html>`;
+    try {
+      const u = new URL(req.url, 'http://x');
+      const code = u.searchParams.get('code') || '';
+      const state = u.searchParams.get('state') || '';
+      const rec = state ? getGithubApp(state) : null;
+      if (!code || !rec) {
+        res.statusCode = 400;
+        res.end(htmlPage('GitHub App error', `<h2>Could not complete setup</h2><p>${!code ? 'Missing code from GitHub.' : 'Unknown or expired setup session.'}</p><p><a href="${APP_UI_URL}">Return to the app</a></p>`));
+        return;
+      }
+      const gh = await fetch(`https://api.github.com/app-manifests/${encodeURIComponent(code)}/conversions`, {
+        method: 'POST',
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ai-agents' },
+      });
+      const data: any = await gh.json().catch(() => ({}));
+      if (!gh.ok || !data?.id) {
+        res.statusCode = 502;
+        res.end(htmlPage('GitHub App error', `<h2>GitHub App conversion failed</h2><p>${(data?.message || `GitHub API error ${gh.status}`)}</p><p><a href="${APP_UI_URL}">Return to the app</a></p>`));
+        return;
+      }
+      updateGithubApp(rec.id, {
+        appId: String(data.id),
+        slug: data.slug,
+        name: data.name || rec.name,
+        privateKey: data.pem,
+        clientId: data.client_id,
+        clientSecret: data.client_secret,
+        webhookSecret: data.webhook_secret,
+        htmlUrl: data.html_url,
+        state: 'created',
+      });
+      const installUrl = `https://github.com/apps/${data.slug}/installations/new`;
+      res.end(htmlPage('GitHub App created', `<h2>GitHub App created ✓ — opening install…</h2><p>Redirecting you to install <b>${data.slug}</b> on your repositories.</p><p>If it doesn't open, <a href="${installUrl}">click here to install</a>.</p><hr><p>After installing, <a href="${APP_UI_URL}">return to the app</a> and click <b>Detect installation</b>.</p>`, installUrl));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(htmlPage('GitHub App error', `<h2>Setup error</h2><p>${e.message}</p><p><a href="${APP_UI_URL}">Return to the app</a></p>`));
+    }
+    return;
+  }
+
+  // GET /git/github-app/setup/:state?installation_id=&setup_action= → GitHub redirects the
+  // BROWSER here right after the user installs the app. We record the installation on the
+  // matching record (so it becomes a usable token) and bounce back to the UI — no manual
+  // "Detect installation" needed.
+  {
+    const m = req.url?.match(/^\/git\/github-app\/setup\/([^/?]+)(?:\?.*)?$/);
+    if (m && req.method === 'GET') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      const bounce = (title: string, msg: string) =>
+        `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><meta http-equiv="refresh" content="1;url=${APP_UI_URL}"><style>body{font-family:system-ui,sans-serif;max-width:640px;margin:64px auto;padding:0 20px;line-height:1.5;color:#111}a{color:#0969da}.card{border:1px solid #d0d7de;border-radius:12px;padding:24px}</style></head><body><div class="card"><h2>${title}</h2><p>${msg}</p><p><a href="${APP_UI_URL}">Return to the app now →</a></p></div><script>setTimeout(function(){location.href=${JSON.stringify(APP_UI_URL)}},1000)</script></body></html>`;
+      try {
+        const u = new URL(req.url!, 'http://x');
+        const state = decodeURIComponent(m[1]);
+        const installationId = u.searchParams.get('installation_id') || '';
+        const rec = getGithubApp(state);
+        if (!rec?.appId || !rec.privateKey) {
+          res.statusCode = 400;
+          res.end(bounce('Setup session expired', 'Could not match this install to a pending app. Open the app and click Detect installation.'));
+          return;
+        }
+        // Resolve the account login for the installation (best-effort) via an App JWT.
+        let account: string | null = rec.account || null;
+        try {
+          const installs = await listAppInstallations(rec.appId, rec.privateKey);
+          const inst = installationId
+            ? installs.find((i: any) => String(i.id) === String(installationId))
+            : installs.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+          if (inst) {
+            updateGithubApp(rec.id, { installationId: String(inst.id), account: inst.account?.login || account, state: 'installed' });
+            account = inst.account?.login || account;
+          } else if (installationId) {
+            updateGithubApp(rec.id, { installationId, state: 'installed' });
+          }
+        } catch { /* keep going — installation_id from the redirect is enough to mint tokens */
+          if (installationId) updateGithubApp(rec.id, { installationId, state: 'installed' });
+        }
+        res.end(bounce('Installed ✓', `<b>${rec.name}</b> is connected${account ? ` on ${account}` : ''}. It's now available as a token in Clone/Push.`));
+      } catch (e: any) {
+        res.statusCode = 500;
+        res.end(bounce('Setup error', e.message));
+      }
+      return;
+    }
+  }
+
+  // GET /git/github-apps?project=<id> → masked list (never secrets).
+  if (req.method === 'GET' && req.url?.startsWith('/git/github-apps') && !/^\/git\/github-apps\/[^/?]+/.test(req.url)) {
+    try {
+      res.end(JSON.stringify({ ok: true, apps: listGithubApps(projectIdOf(req)) }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // POST /git/github-apps/:id/detect-installation → find the installation via an App JWT.
+  {
+    const m = req.url?.match(/^\/git\/github-apps\/([^/?]+)\/detect-installation(?:\?.*)?$/);
+    if (m && req.method === 'POST') {
+      try {
+        const rec = getGithubApp(decodeURIComponent(m[1]));
+        if (!rec?.appId || !rec.privateKey) { res.statusCode = 400; res.end(JSON.stringify({ error: 'app not created yet' })); return; }
+        const installs = await listAppInstallations(rec.appId, rec.privateKey);
+        if (!installs.length) { res.end(JSON.stringify({ ok: true, installed: false, account: null })); return; }
+        // Newest/first installation wins.
+        const inst = installs.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+        const account = inst?.account?.login || null;
+        updateGithubApp(rec.id, { installationId: String(inst.id), account, state: 'installed' });
+        res.end(JSON.stringify({ ok: true, installed: true, account }));
+      } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+  }
+
+  // GET /git/github-apps/:id/repos → repos this installation can access, for the clone picker.
+  {
+    const m = req.url?.match(/^\/git\/github-apps\/([^/?]+)\/repos(?:\?.*)?$/);
+    if (m && req.method === 'GET') {
+      try {
+        const id = decodeURIComponent(m[1]);
+        const rec = getGithubApp(id);
+        if (!rec?.installationId) { res.statusCode = 400; res.end(JSON.stringify({ error: 'app not installed yet — click Detect installation first' })); return; }
+        const repos = await listInstallationRepos(id);
+        res.end(JSON.stringify({ ok: true, repos }));
+      } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+  }
+
+  // DELETE /git/github-apps/:id
+  {
+    const m = req.url?.match(/^\/git\/github-apps\/([^/?]+)(?:\?.*)?$/);
+    if (m && req.method === 'DELETE') {
+      try { deleteGithubApp(decodeURIComponent(m[1])); res.end(JSON.stringify({ ok: true })); }
+      catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+  }
+
+  // ── Repo run-config: read / save / detect / run / logs / stop ───────────────────
+  // GET /project/run-config?project= → { config, repoPath }
+  if (req.method === 'GET' && req.url?.startsWith('/project/run-config')) {
+    try {
+      const pid = projectIdOf(req);
+      const proj = getProject(pid);
+      res.end(JSON.stringify({ ok: true, config: proj?.runConfig || {}, repoPath: proj?.repoPath || projectRepoPath(pid) }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  // PUT /project/run-config { config } → save (manual edits or accepted detection)
+  if (req.method === 'PUT' && req.url?.startsWith('/project/run-config')) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const pid = projectIdOf(req, b);
+      const c = b.config || {};
+      const clean: RunConfig = {
+        install: String(c.install || '').trim(), run: String(c.run || '').trim(),
+        build: String(c.build || '').trim(), test: String(c.test || '').trim(),
+        cwd: String(c.cwd || '').trim() || undefined,
+      };
+      setProjectRunConfig(pid, clean);
+      res.end(JSON.stringify({ ok: true, config: clean }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  // POST /project/detect-run → heuristic + Opus detection against the project's repo
+  if (req.method === 'POST' && req.url?.startsWith('/project/detect-run')) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const pid = projectIdOf(req, b);
+      const root = getProject(pid)?.repoPath || projectRepoPath(pid);
+      if (!existsSync(root)) { res.statusCode = 400; res.end(JSON.stringify({ error: `repo path not found: ${root} — clone a repo first` })); return; }
+      const det = await detectRunConfig(root);
+      res.end(JSON.stringify({ ok: true, config: det.config, source: det.source, repoPath: root }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  // POST /project/run { which } → spawn install|run|build|test; returns a runId
+  if (req.method === 'POST' && req.url?.startsWith('/project/run') && !req.url.includes('/run/')) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const pid = projectIdOf(req, b);
+      const which = String(b.which || '') as RunKey;
+      if (!['install', 'run', 'build', 'test'].includes(which)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'which must be install|run|build|test' })); return; }
+      const proj = getProject(pid);
+      const cfg = proj?.runConfig || {};
+      const cmd = String((cfg as any)[which] || '').trim();
+      if (!cmd) { res.statusCode = 400; res.end(JSON.stringify({ error: `no ${which} command set — detect or enter one first` })); return; }
+      const root = proj?.repoPath || projectRepoPath(pid);
+      const cwd = cfg.cwd ? join(root, cfg.cwd) : root;
+      if (!existsSync(cwd)) { res.statusCode = 400; res.end(JSON.stringify({ error: `working dir not found: ${cwd}` })); return; }
+      const id = 'run_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const rp: RunProc = { id, which, cmd, projectId: pid, cwd, log: '', running: true, exitCode: null, startedAt: new Date().toISOString() };
+      const proc = spawn(cmd, { cwd, shell: true, detached: process.platform !== 'win32' });
+      rp.pid = proc.pid;
+      const append = (s: string) => { rp.log += s; if (rp.log.length > RUN_LOG_CAP) rp.log = rp.log.slice(-RUN_LOG_CAP); };
+      append(`$ ${cmd}\n`);
+      proc.stdout?.on('data', (d: Buffer) => append(d.toString()));
+      proc.stderr?.on('data', (d: Buffer) => append(d.toString()));
+      proc.on('error', (err: any) => { append(`\n[spawn error] ${err?.message || err}\n`); rp.running = false; rp.exitCode = -1; });
+      proc.on('exit', (code: number | null) => { append(`\n[exited ${code}]\n`); rp.running = false; rp.exitCode = code; });
+      runProcs.set(id, rp);
+      res.end(JSON.stringify({ ok: true, runId: id, which, cmd }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  // GET /project/run/logs?runId= → current log + running/exit state
+  if (req.method === 'GET' && req.url?.startsWith('/project/run/logs')) {
+    try {
+      const u = new URL(req.url!, 'http://x');
+      const rp = runProcs.get(u.searchParams.get('runId') || '');
+      if (!rp) { res.statusCode = 404; res.end(JSON.stringify({ error: 'run not found' })); return; }
+      res.end(JSON.stringify({ ok: true, which: rp.which, cmd: rp.cmd, running: rp.running, exitCode: rp.exitCode, log: rp.log, startedAt: rp.startedAt }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  // GET /project/runs?project= → active/recent runs for this project (no logs, just summaries)
+  if (req.method === 'GET' && req.url?.startsWith('/project/runs')) {
+    try {
+      const pid = projectIdOf(req);
+      const runs = [...runProcs.values()].filter(r => r.projectId === pid)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .map(r => ({ runId: r.id, which: r.which, cmd: r.cmd, running: r.running, exitCode: r.exitCode, startedAt: r.startedAt }));
+      res.end(JSON.stringify({ ok: true, runs }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  // POST /project/run/stop { runId } → kill the process tree
+  if (req.method === 'POST' && req.url?.startsWith('/project/run/stop')) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const rp = runProcs.get(String(b.runId || ''));
+      if (!rp) { res.statusCode = 404; res.end(JSON.stringify({ error: 'run not found' })); return; }
+      killRun(rp);
+      rp.running = false;
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── code index status / heal / retarget ── per project (?project=<id>) ─────────
+  // Live index-build output — the Index tab polls this while a rebuild runs.
+  if (req.method === 'GET' && req.url?.startsWith('/code-index/progress')) {
+    const pid = projectIdOf(req);
+    res.end(JSON.stringify({ building: isRebuilding(pid), lines: indexLogs.get(pid) || [] }));
+    return;
+  }
+  if (req.method === 'GET' && req.url?.startsWith('/code-index/status')) {
+    try {
+      const pid = projectIdOf(req);
+      const ci = getCodeIndexConfig(pid);
+      const root = ci.root || projectRepoPath(pid);
+      let files = 0, nodes = 0, embedded = 0;
+      try {
+        const d = getDbFor(pid);
+        files = (d.prepare('SELECT count(*) AS n FROM files').get() as any).n;
+        nodes = (d.prepare('SELECT count(*) AS n FROM nodes').get() as any).n;
+        embedded = (d.prepare('SELECT count(*) AS n FROM nodes WHERE embedding IS NOT NULL').get() as any).n;
+      } catch { /* corrupt/empty */ }
+      res.end(JSON.stringify({
+        ok: true,
+        root,
+        glob: ci.glob || '',
+        isDefault: !ci.root,
+        files, nodes, embedded,
+        coverage: nodes ? Math.round((embedded / nodes) * 100) : 0,
+        healthy: indexResponds(pid),
+        rebuilding: isRebuilding(pid),
+      }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.method === 'POST' && req.url?.startsWith('/code-index/rebuild')) {
+    try {
+      const b = JSON.parse((await readBody(req).catch(() => '')) || '{}');
+      rebuildIndex('manual rebuild requested', projectIdOf(req, b));
+      res.end(JSON.stringify({ ok: true, rebuilding: true }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.method === 'PUT' && req.url?.startsWith('/code-index/root')) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const pid = projectIdOf(req, b);
+      // root '' resets to the project's repoPath (default). glob optional.
+      setCodeIndexConfig({ root: b.root !== undefined ? String(b.root).trim() : undefined, glob: b.glob !== undefined ? String(b.glob).trim() : undefined }, pid);
+      rebuildIndex('code index retargeted', pid);
+      res.end(JSON.stringify({ ok: true, rebuilding: true }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── projects CRUD ─────────────────────────────────────────────────────────────
+  if (req.method === 'GET' && req.url?.startsWith('/projects') && !/^\/projects\/[^/?]+/.test(req.url)) {
+    try {
+      const projects = listProjects();
+      res.end(JSON.stringify({ ok: true, projects, activeCount: ACTIVE_AGENTS.size }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.method === 'POST' && req.url?.startsWith('/projects') && !/^\/projects\/[^/?]+/.test(req.url)) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      if (!b.name || !String(b.name).trim()) { res.statusCode = 400; res.end(JSON.stringify({ error: 'name is required' })); return; }
+      const project = createProject({ name: String(b.name).trim(), repoPath: b.repoPath ? String(b.repoPath).trim() : undefined, emoji: b.emoji ? String(b.emoji) : undefined, branch: b.branch, cloneUrl: b.cloneUrl });
+      res.end(JSON.stringify({ ok: true, project }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  {
+    const m = req.url?.match(/^\/projects\/([^/?]+)/);
+    if (m && req.method === 'PUT') {
+      try {
+        const id = decodeURIComponent(m[1]);
+        const b = JSON.parse((await readBody(req)) || '{}');
+        updateProject(id, { name: b.name, repoPath: b.repoPath, emoji: b.emoji, branch: b.branch, cloneUrl: b.cloneUrl });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+    if (m && req.method === 'DELETE') {
+      const id = decodeURIComponent(m[1]);
+      if (id === 'default') { res.statusCode = 400; res.end(JSON.stringify({ error: 'cannot delete the default project' })); return; }
+      try { purgeProjectData(id); res.end(JSON.stringify({ ok: true })); }
+      catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+  }
+
+  // ── orchestrator global pause/start ── flips board_settings.agentStatus. The
+  // orchestrator loop reads it: PAUSED keeps it alive (heartbeat + watchdog) but stops
+  // dispatching new work; STARTED resumes. (Separate process — this only sets the flag.)
+  if (req.method === 'POST' && (req.url === '/orchestrator/pause' || req.url === '/orchestrator/start')) {
+    try {
+      const s = getBoardSettings() || {};
+      const agentStatus = req.url === '/orchestrator/pause' ? 'PAUSED' : 'STARTED';
+      updateBoardSettings({ ...s, agentStatus });
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── system status ── one poll for the UI's live activity widget (per project). ──
+  if (req.method === 'GET' && req.url?.startsWith('/system-status')) {
+    try {
+      const pid = projectIdOf(req);
+      let hb: any = null;
+      try { hb = getHeartbeat(); } catch { /* optional */ }
+      const ci = getCodeIndexConfig(pid);
+      const root = ci.root || projectRepoPath(pid);
+      // Highest-priority current activity: explicit op → index rebuild → agents → idle.
+      let activity: Activity | undefined = systemActivity.get(pid);
+      if (!activity && isRebuilding(pid)) activity = { kind: 'indexing', label: 'Reading & remembering repo', detail: root, since: Date.now() };
+      if (!activity && ACTIVE_AGENTS.size > 0) activity = { kind: 'agents', label: `${ACTIVE_AGENTS.size} agent(s) working`, detail: [...ACTIVE_AGENTS].join(', '), since: Date.now() };
+
+      // Orchestrator liveness + always-on human-readable status line (from the heartbeat).
+      let settings: any = {};
+      try { settings = getBoardSettings() || {}; } catch { /* optional */ }
+      const lastBeatAt = hb?.lastBeatAt || null;
+      const ageSec = lastBeatAt ? Math.round((Date.now() - new Date(lastBeatAt).getTime()) / 1000) : null;
+      const orchestrator = {
+        agentStatus: settings.agentStatus || null,
+        statusLine: hb?.statusLine || null,
+        lastBeatAt,
+        ageSec,
+        up: ageSec != null && ageSec < 30,
+      };
+
+      // Per-project task counts for the board summary.
+      let counts = { pending: 0, working: 0, testing: 0, done: 0 };
+      try {
+        const tasks = getAllTasks(pid);
+        counts = {
+          pending: tasks.filter((t: any) => t.status === 'WORKING' && !t.started).length,
+          working: tasks.filter((t: any) => t.status === 'WORKING' && t.started).length,
+          testing: tasks.filter((t: any) => t.status === 'TESTING').length,
+          done: tasks.filter((t: any) => t.status === 'DONE').length,
+        };
+      } catch { /* optional */ }
+
+      // Most recent orchestrator/system log rows (newest-first) for the live event feed.
+      let events: Array<{ ts: string; taskId: string; msg: string; type: string }> = [];
+      try { events = getRecentLogs(15); } catch { /* logs.db optional */ }
+
+      res.end(JSON.stringify({
+        ok: true,
+        activity: activity || { kind: 'idle', label: 'Idle', since: Date.now() },
+        indexRebuilding: isRebuilding(pid),
+        boardCorrupt,
+        activeAgents: [...ACTIVE_AGENTS],
+        circuit: hb?.circuit || null,
+        mode: hb?.mode || null,
+        indexRoot: root,
+        orchestrator,
+        counts,
+        events,
+      }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  res.statusCode = 404;
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+// Bind to loopback by default — this server has no auth and holds credentials, so it must
+// not be reachable from the network unless the operator opts in. Set HOST=0.0.0.0 (and a
+// CORS_ALLOW_ORIGIN) only on a trusted LAN/VPS you control.
+const HOST = process.env.HOST || '127.0.0.1';
+server.listen(PORT, HOST, () => {
+  console.log(`[db-server] Listening on http://${HOST}:${PORT}`);
+  if (HOST === '0.0.0.0') console.warn('[db-server] ⚠ bound to 0.0.0.0 — reachable on the network with NO auth. Ensure this host is firewalled/trusted.');
+});

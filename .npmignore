@@ -1,0 +1,25 @@
+# Secrets — never publish
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local data / build artifacts
+*.db
+*.db-shm
+*.db-wal
+local.db
+.worktrees
+.agent_logs
+tsconfig.tsbuildinfo
+dist
+
+# Dev-only
+.vscode
+.idea
+**/*.test.ts
+**/*.test.tsx
+vitest.config.ts
+.github
+projects/

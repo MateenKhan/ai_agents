@@ -1,0 +1,17 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+tsconfig.tsbuildinfo
+*.db
+*.db-shm
+*.db-wal
+.worktrees
+.agent_logs
+local.db
+
+# Cloned user projects (never commit)
+projects/

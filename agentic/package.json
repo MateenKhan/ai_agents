@@ -1,0 +1,23 @@
+{
+  "name": "agentic-core",
+  "version": "0.1.0",
+  "description": "Unattended, crash-proof runtime for orchestrating headless Claude coding agents: durable task queue, stage routing (architect -> dev -> qa -> merge), git-worktree isolation, and resilience (circuit breaker, watchdog, resource gate, auto-heal). Methodology, code intelligence, document store, and chat control are optional adapters that plug in through seam interfaces.",
+  "type": "module",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "agent",
+    "orchestration",
+    "claude",
+    "headless",
+    "worktree",
+    "kanban",
+    "unattended"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,103 @@
+{
+  "name": "@airtajal/ai-agents",
+  "private": false,
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "AI-Agents — standalone multi-agent task orchestrator.",
+  "bin": {
+    "ai-agents": "bin/cli.mjs"
+  },
+  "files": [
+    "bin/",
+    "db/**/*.ts",
+    "scripts/**/*.ts",
+    "agentic/**/*.ts",
+    "src/**",
+    "index.html",
+    "*.config.ts",
+    "*.config.js",
+    "tsconfig.json",
+    ".env.example"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Airtajal/ai-agents.git"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "claude",
+    "orchestrator",
+    "multi-agent",
+    "kanban",
+    "automation"
+  ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "onnxruntime-node",
+      "sharp",
+      "protobufjs",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "predev": "kill-port 6951",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "db:server": "cross-env DB_FILE=local.db tsx --watch db/server.ts",
+    "db:orchestrator": "tsx --watch scripts/orchestrator.ts",
+    "db:server:stable": "cross-env DB_FILE=local.db tsx db/server.ts",
+    "db:orchestrator:stable": "tsx scripts/orchestrator.ts",
+    "db:stop": "kill-port 6952",
+    "ports:stop": "kill-port 6951 6952",
+    "db:build": "cross-env DB_FILE=local.db tsx db/index.ts build",
+    "db:update": "cross-env DB_FILE=local.db tsx db/index.ts update",
+    "db:ensure": "cross-env DB_FILE=local.db tsx db/index.ts ensure",
+    "db:check": "cross-env DB_FILE=local.db tsx db/index.ts check",
+    "db:search": "cross-env DB_FILE=local.db tsx db/index.ts search",
+    "db:blast": "cross-env DB_FILE=local.db tsx db/index.ts blast",
+    "db:stats": "cross-env DB_FILE=local.db tsx db/index.ts stats",
+    "db:annotate": "cross-env DB_FILE=local.db tsx db/index.ts annotate",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preagents": "kill-port 6951 6952",
+    "agents": "concurrently \"npm:dev\" \"npm:db:server:stable\" \"npm:db:orchestrator:stable\" --names \"vite,db,ai\" --prefix-colors \"cyan,magenta,green\"",
+    "agents:vps": "set -a; [ -f .env ] && . ./.env; set +a; npm run agents"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@typescript-eslint/typescript-estree": "^8.59.0",
+    "dotenv": "^17.4.1",
+    "framer-motion": "^12.36.0",
+    "lucide-react": "^0.469.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.13.0"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "autoprefixer": "^10.4.23",
+    "concurrently": "^9.1.2",
+    "cross-env": "^10.1.0",
+    "jsdom": "^29.1.1",
+    "kill-port": "^2.0.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.0"
+  }
+}
