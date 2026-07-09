@@ -4,3 +4,8 @@
 
 html, body, #root { height: 100%; }
 body { margin: 0; }
+
+/* Mobile safety net: never let the page body scroll sideways. Surfaces that need
+   horizontal scrolling (the kanban board, tab strips, tables) own an overflow-x-auto
+   container, so clipping stray overflow here can't hurt them. */
+html, body { overflow-x: hidden; }
