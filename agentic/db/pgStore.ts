@@ -39,7 +39,8 @@ const CANONICAL_BY_LOWER: ReadonlyMap<string, string> = (() => {
   return m;
 })();
 
-function normalizeRow<T>(row: any): T {
+/** Exported for tests: maps a pg row's folded keys back to canonical camelCase. */
+export function normalizeRow<T>(row: any): T {
   if (!row || typeof row !== 'object') return row as T;
   let changed = false;
   const out: Record<string, unknown> = {};
