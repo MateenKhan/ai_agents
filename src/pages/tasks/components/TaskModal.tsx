@@ -139,7 +139,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
                   ? 'bg-rose-50 border border-rose-400 focus:border-rose-500 ring-1 ring-rose-300'
                   : 'bg-amber-50/50 border border-amber-300 focus:border-amber-500'
               }`}
-              placeholder={"One verifiable criterion per line — written so a HUMAN can verify without opening other docs. Include the exact command and expected result, e.g.\n- `npm test` passes with 0 failures\n- Drawing a marquee inside an L-shape's hole selects nothing\n- No console errors on page load"}
+              placeholder={"One verifiable criterion per line — written so a HUMAN can verify without opening other docs. Include the exact command and expected result, e.g.\n- `pnpm test` passes with 0 failures\n- Drawing a marquee inside an L-shape's hole selects nothing\n- No console errors on page load"}
             />
             {dodError ? (
               <p className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-600">

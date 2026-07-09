@@ -1,9 +1,9 @@
 // scripts/repair-db.ts — non-destructive SQLite repair for the board/index DBs.
 // Run with the pipeline STOPPED (nothing may hold the DBs open).
 //
-//   npx tsx scripts/repair-db.ts          → all DBs
-//   npx tsx scripts/repair-db.ts tasks    → board only (tasks.db + logs.db)
-//   npx tsx scripts/repair-db.ts code     → code index only (local.db)
+//   pnpm exec tsx scripts/repair-db.ts          → all DBs
+//   pnpm exec tsx scripts/repair-db.ts tasks    → board only (tasks.db + logs.db)
+//   pnpm exec tsx scripts/repair-db.ts code     → code index only (local.db)
 //
 // Related recovery paths (no npm script wraps this file — run it directly as above):
 //   • Board recovery sweep (reset stuck jobs, prune orphans): POST /heal on the db-server.
@@ -62,4 +62,4 @@ for (const { rel, fallback } of targets) {
   }
   db.close();
 }
-console.log('\nDone. Restart with:  npm run agents');
+console.log('\nDone. Restart with:  pnpm run agents');

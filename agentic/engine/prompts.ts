@@ -52,7 +52,7 @@ function searchProtocolFor(projectId: string): string {
     'so it works from your worktree with no local db file). Do this BEFORE any grep/glob or reading',
     'whole directories, and only fall back to those when the index returns nothing. Your searches',
     'are audited per task — grepping when the index would have answered is a token-burn flag.',
-    '  npm run db:search -- "<symbol or concept>"',
+    '  pnpm run db:search -- "<symbol or concept>"',
     'If that script is unavailable in this repo, hit the daemon directly (same shared index).',
     'Keep the $AGENT_NAME / $TASK_ID vars in the JSON so your index use is attributed in the audit',
     '(they are pre-set in your shell — do NOT hard-code or drop them, or the search goes unlogged):',

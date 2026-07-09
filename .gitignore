@@ -13,5 +13,9 @@ tsconfig.tsbuildinfo
 .agent_logs
 local.db
 
+# Secrets & backend config (never commit)
+db/.secret.key
+db/backend.json
+
 # Cloned user projects (never commit)
 projects/

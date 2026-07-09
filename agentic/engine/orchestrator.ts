@@ -19,11 +19,11 @@ import { execSync, spawn } from 'node:child_process';
 function repoCwdFor(taskId: string): string {
   try {
     const tk = getTask(taskId);
-    const pid = tk?.projectId || 'default';
-    if (pid && pid !== 'default') {
-      const proj = getProject(pid);
-      if (proj?.repoPath && existsSync(proj.repoPath)) return proj.repoPath;
-    }
+    // Honor a configured repoPath for ANY project, including 'default' (its seeded repoPath is
+    // the host cwd, so normal installs are unchanged). Keeps merge/ancestry checks in the SAME
+    // repo the runner builds worktrees in, and matches the index's projectRepoPath resolution.
+    const proj = getProject(tk?.projectId || 'default');
+    if (proj?.repoPath && existsSync(proj.repoPath)) return proj.repoPath;
   } catch { /* missing project/db → host cwd */ }
   return process.cwd();
 }
@@ -171,7 +171,7 @@ function trySpawnDbServer(): void {
   lastDbSpawnAt = Date.now();
   try {
     log('__system__', '🩹 spawning a fresh db-server (fallback heal)…', 'warning');
-    const child = spawn('npm run db:server:stable', {
+    const child = spawn('pnpm run db:server:stable', {
       cwd: process.cwd(), env: { ...process.env }, detached: true, stdio: 'ignore', shell: true,
     });
     child.unref();
@@ -510,9 +510,25 @@ async function dispatchPending(): Promise<void> {
       continue;
     }
     if (!canSpawn(agentTaskMap.size)) break;
+    const pid = projectOf(task);
+    // PROJECT READINESS GATE — a project may only dispatch tasks once it's set up: a cloned git
+    // repo (NO implicit host-cwd fallback), a user-confirmed run-config, and a verified preview.
+    // Bypassable ONLY when the user has confirmed BOTH "no existing project" and "not executable"
+    // (readinessBypass). Otherwise block loudly so uninstalled/unbuildable projects can't silently
+    // run agents on the wrong tree or burn runs that can never be verified.
+    const proj = getProject(pid);
+    if (!proj?.readinessBypass) {
+      const reasons: string[] = [];
+      if (!proj?.repoPath || !existsSync(proj.repoPath) || !isGitRepo(proj.repoPath)) reasons.push('no cloned git repo');
+      if (!proj?.runConfigConfirmed) reasons.push('run-config not confirmed');
+      if (!proj?.previewVerifiedAt) reasons.push('preview not verified');
+      if (reasons.length) {
+        deadLetter(task.id, `project "${pid}" not ready — ${reasons.join(', ')}. Finish setup (clone → confirm run-config → verify preview), or bypass by confirming BOTH: no existing project AND not executable.`);
+        continue;
+      }
+    }
     // Per-project concurrency cap: skip (don't break) so OTHER projects with headroom still
     // dispatch this tick. cap 0 = unlimited (resource-gated only).
-    const pid = projectOf(task);
     const cap = projectCap(pid);
     if (cap > 0 && activeForProject(pid) >= cap) continue;
     const route = nextRoute(task);
@@ -608,7 +624,16 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
       updateTask(taskId, { reviewNote: null });
       log(taskId, `✅ architect re-planned (rescue) → back to dev at stage ${getTask(taskId)?.stage}`, 'success');
     } else {
-      log(taskId, `✅ ${route.role} finished ${route.stage} → stage ${getTask(taskId)?.stage}`, 'success');
+      const newStage = getTask(taskId)?.stage;
+      const ROUTABLE = ['plan', 'build', 'qa', 'review', 'merge', 'merged', 'rescue'];
+      if (!newStage || !ROUTABLE.includes(newStage)) {
+        // The agent advanced to an unknown/non-pipeline stage (e.g. an architect declaring a
+        // task impossible by inventing stage="blocked"). Left alone it sits un-dispatchable in
+        // WORKING forever — surface it as a real BLOCKED so it's visible and can be healed.
+        deadLetter(taskId, `agent set an unroutable stage "${newStage}" at ${route.stage} — task cannot proceed as briefed (see its summary/note)`);
+      } else {
+        log(taskId, `✅ ${route.role} finished ${route.stage} → stage ${newStage}`, 'success');
+      }
     }
     return;
   }

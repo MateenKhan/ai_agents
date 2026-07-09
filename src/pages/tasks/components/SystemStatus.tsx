@@ -111,7 +111,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
   // db-server entirely unreachable — the network is down, not just the orchestrator.
   if (!reachable) {
     return (
-      <div className="fixed bottom-3 right-3 z-[1000] flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-600 text-white shadow-lg text-xs font-bold max-w-[90vw]">
+      <div className="fixed bottom-3 right-3 z-[80] flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-600 text-white shadow-lg text-xs font-bold max-w-[90vw]">
         <WifiOff size={14} className="shrink-0" /> db-server offline
       </div>
     );
@@ -147,7 +147,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
   const events = (s.events || []).filter(e => e.id == null || !removed.has(e.id)).slice(0, 10);
 
   return (
-    <div className="fixed bottom-3 right-3 z-[1000] w-[min(92vw,340px)]">
+    <div className="fixed bottom-3 right-3 z-[80] w-[min(92vw,340px)]">
       {/* Expandable panel */}
       <AnimatePresence>
         {open && (

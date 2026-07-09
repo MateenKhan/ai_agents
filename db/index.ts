@@ -18,7 +18,7 @@ switch (cmd) {
 
   case 'search': {
     const query = args.join(' ');
-    if (!query) { console.error('Usage: npm run db:search -- "your query"'); process.exit(1); }
+    if (!query) { console.error('Usage: pnpm run db:search -- "your query"'); process.exit(1); }
 
     // Which project's index to search. Agents run scoped to a project; the runner injects
     // CODE_INDEX_PROJECT so a task in project X searches X's index, not the default one.
@@ -55,7 +55,7 @@ switch (cmd) {
 
   case 'blast': {
     const file = args[0];
-    if (!file) { console.error('Usage: npm run db:blast -- "filepath"'); process.exit(1); }
+    if (!file) { console.error('Usage: pnpm run db:blast -- "filepath"'); process.exit(1); }
     const radius = blastRadius(file, 3);
     console.log(`\nBlast radius for: ${file}`);
     console.log(`${radius.length} files affected:\n`);
@@ -65,29 +65,29 @@ switch (cmd) {
 
   case 'callers': {
     const file = args[0];
-    if (!file) { console.error('Usage: npm run db:callers -- "filepath"'); process.exit(1); }
+    if (!file) { console.error('Usage: pnpm run db:callers -- "filepath"'); process.exit(1); }
     callers(file).forEach(f => console.log(f));
     break;
   }
 
   case 'deps': {
     const file = args[0];
-    if (!file) { console.error('Usage: npm run db:deps -- "filepath"'); process.exit(1); }
+    if (!file) { console.error('Usage: pnpm run db:deps -- "filepath"'); process.exit(1); }
     dependencies(file).forEach(f => console.log(f));
     break;
   }
 
   case 'annotate': {
     const [file, ...noteParts] = args;
-    if (!file || !noteParts.length) { console.error('Usage: npm run db:annotate -- "filepath" "note text"'); process.exit(1); }
+    if (!file || !noteParts.length) { console.error('Usage: pnpm run db:annotate -- "filepath" "note text"'); process.exit(1); }
     annotate(file, noteParts.join(' '));
     break;
   }
 
   case 'ensure': {
     // Fast startup path: build ONLY if the DB is missing/empty.
-    // Never runs incremental embedding — that's manual (`npm run db:update`)
-    // or async on commit (post-commit hook), so `npm run dev` starts instantly.
+    // Never runs incremental embedding — that's manual (`pnpm run db:update`)
+    // or async on commit (post-commit hook), so `pnpm run dev` starts instantly.
     const name = DB_PATH.split(/[/\\]/).pop();
     if (!existsSync(DB_PATH)) {
       console.log(`${name} missing — running one-time full build...`);
@@ -98,7 +98,7 @@ switch (cmd) {
         console.log(`${name} empty — running one-time full build...`);
         await buildFull();
       } else {
-        console.log(`${name} OK (${s.files} files, ${s.nodes} nodes) — skipping embed. Refresh manually: npm run db:update`);
+        console.log(`${name} OK (${s.files} files, ${s.nodes} nodes) — skipping embed. Refresh manually: pnpm run db:update`);
       }
     }
     break;
@@ -150,11 +150,11 @@ switch (cmd) {
   default:
     console.log(`
 code-search — commands:
-  npm run db:build                          full rebuild
-  npm run db:update                         incremental (changed files only)
-  npm run db:search -- "query"              semantic search
-  npm run db:blast  -- "filepath"           blast radius (who imports this)
-  npm run db:stats                          DB stats
-  npm run db:annotate -- "filepath" "note"  add human note to file nodes
+  pnpm run db:build                          full rebuild
+  pnpm run db:update                         incremental (changed files only)
+  pnpm run db:search -- "query"              semantic search
+  pnpm run db:blast  -- "filepath"           blast radius (who imports this)
+  pnpm run db:stats                          DB stats
+  pnpm run db:annotate -- "filepath" "note"  add human note to file nodes
     `);
 }

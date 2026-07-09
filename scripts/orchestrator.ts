@@ -2,7 +2,7 @@
 // Headless orchestrator entry point.
 // The brain now lives in agentic-core; this file just builds the config, attaches
 // the owned memory (and, later, graphify / MinIO adapters), and starts the engine.
-// Run via: npx tsx --watch scripts/orchestrator.ts
+// Run via: pnpm exec tsx --watch scripts/orchestrator.ts
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { startOrchestrator, buildConfig, setConfig, createOwnedMemory, superpowersMethodology } from '../agentic/index.ts';

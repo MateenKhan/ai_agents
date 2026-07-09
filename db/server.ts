@@ -111,7 +111,7 @@ function ragAnswer(question: string, ctx: string, cwd: string): Promise<string> 
   });
 }
 
-import { getAllTasks, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, setProjectMaxConcurrency, getAgentDefaults, setAgentDefaults, type RunConfig } from './tasks.js';
+import { getAllTasks, getTask, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, setProjectReadiness, setProjectMaxConcurrency, getAgentDefaults, setAgentDefaults, type RunConfig } from './tasks.js';
 
 // ── project scoping helpers ────────────────────────────────────────────────────
 // Every project-scoped route reads ?project=<id> (default 'default'); body routes may
@@ -140,7 +140,7 @@ function pkgManager(root: string): 'pnpm' | 'yarn' | 'npm' | 'bun' {
   if (existsSync(join(root, 'pnpm-lock.yaml'))) return 'pnpm';
   if (existsSync(join(root, 'yarn.lock'))) return 'yarn';
   if (existsSync(join(root, 'bun.lockb'))) return 'bun';
-  return 'npm';
+  return 'pnpm'; // default to pnpm (not npm): worktree-heavy flow needs pnpm's shared store, not npm's per-worktree copies
 }
 
 /** File-based stack detection. Returns a best-guess config + a human label, or null. */
@@ -340,7 +340,7 @@ function rebuildIndex(reason: string, projectId: string = 'default'): void {
   setActivity(projectId, 'indexing', 'Reading & remembering repo', root);
   indexLogs.set(projectId, [`$ db:build  (${root})`, 'Reading & remembering the repo…']);
   console.warn(`[db-server] 🛠 code index ${reason} [${projectId}] — rebuilding ${root} via db:build (DB_FILE=${env.DB_FILE}); /search paused`);
-  const p = spawn('npm', ['run', 'db:build'], { cwd: process.cwd(), shell: true, stdio: ['ignore', 'pipe', 'pipe'], env });
+  const p = spawn('pnpm', ['run', 'db:build'], { cwd: process.cwd(), shell: true, stdio: ['ignore', 'pipe', 'pipe'], env });
   p.stdout?.on('data', d => pushIndexLog(projectId, d.toString()));
   p.stderr?.on('data', d => pushIndexLog(projectId, d.toString()));
   const done = (msg: string, ok: boolean) => { indexRebuilding.set(projectId, false); clearActivity(projectId, 'indexing'); pushIndexLog(projectId, ok ? '✓ Index rebuilt — agents can now search this repo' : msg); try { resetDbFor(projectId); } catch { /* noop */ } console.log(`[db-server] ${msg}`); };
@@ -400,50 +400,96 @@ function teardownPreview(taskId: string): void {
 function startPreview(taskId: string): void {
   const existing = previews.get(taskId);
   if (existing && existing.status !== 'error') return; // already building/ready
-  const wt = join(process.cwd(), '.worktrees', taskId);
+
+  // PROJECT-AWARE: the worktree lives under the task's OWN project repo (honors repoPath), not
+  // the host. The build/serve commands come from the project's detected run-config (install /
+  // build), and the isolated backend is spawned ONLY if the cloned app actually has one — a
+  // frontend-only clone (e.g. a Vite SPA) just gets install → build → vite preview.
+  const pid = getTask(taskId)?.projectId || 'default';
+  const root = projectRepoPath(pid);
+  const wt = join(root, '.worktrees', taskId);
   if (!existsSync(wt)) { previews.set(taskId, { status: 'error', error: 'worktree not found — is the task in review?', startedAt: Date.now() }); return; }
 
-  // Junction-link node_modules from the main repo (worktrees don't include it).
-  try { const nm = join(wt, 'node_modules'); if (!existsSync(nm)) symlinkSync(join(process.cwd(), 'node_modules'), nm, 'junction'); }
-  catch (e: any) { console.warn(`[db-server] preview node_modules link: ${e?.message}`); }
+  const rc = (getProject(pid)?.runConfig || {}) as Partial<RunConfig>;
+
+  const rootNm = join(root, 'node_modules');
+  // Point the worktree at the PROJECT's real node_modules. Worktrees don't carry their own, and
+  // any node_modules already in one is either a stale junction from a prior run or a partial dir
+  // that lets Node wrongly walk UP to the host's modules — so drop it and (re)link the project's.
+  const linkNodeModules = (): void => {
+    try {
+      const nm = join(wt, 'node_modules');
+      if (existsSync(nm)) { try { rmSync(nm, { recursive: true, force: true }); } catch { /* busy */ } }
+      if (existsSync(rootNm)) symlinkSync(rootNm, nm, 'junction');
+    } catch (e: any) { console.warn(`[db-server] preview node_modules link: ${e?.message}`); }
+  };
 
   const port = nextPreviewPort++;      // frontend (static) port
-  const apiPort = nextPreviewPort++;   // isolated backend port
-  // Capture the build/serve/backend output to a log so a FAILED build is diagnosable
+  const apiPort = nextPreviewPort++;   // isolated backend port (only used if the app has a backend)
+  // Capture the install/build/serve output to a log so a FAILED step is diagnosable
   // (it also shows up as a `preview-<id>` chip in the Logs tab).
   const logName = `preview-${taskId}`;
   const previewLog = join(LOGS_DIR, `${logName}.log`);
-  try { writeFileSync(previewLog, `── PREVIEW BUILD ${new Date().toISOString()} · ${taskId} · ui ${port} · api ${apiPort} ──\n`); } catch { /* dir missing */ }
+  try { writeFileSync(previewLog, `── PREVIEW ${new Date().toISOString()} · ${taskId} · ui ${port} · api ${apiPort} · ${wt} ──\n`); } catch { /* dir missing */ }
   const toLog = (): any => { try { return openSync(previewLog, 'a'); } catch { return 'ignore'; } };
   const tail = (): string => { try { return readFileSync(previewLog, 'utf-8').split('\n').filter(Boolean).slice(-15).join('\n'); } catch { return ''; } };
+  const logLine = (m: string) => { try { appendFileSync(previewLog, m.endsWith('\n') ? m : m + '\n'); } catch { /* */ } };
   previews.set(taskId, { status: 'building', port, apiPort, logName, startedAt: Date.now() });
-  console.log(`[db-server] 🛠 building preview for ${taskId} — ui ${port}, api ${apiPort} (log: ${logName})`);
+  console.log(`[db-server] 🛠 building preview for ${taskId} in ${wt} — ui ${port}, api ${apiPort} (log: ${logName})`);
 
-  const build = spawn('npx', ['vite', 'build'], { cwd: wt, shell: true, stdio: ['ignore', toLog(), toLog()] });
-  previews.set(taskId, { status: 'building', port, apiPort, logName, buildProc: build, startedAt: Date.now() });
+  const setErr = (error: string) => { previews.set(taskId, { status: 'error', error, logTail: tail(), logName, port, apiPort, startedAt: Date.now() }); console.warn(`[db-server] ✗ preview ${taskId}: ${error} — see ${logName}.log`); };
+  // Run a shell command in the worktree, streaming to the preview log.
+  const shell = (cmd: string, cb: (code: number | null) => void) => {
+    logLine(`\n$ ${cmd}`);
+    const p = spawn(cmd, { cwd: wt, shell: true, stdio: ['ignore', toLog(), toLog()] });
+    p.on('error', (e: any) => setErr(`failed to start "${cmd}": ${e?.message}`));
+    p.on('exit', cb);
+    return p;
+  };
 
-  build.on('exit', (code) => {
-    if (code !== 0) {
-      previews.set(taskId, { status: 'error', error: `vite build failed (exit ${code})`, logTail: tail(), logName, port, apiPort, startedAt: Date.now() });
-      console.warn(`[db-server] ✗ preview build failed for ${taskId} (exit ${code}) — see ${logName}.log`);
-      return;
+  const hasBackend = existsSync(join(wt, 'db', 'server.ts'));
+  const buildCmd = (rc.build && rc.build.trim()) || 'pnpm exec vite build';
+  const installCmd = (rc.install && rc.install.trim()) || '';
+
+  const serveStep = () => {
+    // Frontend-only clone → nothing to repoint or run. Dashboard-style app → run its isolated
+    // backend on apiPort and repoint the bundle's API URL at it.
+    let backend: any = undefined;
+    if (hasBackend) {
+      try { repointApi(join(wt, 'dist'), previewBase(apiPort)); } catch (e: any) { console.warn(`[db-server] repoint: ${e?.message}`); }
+      backend = spawn('pnpm', ['exec', 'tsx', 'db/server.ts'], { cwd: wt, shell: true, stdio: ['ignore', toLog(), toLog()], env: { ...process.env, DB_SERVER_PORT: String(apiPort), DB_FILE: 'local.db' } });
     }
-    // Repoint the built bundle's API calls to the isolated preview backend (the URL is a
-    // literal in the bundle → swap the port), so no frontend source refactor is needed.
-    try { repointApi(join(wt, 'dist'), previewBase(apiPort)); } catch (e: any) { console.warn(`[db-server] repoint: ${e?.message}`); }
-    // Isolated backend: cwd = worktree → its OWN db/ copy (separate files), NEVER the real
-    // tasks.db. Runs the branch's server code with zero DB contention on the live board.
-    const backend = spawn('npx', ['tsx', 'db/server.ts'], { cwd: wt, shell: true, stdio: ['ignore', toLog(), toLog()], env: { ...process.env, DB_SERVER_PORT: String(apiPort), DB_FILE: 'local.db' } });
-    const serve = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], { cwd: wt, shell: true });
+    const serve = spawn('pnpm', ['exec', 'vite', 'preview', '--port', String(port), '--strictPort'], { cwd: wt, shell: true });
     let ready = false;
-    const markReady = () => { if (ready) return; ready = true; previews.set(taskId, { status: 'ready', url: previewBase(port), port, apiPort, logName, proc: serve, backendProc: backend, startedAt: Date.now() }); console.log(`[db-server] ✅ preview ready for ${taskId} → ${previewBase(port)} (api ${apiPort})`); };
+    const markReady = () => { if (ready) return; ready = true; previews.set(taskId, { status: 'ready', url: previewBase(port), port, apiPort, logName, proc: serve, backendProc: backend, startedAt: Date.now() }); console.log(`[db-server] ✅ preview ready for ${taskId} → ${previewBase(port)}`);
+      // A green preview satisfies the "preview verified" leg of the project readiness gate.
+      try { setProjectReadiness(pid, { previewVerifiedAt: new Date().toISOString() }); } catch { /* project gone */ } };
     const onData = (d: any) => { try { appendFileSync(previewLog, String(d)); } catch { /* */ } if (/localhost:\d+/.test(String(d))) markReady(); };
     serve.stdout?.on('data', onData); serve.stderr?.on('data', onData);
+    serve.on('error', (e: any) => setErr(`vite preview failed to start: ${e?.message}`));
     setTimeout(markReady, 5000); // fallback: preview + backend bind fast
     setTimeout(() => teardownPreview(taskId), PREVIEW_TTL_MS);
-    serve.on('exit', () => { const p = previews.get(taskId); if (p?.proc === serve) { try { backend.kill(); } catch { /* gone */ } previews.delete(taskId); } });
-  });
-  build.on('error', (e: any) => previews.set(taskId, { status: 'error', error: `build failed to start: ${e?.message}`, logTail: tail(), logName, startedAt: Date.now() }));
+    serve.on('exit', () => { const p = previews.get(taskId); if (p?.proc === serve) { try { backend?.kill(); } catch { /* gone */ } previews.delete(taskId); } });
+  };
+
+  const buildStep = () => {
+    linkNodeModules(); // point the worktree at the project's real (now-installed) node_modules
+    const build = shell(buildCmd, (code) => { if (code !== 0) { setErr(`build failed (exit ${code}) — cmd: ${buildCmd}`); return; } serveStep(); });
+    previews.set(taskId, { status: 'building', port, apiPort, logName, buildProc: build, startedAt: Date.now() });
+  };
+
+  // Ensure the PROJECT ITSELF is installed once (the "pnpm install after cloning" step): if the
+  // repo root has no node_modules, run its install command AT THE ROOT so every worktree can link
+  // it. Runs in the root (cwd) so pnpm's symlinked store resolves correctly for the whole repo.
+  if (!existsSync(rootNm) && installCmd) {
+    logLine(`(project not installed — running "${installCmd}" at repo root ${root})`);
+    const inst = spawn(installCmd, { cwd: root, shell: true, stdio: ['ignore', toLog(), toLog()] });
+    inst.on('error', (e: any) => setErr(`install failed to start "${installCmd}": ${e?.message}`));
+    inst.on('exit', (code) => { if (code !== 0) { setErr(`install failed (exit ${code}) — cmd: ${installCmd}. The project may need manual setup.`); return; } buildStep(); });
+    previews.set(taskId, { status: 'building', port, apiPort, logName, buildProc: inst, startedAt: Date.now() });
+  } else {
+    buildStep();
+  }
 }
 
 /** Repoint the built bundle's hard-coded API URL at the isolated preview backend. */
@@ -751,7 +797,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         step: 'Orchestrator',
         status: orchDown ? 'warn' : 'ok',
         detail: orchDown
-          ? `DOWN (${hbDetail}) — nothing will run until you start it: npm run db:orchestrator`
+          ? `DOWN (${hbDetail}) — nothing will run until you start it: pnpm run db:orchestrator`
           : `${hbDetail} · alive — reset jobs dispatch in a few seconds`,
       });
 
@@ -2201,8 +2247,47 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         build: String(c.build || '').trim(), test: String(c.test || '').trim(),
         cwd: String(c.cwd || '').trim() || undefined,
       };
-      setProjectRunConfig(pid, clean);
-      res.end(JSON.stringify({ ok: true, config: clean }));
+      // A manual PUT is a user action → mark the run-config confirmed (readiness gate leg 2).
+      // Callers that only cache an auto-detection should pass {confirm:false}.
+      const confirm = b.confirm !== false;
+      setProjectRunConfig(pid, clean, confirm);
+      res.end(JSON.stringify({ ok: true, config: clean, confirmed: confirm }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // GET /project/readiness?project= → whether the project may dispatch tasks, and why not.
+  if (req.method === 'GET' && req.url?.startsWith('/project/readiness')) {
+    try {
+      const pid = projectIdOf(req);
+      const p = getProject(pid);
+      const repo = !!p?.repoPath && existsSync(p.repoPath) && existsSync(join(p.repoPath, '.git'));
+      const runConfig = !!p?.runConfigConfirmed;
+      const preview = !!p?.previewVerifiedAt;
+      const bypass = !!p?.readinessBypass;
+      const reasons: string[] = [];
+      if (!repo) reasons.push('no cloned git repo');
+      if (!runConfig) reasons.push('run-config not confirmed');
+      if (!preview) reasons.push('preview not verified');
+      res.end(JSON.stringify({ ok: true, ready: bypass || reasons.length === 0, bypass, checks: { repo, runConfig, preview }, previewVerifiedAt: p?.previewVerifiedAt || null, reasons }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // POST /project/readiness/bypass { noExistingProject, notExecutable } → allow dispatch without
+  // the full setup, but ONLY when the user confirms BOTH: there is no existing project to clone
+  // AND the project is not executable (so a preview cannot apply). Both must be true or it 400s.
+  if (req.method === 'POST' && req.url?.startsWith('/project/readiness/bypass')) {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const pid = projectIdOf(req, b);
+      if (b.noExistingProject !== true || b.notExecutable !== true) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: 'bypass requires confirming BOTH: noExistingProject=true AND notExecutable=true' }));
+        return;
+      }
+      setProjectReadiness(pid, { readinessBypass: true });
+      res.end(JSON.stringify({ ok: true, bypass: true }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }

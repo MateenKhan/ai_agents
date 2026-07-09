@@ -49,9 +49,9 @@ export function buildConfig(cwd: string = process.cwd()): AgenticConfig {
       browserTool: (process.env.QA_BROWSER_TOOL as 'playwright' | 'browser-use' | 'chrome-mcp') || 'playwright',
     },
     checks: {
-      typecheck: process.env.CHECK_TYPECHECK ?? 'npx tsc --noEmit',
-      build: process.env.CHECK_BUILD ?? 'npm run build',
-      test: process.env.CHECK_TEST ?? 'npm test',
+      typecheck: process.env.CHECK_TYPECHECK ?? 'pnpm exec tsc --noEmit',
+      build: process.env.CHECK_BUILD ?? 'pnpm run build',
+      test: process.env.CHECK_TEST ?? 'pnpm test',
       lint: process.env.CHECK_LINT || undefined,
     },
   };

@@ -16,7 +16,8 @@ const args = process.argv.slice(2);
 const cmd = args[0];
 
 const isWin = process.platform === 'win32';
-const npm = isWin ? 'npm.cmd' : 'npm';
+// pnpm only — worktree-heavy workflow, and npm's per-worktree node_modules copies blow up disk.
+const pnpm = isWin ? 'pnpm.cmd' : 'pnpm';
 
 // Files copied into a scaffolded app. Runtime junk (node_modules, dist, *.db,
 // .agent_logs, .worktrees) is skipped via the filter below even if present locally.
@@ -49,12 +50,12 @@ function help() {
 AI-Agents — multi-agent task orchestrator
 
 Usage:
-  npx @airtajal/ai-agents init [dir]   Scaffold the app into ./dir (default: ai-agents)
+  pnpm dlx @airtajal/ai-agents init [dir]   Scaffold the app into ./dir (default: ai-agents)
   ai-agents start                      Boot frontend + db-server + orchestrator (in an app dir)
   ai-agents --version                  Print version
 
 After init:
-  cd <dir> && npm install && npm run agents   # then open http://localhost:6951
+  cd <dir> && pnpm install && pnpm run agents   # then open http://localhost:6951
 `);
 }
 
@@ -95,9 +96,9 @@ function init(rawDir) {
 
 Next:
   cd ${rawDir || 'ai-agents'}
-  npm install
+  pnpm install
   cp .env.example .env      # defaults are fine locally
-  npm run agents            # boots all 3 processes
+  pnpm run agents           # boots all 3 processes
 
 Then open http://localhost:6951
 `);
@@ -115,7 +116,7 @@ function start() {
     console.error('✗ This folder is not an AI-Agents app (no `agents` script). Run `ai-agents init <dir>` first.');
     process.exit(1);
   }
-  const child = spawn(npm, ['run', 'agents'], { cwd: process.cwd(), stdio: 'inherit' });
+  const child = spawn(pnpm, ['run', 'agents'], { cwd: process.cwd(), stdio: 'inherit' });
   child.on('exit', (code) => process.exit(code ?? 0));
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig));
 }

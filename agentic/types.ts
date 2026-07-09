@@ -233,9 +233,9 @@ export interface AgenticConfig {
    *  browser pass. Project-specific, so they live in config — the package runs in
    *  many repos with different commands. Empty command = skip that check. */
   checks?: {
-    typecheck?: string;   // e.g. 'npx tsc --noEmit'
-    build?: string;       // e.g. 'npm run build'
-    test?: string;        // e.g. 'npm test'
+    typecheck?: string;   // e.g. 'pnpm exec tsc --noEmit'
+    build?: string;       // e.g. 'pnpm run build'
+    test?: string;        // e.g. 'pnpm test'
     lint?: string;
   };
 }

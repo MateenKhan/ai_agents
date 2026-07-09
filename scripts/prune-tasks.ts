@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // prune-tasks.ts — remove tasks that lack GWT scenarios (old / free-text format),
 // keeping only properly-formatted tasks. Run with the pipeline STOPPED.
-//   npx tsx scripts/prune-tasks.ts            → dry run (lists what it would delete)
-//   npx tsx scripts/prune-tasks.ts --apply    → actually delete
+//   pnpm exec tsx scripts/prune-tasks.ts            → dry run (lists what it would delete)
+//   pnpm exec tsx scripts/prune-tasks.ts --apply    → actually delete
 // Paths are all process.cwd()-relative via the config, so this runs on Ubuntu too.
 // ─────────────────────────────────────────────────────────────────────────────
 import { buildConfig, setConfig } from '../agentic/index.ts';

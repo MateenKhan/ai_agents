@@ -148,7 +148,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastCtx.Provider value={api}>
       {children}
       {/* Stack: bottom-right. Newest at the bottom; older ones move up as new arrive. */}
-      <div className="fixed z-[2000] bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 left-4 sm:left-auto sm:right-6 flex flex-col gap-2 items-stretch sm:items-end pointer-events-none">
+      <div className="fixed z-[85] bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 left-4 sm:left-auto sm:right-6 flex flex-col gap-2 items-stretch sm:items-end pointer-events-none">
         <AnimatePresence initial={false}>
           {toasts.map(t => <ToastRow key={t.id} t={t} onDismiss={dismiss} />)}
         </AnimatePresence>

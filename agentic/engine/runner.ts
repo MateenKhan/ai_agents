@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { spawn, execSync, type ChildProcess } from 'node:child_process';
-import { mkdirSync, existsSync, writeFileSync, appendFileSync } from 'node:fs';
+import { mkdirSync, existsSync, writeFileSync, appendFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RunResult, FailureKind, WorktreeMode, AgentRole } from '../types';
 import { getConfig } from '../runtime-context';
@@ -59,11 +59,12 @@ export function isGitRepo(cwd: string = process.cwd()): boolean {
 function projectRootFor(taskId: string): string {
   try {
     const t = getTask(taskId);
-    const pid = t?.projectId || 'default';
-    if (pid && pid !== 'default') {
-      const proj = getProject(pid);
-      if (proj?.repoPath && existsSync(proj.repoPath)) return proj.repoPath;
-    }
+    const proj = getProject(t?.projectId || 'default');
+    // Honor a configured repoPath for ANY project, including 'default'. The seeded default's
+    // repoPath IS the host cwd, so single-project installs stay byte-for-byte unchanged; a
+    // default explicitly pointed at another repo (as in a renamed/retargeted project) now
+    // isolates into THAT repo — matching how the code index (projectRepoPath) already resolves.
+    if (proj?.repoPath && existsSync(proj.repoPath)) return proj.repoPath;
   } catch { /* missing project/db → host cwd */ }
   return process.cwd();
 }
@@ -76,6 +77,21 @@ function worktreeDirFor(taskId: string): { root: string; dir: string } {
   const root = projectRootFor(taskId);
   const dir = root === process.cwd() ? getConfig().paths.worktreesDir : join(root, '.worktrees');
   return { root, dir };
+}
+
+/** Junction-link the project's node_modules into a fresh worktree. `git worktree add` never
+ *  copies node_modules, so without this the agent's `pnpm run build`/`test` checks would resolve
+ *  deps by walking UP to the host repo — fragile and wrong. The project is installed once (the
+ *  readiness gate requires a verified preview, which runs `pnpm install` at the root), so here we
+ *  only LINK — space-efficient (pnpm's store is shared) and instant. Best-effort. */
+function linkNodeModules(root: string, worktree: string): void {
+  try {
+    if (worktree === root) return;
+    const rootNm = join(root, 'node_modules');
+    const nm = join(worktree, 'node_modules');
+    if (!existsSync(rootNm) || existsSync(nm)) return; // nothing to link, or already present
+    symlinkSync(rootNm, nm, 'junction');
+  } catch { /* link is best-effort — the agent can still install if it must */ }
 }
 
 /** Resolve the working directory for a run, creating a worktree if the mode needs one. */
@@ -91,18 +107,20 @@ function resolveCwd(taskId: string, mode: WorktreeMode): string {
     if (!existsSync(path)) {
       try { git(`worktree add --detach "${path}" HEAD`, root); } catch { return root; }
     }
+    linkNodeModules(root, path);
     return path;
   }
 
   // create | reuse → the dev's branch worktree task/<id>
   const path = join(dir, taskId);
-  if (existsSync(path)) return path; // reuse (or a retry of the same task)
+  if (existsSync(path)) { linkNodeModules(root, path); return path; } // reuse (or a retry of the same task)
   if (mode === 'reuse') {
     // Expected to exist from the dev stage; if missing, fall back to creating it.
-    try { git(`worktree add "${path}" "task/${taskId}"`, root); return path; } catch { /* create below */ }
+    try { git(`worktree add "${path}" "task/${taskId}"`, root); linkNodeModules(root, path); return path; } catch { /* create below */ }
   }
   try { git(`worktree add "${path}" -b "task/${taskId}"`, root); }
   catch { try { git(`worktree add "${path}" "task/${taskId}"`, root); } catch { return root; } }
+  linkNodeModules(root, path);
   return path;
 }
 

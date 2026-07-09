@@ -128,6 +128,13 @@ export function migrate(conn: DatabaseSync): void {
     // ── PER-PROJECT CONCURRENCY (additive) ── max simultaneous agents for this project.
     // NULL = inherit the global default (board_settings 'agent_defaults'); 0 = unlimited.
     () => conn.exec(`ALTER TABLE projects ADD COLUMN maxConcurrency INTEGER`),
+    // ── PROJECT READINESS (additive) ── a project may only dispatch tasks once it's set up:
+    // a cloned git repo, a user-confirmed run-config, and a verified (green) preview. The gate
+    // is bypassable ONLY when the user confirms BOTH: there is no existing project to clone AND
+    // the project is not executable (so a preview can't apply). See orchestrator dispatch gate.
+    () => conn.exec(`ALTER TABLE projects ADD COLUMN runConfigConfirmed INTEGER`),
+    () => conn.exec(`ALTER TABLE projects ADD COLUMN previewVerifiedAt TEXT`),
+    () => conn.exec(`ALTER TABLE projects ADD COLUMN readinessBypass INTEGER`),
     // Seed the always-present 'default' project (repoPath = the host repo).
     () => conn.prepare(
       `INSERT OR IGNORE INTO projects (id,name,repoPath,emoji,createdAt) VALUES ('default','Default',?,'📦',?)`
@@ -409,9 +416,9 @@ export function setCodeIndexConfig(cfg: CodeIndexConfig, projectId: string = 'de
 // ── Projects ── every task/token/index is scoped to one; 'default' always exists.
 /** How to install/run/build/test a project's cloned repo. `cwd` is an optional subdir. */
 export interface RunConfig { install?: string; run?: string; build?: string; test?: string; cwd?: string }
-export interface Project { id: string; name: string; repoPath?: string; emoji?: string; createdAt: string; runConfig?: RunConfig; branch?: string; cloneUrl?: string; maxConcurrency?: number | null }
+export interface Project { id: string; name: string; repoPath?: string; emoji?: string; createdAt: string; runConfig?: RunConfig; branch?: string; cloneUrl?: string; maxConcurrency?: number | null; runConfigConfirmed?: boolean; previewVerifiedAt?: string | null; readinessBypass?: boolean }
 
-const PROJECT_COLS = `id,name,repoPath,emoji,createdAt,runConfig,branch,cloneUrl,maxConcurrency`;
+const PROJECT_COLS = `id,name,repoPath,emoji,createdAt,runConfig,branch,cloneUrl,maxConcurrency,runConfigConfirmed,previewVerifiedAt,readinessBypass`;
 export function listProjects(): Project[] {
   return (db().prepare(`SELECT ${PROJECT_COLS} FROM projects ORDER BY (id='default') DESC, createdAt ASC`).all() as any[]).map(rowToProject) as Project[];
 }
@@ -419,15 +426,29 @@ function rowToProject(r: any): Project | null {
   if (!r) return null;
   let runConfig: RunConfig | undefined;
   if (r.runConfig) { try { runConfig = JSON.parse(r.runConfig); } catch { /* ignore malformed */ } }
-  return { id: r.id, name: r.name, repoPath: r.repoPath ?? undefined, emoji: r.emoji ?? undefined, createdAt: r.createdAt, runConfig, branch: r.branch ?? undefined, cloneUrl: r.cloneUrl ?? undefined, maxConcurrency: r.maxConcurrency ?? null };
+  return { id: r.id, name: r.name, repoPath: r.repoPath ?? undefined, emoji: r.emoji ?? undefined, createdAt: r.createdAt, runConfig, branch: r.branch ?? undefined, cloneUrl: r.cloneUrl ?? undefined, maxConcurrency: r.maxConcurrency ?? null, runConfigConfirmed: !!r.runConfigConfirmed, previewVerifiedAt: r.previewVerifiedAt ?? null, readinessBypass: !!r.readinessBypass };
 }
 export function getProject(id: string): Project | null {
   return rowToProject(db().prepare(`SELECT ${PROJECT_COLS} FROM projects WHERE id = ?`).get(id));
 }
-/** Set (or clear) a project's run config. Pass undefined to clear. */
-export function setProjectRunConfig(id: string, cfg: RunConfig | undefined): void {
+/** Set (or clear) a project's run config. Pass undefined to clear. When `confirmed` (a user
+ *  explicitly saved/accepted it, not a background auto-detect), also mark the readiness flag. */
+export function setProjectRunConfig(id: string, cfg: RunConfig | undefined, confirmed = false): void {
   if (!getProject(id)) throw new Error('project not found');
   db().prepare(`UPDATE projects SET runConfig = ? WHERE id = ?`).run(cfg ? JSON.stringify(cfg) : null, id);
+  if (confirmed && cfg) db().prepare(`UPDATE projects SET runConfigConfirmed = 1 WHERE id = ?`).run(id);
+}
+
+/** Readiness flags gating task dispatch (see the orchestrator gate). Each field is optional;
+ *  only the provided ones are updated. `readinessBypass` must ONLY be set true after the user
+ *  confirms both "no existing project" and "not executable". */
+export function setProjectReadiness(id: string, patch: { runConfigConfirmed?: boolean; previewVerifiedAt?: string | null; readinessBypass?: boolean }): void {
+  const cur = getProject(id);
+  if (!cur) throw new Error('project not found');
+  const rcc = patch.runConfigConfirmed !== undefined ? (patch.runConfigConfirmed ? 1 : 0) : (cur.runConfigConfirmed ? 1 : 0);
+  const pv = patch.previewVerifiedAt !== undefined ? patch.previewVerifiedAt : (cur.previewVerifiedAt ?? null);
+  const rb = patch.readinessBypass !== undefined ? (patch.readinessBypass ? 1 : 0) : (cur.readinessBypass ? 1 : 0);
+  db().prepare(`UPDATE projects SET runConfigConfirmed = ?, previewVerifiedAt = ?, readinessBypass = ? WHERE id = ?`).run(rcc, pv, rb, id);
 }
 /** Set a project's max concurrent agents. null → inherit the global default; 0 → unlimited. */
 export function setProjectMaxConcurrency(id: string, n: number | null): void {
