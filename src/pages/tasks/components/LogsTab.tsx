@@ -138,6 +138,7 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
         liveControl
         tailControl
         copyable
+        controlsKey="agent-logs"
         onRefresh={() => { void fetchLines(); loadFiles(); }}
         onClear={active ? clearLog : undefined}
         empty={active ? 'Log is empty.' : 'Select an agent log above.'}

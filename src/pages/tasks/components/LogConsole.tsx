@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Tooltip } from './Tooltip';
-import { RefreshCw, Pause, Play, Copy, Check, ArrowDownToLine, Clock, Trash2 } from 'lucide-react';
+import { RefreshCw, Pause, Play, Copy, Check, ArrowDownToLine, Clock, Trash2, SlidersHorizontal } from 'lucide-react';
 
 /**
  * LogConsole — the ONE log/terminal component used everywhere in the app.
@@ -43,6 +43,9 @@ export interface LogConsoleProps {
   onRefresh?: () => void;
   /** Truncate the underlying log. Destructive but reversible-by-time: agents rewrite it. */
   onClear?: () => void;
+  /** Enable the per-control "hide" menu, persisted under this localStorage key. Omit on
+   *  compact consoles (git clone/index boxes) that only ever show one or two controls. */
+  controlsKey?: string;
 
   // ── live (controlled when onLiveChange given, else internal) ──
   onLiveChange?: (v: boolean) => void;
@@ -74,6 +77,20 @@ const PREFIX: Record<string, { tag: string; color: string; noise?: boolean }> = 
   spawned: { tag: 'run', color: 'text-slate-500' },
 };
 
+/** Toolbar controls that can be hidden. `on` says whether the caller enabled it at all —
+ *  a console that never passes `copyable` should not offer to hide Copy. */
+const TOOLBAR_CONTROLS: Array<{ id: string; label: string; on: (p: Record<string, unknown>) => boolean }> = [
+  { id: 'search',  label: 'Search',     on: p => !!p.searchable },
+  { id: 'history', label: 'History',    on: p => !!p.historyControl },
+  { id: 'live',    label: 'Live',       on: p => !!p.liveControl },
+  { id: 'tail',    label: 'Tail',       on: p => !!p.tailControl },
+  { id: 'time',    label: 'Date/Time',  on: p => !!p.timeToggle },
+  { id: 'size',    label: 'Font size',  on: p => !!p.sizeControls },
+  { id: 'copy',    label: 'Copy',       on: p => !!p.copyable },
+  { id: 'clear',   label: 'Clear',      on: p => !!p.onClear },
+  { id: 'refresh', label: 'Refresh',    on: p => !!p.onRefresh },
+];
+
 interface Parsed { type: 'divider' | 'line' | 'msg'; tag: string; color: string; text: string; noise: boolean; time: string; date: string }
 
 /** Turn one raw log line into a typed, colorized row. Peels an optional [ISO]/[HH:MM:SS] stamp. */
@@ -98,7 +115,7 @@ function parseLine(msg: string): Parsed {
 
 export function LogConsole({
   lines, text, title, live, footer, toolbarLeft,
-  searchable, timeToggle, sizeControls, historyControl, liveControl, tailControl, copyable, onRefresh, onClear,
+  searchable, timeToggle, sizeControls, historyControl, liveControl, tailControl, copyable, onRefresh, onClear, controlsKey,
   onLiveChange, historyOptions = [200, 400, 1000, 5000], defaultHistory = 400, onHistoryLengthChange,
   parsed = false, bare, fill, maxHeight = 'max-h-52', empty = '…', className = '',
 }: LogConsoleProps) {
@@ -112,6 +129,22 @@ export function LogConsole({
   const [history, setHistory] = useState(defaultHistory);
   const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState(false);
+
+  // Per-control visibility, same idea as hiding a tab: the toolbar is dense and not every
+  // console needs every control. Persisted so the choice survives a reload.
+  const lsKey = controlsKey ? `piranha.logconsole.hidden.${controlsKey}` : null;
+  const [hidden, setHidden] = useState<Set<string>>(() => {
+    if (!lsKey) return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem(lsKey) || '[]')); } catch { return new Set(); }
+  });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const show = (id: string) => !hidden.has(id);
+  const toggleControl = (id: string) => setHidden(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    if (lsKey) { try { localStorage.setItem(lsKey, JSON.stringify([...next])); } catch { /* quota */ } }
+    return next;
+  });
 
   const liveOn = onLiveChange ? !!live : internalLive;
   const setLive = (v: boolean) => { onLiveChange ? onLiveChange(v) : setInternalLive(v); };
@@ -209,7 +242,7 @@ export function LogConsole({
       )}
       {toolbarLeft}
       <div className="flex items-center gap-2 ml-auto">
-        {searchable && (
+        {searchable && show('search') && (
           <input
             value={filter}
             onChange={e => setFilter(e.target.value)}
@@ -218,7 +251,7 @@ export function LogConsole({
             className="px-3 min-h-control text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500 placeholder:text-slate-400 w-40"
           />
         )}
-        {historyControl && (
+        {historyControl && show('history') && (
           <select
             value={history}
             onChange={e => { const n = Number(e.target.value); setHistory(n); onHistoryLengthChange?.(n); }}
@@ -229,7 +262,7 @@ export function LogConsole({
             {historyOptions.map(n => <option key={n} value={n}>{n >= 1000 ? `${n / 1000}k` : n} lines</option>)}
           </select>
         )}
-        {liveControl && (
+        {liveControl && show('live') && (
           <Tooltip label={liveOn ? 'Live tail on' : 'Paused'}><button
             onClick={() => setLive(!liveOn)}
             data-feature-id="logs-live-toggle"
@@ -238,7 +271,7 @@ export function LogConsole({
             {liveOn ? <><Pause size={14} /> Live</> : <><Play size={14} /> Paused</>}
           </button></Tooltip>
         )}
-        {tailControl && (
+        {tailControl && show('tail') && (
           <Tooltip label={autoScroll ? 'Auto-scroll ON — following the tail' : 'Auto-scroll OFF'}><button
             onClick={toggleTail}
             data-feature-id="logs-tail-toggle"
@@ -247,7 +280,7 @@ export function LogConsole({
             <ArrowDownToLine size={14} /> Tail
           </button></Tooltip>
         )}
-        {timeToggle && (
+        {timeToggle && show('time') && (
           <Tooltip label={showTime ? 'Per-line date + time shown' : 'Per-line date + time hidden'}><button
             onClick={() => setShowTime(v => !v)}
             data-feature-id="logs-time-toggle"
@@ -256,14 +289,14 @@ export function LogConsole({
             <Clock size={14} /> Date/Time
           </button></Tooltip>
         )}
-        {sizeControls && (
+        {sizeControls && show('size') && (
           <div className="flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden" title="Font size">
             <button onClick={() => setFontSize(s => Math.max(10, s - 1))} className="px-2.5 min-h-control text-sm font-bold text-slate-600 hover:bg-slate-50">A−</button>
             <span className="px-1 text-[10px] text-slate-400 font-mono select-none">{fontSize}</span>
             <button onClick={() => setFontSize(s => Math.min(22, s + 1))} className="px-2.5 min-h-control text-base font-bold text-slate-600 hover:bg-slate-50">A+</button>
           </div>
         )}
-        {copyable && (
+        {copyable && show('copy') && (
           <Tooltip label="Copy the visible log to clipboard"><button
             onClick={copy}
             className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
@@ -271,7 +304,7 @@ export function LogConsole({
             {copied ? <><Check size={14} className="text-emerald-600" /> Copied</> : <><Copy size={14} /> Copy</>}
           </button></Tooltip>
         )}
-        {onClear && (
+        {onClear && show('clear') && (
           <Tooltip label="Clear this log"><button
             onClick={onClear}
             data-feature-id="logs-clear"
@@ -280,7 +313,7 @@ export function LogConsole({
             <Trash2 size={14} />
           </button></Tooltip>
         )}
-        {onRefresh && (
+        {onRefresh && show('refresh') && (
           <Tooltip label="Refresh"><button
             onClick={onRefresh}
             data-feature-id="logs-refresh"
@@ -288,6 +321,41 @@ export function LogConsole({
           >
             <RefreshCw size={14} />
           </button></Tooltip>
+        )}
+
+        {/* Per-control visibility — the toolbar is dense, and not every console needs every
+            control. Same mental model as hiding a tab; the choice is persisted. */}
+        {lsKey && (
+          <div className="relative">
+            <Tooltip label="Toolbar options"><button
+              onClick={() => setMenuOpen(o => !o)}
+              aria-expanded={menuOpen}
+              data-feature-id="logs-toolbar-options"
+              className="flex items-center justify-center min-w-[34px] min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 active:scale-[0.97] transition-all"
+            >
+              <SlidersHorizontal size={14} />
+            </button></Tooltip>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-[70]" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1.5 z-[75] w-48 p-1.5 rounded-xl border border-slate-200 bg-white shadow-xl">
+                  <p className="px-2 py-1 text-micro font-black uppercase tracking-widest text-slate-500">Show controls</p>
+                  {TOOLBAR_CONTROLS.filter(c => c.on({ searchable, historyControl, liveControl, tailControl, timeToggle, sizeControls, copyable, onClear, onRefresh }))
+                    .map(c => (
+                      <label key={c.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
+                        {c.label}
+                        <input
+                          type="checkbox"
+                          checked={show(c.id)}
+                          onChange={() => toggleControl(c.id)}
+                          className="w-4 h-4 accent-slate-900"
+                        />
+                      </label>
+                    ))}
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
     </div>
