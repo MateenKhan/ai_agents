@@ -9,12 +9,20 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { Task, Scenario } from '../types';
 import { getConfig } from '../runtime-context';
 import { openDb, tryEach } from './connection';
+// Secrets-at-rest: AES-256-GCM. encrypt() is a no-op on already-encrypted values;
+// decrypt() passes legacy plaintext straight through (enables lazy migration).
+import { encrypt, decrypt, isEncrypted } from './secretbox';
 
 let schemaReady = false;
 
 function db(): DatabaseSync {
   const conn = openDb(getConfig().paths.tasksDbPath);
-  if (!schemaReady) { initSchema(conn); migrate(conn); schemaReady = true; }
+  if (!schemaReady) {
+    initSchema(conn); migrate(conn); schemaReady = true;
+    // Migrate any legacy plaintext secrets to ciphertext on first boot (best-effort).
+    // Pass `conn` (not db()) to avoid re-entering this init block. Never blocks boot.
+    try { reencryptSecretsAtRest(conn); } catch { /* never block boot on migration */ }
+  }
   return conn;
 }
 
@@ -51,7 +59,8 @@ export function initSchema(conn: DatabaseSync): void {
   // (on a pre-existing tasks.db the column is added by migration, not by this CREATE TABLE).
   conn.exec(`CREATE TABLE IF NOT EXISTS board_settings (id TEXT PRIMARY KEY, data TEXT NOT NULL)`);
   // Multiple labeled GitHub PATs. scope: 'readonly' (clone/fetch) | 'readwrite' (push).
-  // SECURITY: token stored plaintext locally; never returned raw over HTTP (masked).
+  // SECURITY: `token` is AES-256-GCM ENCRYPTED at rest (see ./secretbox); decrypted only
+  // in the raw readers for git ops, and never returned raw over HTTP (masked).
   conn.exec(`CREATE TABLE IF NOT EXISTS git_tokens (
     id TEXT PRIMARY KEY,
     label TEXT NOT NULL,
@@ -72,10 +81,10 @@ export function initSchema(conn: DatabaseSync): void {
   //   'pending'   — manifest generated, awaiting GitHub's create+redirect
   //   'created'   — manifest converted → we hold appId + private key (pem)
   //   'installed' — user installed the app → we hold the installationId
-  // SECURITY: privateKey / clientSecret / webhookSecret are stored in PLAINTEXT locally
-  // (same trust model as the PATs above). They are NEVER returned raw over HTTP — the
-  // masked list (listGithubApps) omits them entirely, and minted installation tokens are
-  // stripped from any echoed git output.
+  // SECURITY: privateKey / clientSecret / webhookSecret are AES-256-GCM ENCRYPTED at rest
+  // (see ./secretbox); decrypted only in the raw readers used for JWT signing / token
+  // minting. They are NEVER returned raw over HTTP — the masked list (listGithubApps)
+  // omits them entirely, and minted installation tokens are stripped from echoed git output.
   conn.exec(`CREATE TABLE IF NOT EXISTS github_apps (
     id TEXT PRIMARY KEY, projectId TEXT NOT NULL, appId TEXT, slug TEXT, name TEXT,
     privateKey TEXT, clientId TEXT, clientSecret TEXT, webhookSecret TEXT, htmlUrl TEXT,
@@ -156,6 +165,44 @@ export function migrate(conn: DatabaseSync): void {
 
 /** Raw tasks.db connection (for DB-browser endpoints and ad-hoc queries). */
 export function getTasksDb(): DatabaseSync { return db(); }
+
+/**
+ * Lazy at-rest migration: scan git_tokens + github_apps and re-write any secret that is
+ * still stored in legacy PLAINTEXT as AES-256-GCM ciphertext. Idempotent (isEncrypted()
+ * skips already-encrypted values) and BEST-EFFORT — every step is wrapped so a failure
+ * never throws and never blocks boot. NEVER logs secret values, only counts.
+ * Called once from the schema-init path; `conn` is passed there to avoid re-entering it.
+ */
+export function reencryptSecretsAtRest(conn: DatabaseSync = db()): void {
+  let migrated = 0, failed = 0;
+  const enc = (v: any): any => (typeof v === 'string' && v && !isEncrypted(v)) ? encrypt(v) : v;
+  try {
+    // git_tokens.token
+    const toks = conn.prepare(`SELECT id, token FROM git_tokens`).all() as any[];
+    const updTok = conn.prepare(`UPDATE git_tokens SET token = ? WHERE id = ?`);
+    for (const t of toks) {
+      try {
+        if (typeof t.token === 'string' && t.token && !isEncrypted(t.token)) {
+          updTok.run(encrypt(t.token), t.id); migrated++;
+        }
+      } catch { failed++; }
+    }
+    // github_apps: privateKey / clientSecret / webhookSecret
+    const apps = conn.prepare(`SELECT id, privateKey, clientSecret, webhookSecret FROM github_apps`).all() as any[];
+    const updApp = conn.prepare(`UPDATE github_apps SET privateKey = ?, clientSecret = ?, webhookSecret = ? WHERE id = ?`);
+    for (const a of apps) {
+      try {
+        const pk = enc(a.privateKey), cs = enc(a.clientSecret), ws = enc(a.webhookSecret);
+        if (pk !== a.privateKey || cs !== a.clientSecret || ws !== a.webhookSecret) {
+          updApp.run(pk ?? null, cs ?? null, ws ?? null, a.id); migrated++;
+        }
+      } catch { failed++; }
+    }
+    if (migrated || failed) {
+      console.log(`[secretbox] at-rest migration: encrypted ${migrated} legacy plaintext secret row(s), ${failed} failed`);
+    }
+  } catch { /* never throw from migration */ }
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -303,12 +350,15 @@ export interface GitToken { id: string; label: string; token: string; scope: Git
 /** Full rows INCLUDING the raw token — internal use only (git ops, agent auth). Never send over HTTP.
  *  Scoped to a project; NULL-projectId rows belong to 'default'. */
 export function listGitTokensRaw(projectId: string = 'default'): GitToken[] {
-  return db().prepare(
+  // Decrypt `token` so callers (git ops, HTTP masking) receive the real PAT.
+  return (db().prepare(
     `SELECT * FROM git_tokens WHERE (projectId = ? OR (projectId IS NULL AND ? = 'default')) ORDER BY createdAt ASC`
-  ).all(projectId, projectId) as GitToken[];
+  ).all(projectId, projectId) as GitToken[]).map(t => ({ ...t, token: decrypt(t.token) }));
 }
 export function getGitTokenRaw(id: string): GitToken | null {
-  return (db().prepare(`SELECT * FROM git_tokens WHERE id = ?`).get(id) as GitToken) || null;
+  const r = db().prepare(`SELECT * FROM git_tokens WHERE id = ?`).get(id) as GitToken | undefined;
+  if (!r) return null;
+  return { ...r, token: decrypt(r.token) }; // decrypt so callers get the real token
 }
 export function addGitToken(t: { label: string; token: string; scope?: GitScope; username?: string; host?: string }, projectId: string = 'default'): GitToken {
   // Token labels must be unique within a project (a user may hold several PATs / GitHub
@@ -326,8 +376,9 @@ export function addGitToken(t: { label: string; token: string; scope?: GitScope;
     host: t.host || 'github.com',
     createdAt: new Date().toISOString(),
   };
+  // Encrypt the token at rest; `row` returned to the caller keeps the plaintext token.
   db().prepare(`INSERT INTO git_tokens (id,label,token,scope,username,host,createdAt,projectId) VALUES (?,?,?,?,?,?,?,?)`)
-    .run(row.id, row.label, row.token, row.scope, row.username, row.host, row.createdAt, projectId);
+    .run(row.id, row.label, encrypt(row.token), row.scope, row.username, row.host, row.createdAt, projectId);
   return row;
 }
 export function updateGitToken(id: string, patch: { label?: string; token?: string; scope?: GitScope; username?: string; host?: string }): void {
@@ -341,8 +392,9 @@ export function updateGitToken(id: string, patch: { label?: string; token?: stri
     username: patch.username ?? cur.username,
     host: patch.host ?? cur.host,
   };
+  // `next.token` is plaintext here (cur.token came back decrypted). Encrypt at rest.
   db().prepare(`UPDATE git_tokens SET label=?,token=?,scope=?,username=?,host=? WHERE id=?`)
-    .run(next.label, next.token, next.scope, next.username, next.host, id);
+    .run(next.label, encrypt(next.token), next.scope, next.username, next.host, id);
 }
 export function deleteGitToken(id: string): void {
   db().prepare(`DELETE FROM git_tokens WHERE id = ?`).run(id);
@@ -548,9 +600,10 @@ export function getHeartbeat(): Heartbeat | null {
 // key), install it, and then use auto-minted short-lived installation tokens for
 // clone/push — no hand-crafted PAT.
 //
-// SECURITY: privateKey / clientSecret / webhookSecret live in PLAINTEXT in the local
-// sqlite github_apps table (same trust model as the PATs). They are NEVER sent raw over
-// HTTP — listGithubApps() masks them out, and minted tokens are stripped from output.
+// SECURITY: privateKey / clientSecret / webhookSecret are AES-256-GCM ENCRYPTED at rest in
+// the local sqlite github_apps table (see ./secretbox), decrypted only for JWT signing /
+// token minting. They are NEVER sent raw over HTTP — listGithubApps() masks them out, and
+// minted tokens are stripped from output.
 import { createSign } from 'node:crypto';
 
 export interface GithubApp {
@@ -575,15 +628,26 @@ export function createPendingGithubApp(projectId: string = 'default', name?: str
   return { id };
 }
 
+/** Decrypt the three at-rest secrets so callers get usable values (JWT signing, token minting). */
+function decryptAppSecrets(a: GithubApp): GithubApp {
+  return {
+    ...a,
+    privateKey: a.privateKey != null ? decrypt(a.privateKey) : a.privateKey,
+    clientSecret: a.clientSecret != null ? decrypt(a.clientSecret) : a.clientSecret,
+    webhookSecret: a.webhookSecret != null ? decrypt(a.webhookSecret) : a.webhookSecret,
+  };
+}
+
 export function getGithubApp(id: string): GithubApp | null {
-  return (db().prepare(`SELECT * FROM github_apps WHERE id = ?`).get(id) as GithubApp) || null;
+  const r = db().prepare(`SELECT * FROM github_apps WHERE id = ?`).get(id) as GithubApp | undefined;
+  return r ? decryptAppSecrets(r) : null;
 }
 
 /** Full rows INCLUDING secrets — internal use only (JWT signing, token minting). Never send over HTTP. */
 export function listGithubAppsRaw(projectId: string = 'default'): GithubApp[] {
-  return db().prepare(
+  return (db().prepare(
     `SELECT * FROM github_apps WHERE (projectId = ? OR (projectId IS NULL AND ? = 'default')) ORDER BY createdAt ASC`
-  ).all(projectId, projectId) as GithubApp[];
+  ).all(projectId, projectId) as GithubApp[]).map(decryptAppSecrets);
 }
 
 /** Masked list for HTTP — NEVER returns privateKey / clientSecret / webhookSecret. */
@@ -595,11 +659,18 @@ export function listGithubApps(projectId: string = 'default'): GithubAppPublic[]
 }
 
 const GHA_COLS = ['appId', 'slug', 'name', 'privateKey', 'clientId', 'clientSecret', 'webhookSecret', 'htmlUrl', 'installationId', 'account', 'state'];
+// These three columns hold secrets and are encrypted at rest on every write.
+const GHA_SECRET_COLS = new Set(['privateKey', 'clientSecret', 'webhookSecret']);
 export function updateGithubApp(id: string, patch: Partial<GithubApp>): void {
   const keys = GHA_COLS.filter(k => (patch as any)[k] !== undefined);
   if (!keys.length) return;
   const set = keys.map(k => `${k} = ?`).join(', ');
-  db().prepare(`UPDATE github_apps SET ${set} WHERE id = ?`).run(...keys.map(k => (patch as any)[k]), id);
+  // Encrypt secret columns; encrypt() is a no-op if the value is already ciphertext.
+  const values = keys.map(k => {
+    const v = (patch as any)[k];
+    return (GHA_SECRET_COLS.has(k) && typeof v === 'string' && v) ? encrypt(v) : v;
+  });
+  db().prepare(`UPDATE github_apps SET ${set} WHERE id = ?`).run(...values, id);
 }
 
 export function deleteGithubApp(id: string): void {
