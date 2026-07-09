@@ -1,9 +1,13 @@
-import { LayoutGrid, BarChart3, ScrollText, Database, Bot, BrainCircuit, Search, type LucideIcon } from 'lucide-react';
+import { LayoutGrid, BarChart3, ScrollText, Database, Bot, BrainCircuit, type LucideIcon } from 'lucide-react';
 
 // The main nav tabs. `closeable` tabs show an X that HIDES them (they're restored
 // from Settings → Visible Tabs, never deleted). Board is the home view and can
 // never be hidden, so it has no close affordance.
-export type TabId = 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents' | 'search';
+//
+// Search is NOT a tab. It lives inside Context as a segmented view: both read the same
+// per-project code index, and "what does the swarm know about this repo" is one question,
+// not two. The /tasks/search deep link still works — it opens Context on the Search view.
+export type TabId = 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents';
 
 export interface TabMeta {
   id: TabId;
@@ -19,7 +23,6 @@ export const TAB_META: TabMeta[] = [
   { id: 'logs',      label: 'Logs',      icon: ScrollText, closeable: true },
   { id: 'db',        label: 'Database',  icon: Database,   closeable: true },
   { id: 'agents',    label: 'Agents',    icon: Bot,        closeable: true },
-  { id: 'search',    label: 'Search',    icon: Search,     closeable: true },
 ];
 
 export const CLOSEABLE_TABS: TabId[] = TAB_META.filter(t => t.closeable).map(t => t.id);

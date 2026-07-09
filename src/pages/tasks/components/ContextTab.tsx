@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, lazy, Suspense } from 'react';
 import { Tooltip } from './Tooltip';
 import {
   RefreshCw, Pin, PinOff, X, Plus, FileCode, Folder, FolderOpen, ChevronRight,
   BrainCircuit, Search, PanelLeftClose, PanelLeftOpen, Cpu, AlertTriangle, Trash2, Clock, FolderGit2,
+  type LucideIcon,
 } from 'lucide-react';
 import { API_BASE as API, withProject } from '../../../apiBase';
 import { useToast } from './Toast';
@@ -46,7 +47,8 @@ const OP_STYLE: Record<string, string> = {
   refresh: 'text-ai-700 bg-ai-50 border-ai-200',
 };
 
-export default function ContextTab({ activeId }: { activeId: string }) {
+/** The Memory view: what the swarm currently holds in context, and the ops that put it there. */
+function ContextMemory({ activeId }: { activeId: string }) {
   const toast = useToast();
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [files, setFiles] = useState<CFile[]>([]);
@@ -163,13 +165,9 @@ export default function ContextTab({ activeId }: { activeId: string }) {
   useEffect(() => { if (q.trim()) { const all = new Set<string>(); const walk = (ns: TreeNode[]) => ns.forEach(n => { if (n.dir) { all.add(n.path); walk(n.children); } }); walk(tree); setExpanded(all); } }, [q, tree]);
 
   return (
-    <div className="p-3 sm:p-4" data-feature-id="tasks-context-tab">
-      {/* Header: title · refresh · budget · gauge */}
+    <div className="p-3 sm:p-4 pt-0" data-feature-id="tasks-context-tab">
+      {/* Header: refresh · budget · gauge. The view name lives in the shell's segmented control. */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <div className="flex items-center gap-2">
-          <BrainCircuit size={18} className="text-accent-600" />
-          <h2 className="text-sm font-black uppercase tracking-widest text-slate-900">Context Memory</h2>
-        </div>
         <button onClick={refresh} data-feature-id="context-refresh" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
           <RefreshCw size={13} className={busy ? 'animate-spin text-accent-600' : ''} /> Refresh
         </button>
@@ -302,6 +300,70 @@ export default function ContextTab({ activeId }: { activeId: string }) {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Context tab shell ────────────────────────────────────────────────────────
+// Memory and Search are two questions about the same thing: the per-project code index.
+// Memory says what the swarm is holding right now; Search asks that index anything. They
+// were separate top-level tabs, which made the index look like two unrelated features.
+//
+// The view is URL state, not component state: /tasks/context and /tasks/search each name
+// one, so the old Search deep link keeps working and both are refresh- and back-safe.
+
+const CodeSearchTab = lazy(() => import('./CodeSearchTab'));
+
+export type ContextView = 'memory' | 'search';
+
+const VIEWS: Array<{ id: ContextView; label: string; icon: LucideIcon; hint: string }> = [
+  { id: 'memory', label: 'Memory', icon: BrainCircuit, hint: 'What the swarm is holding in context right now' },
+  { id: 'search', label: 'Search', icon: Search, hint: 'Ask the code index a question' },
+];
+
+export default function ContextTab({ activeId, view, onViewChange }: {
+  activeId: string;
+  view: ContextView;
+  onViewChange: (v: ContextView) => void;
+}) {
+  return (
+    <div data-feature-id="tasks-context-shell">
+      <div className="px-3 sm:px-4 pt-3 pb-2">
+        {/* Segmented control. role=tablist so arrow keys and AT treat it as one control,
+            not two loose buttons — the panel below is the tabpanel it owns. */}
+        <div role="tablist" aria-label="Context view" className="inline-flex p-0.5 gap-0.5 rounded-lg bg-slate-100 border border-slate-200">
+          {VIEWS.map(v => {
+            const active = view === v.id;
+            return (
+              <Tooltip key={v.id} label={v.hint}>
+                <button
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls="context-panel"
+                  onClick={() => onViewChange(v.id)}
+                  data-feature-id={`context-view-${v.id}`}
+                  className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-md transition-colors ${
+                    active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 sm:hover:text-slate-900'
+                  }`}
+                >
+                  <v.icon size={14} className={active ? 'text-accent-600' : ''} />
+                  {v.label}
+                </button>
+              </Tooltip>
+            );
+          })}
+        </div>
+      </div>
+
+      <div id="context-panel" role="tabpanel">
+        {view === 'search' ? (
+          <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-500">Loading search…</div>}>
+            <CodeSearchTab />
+          </Suspense>
+        ) : (
+          <ContextMemory activeId={activeId} />
+        )}
       </div>
     </div>
   );

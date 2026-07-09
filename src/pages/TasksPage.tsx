@@ -25,6 +25,8 @@ import { iconBtn, iconBtnLg } from './tasks/ui';
 const TaskModal = lazy(() => import('./tasks/components/TaskModal').then(m => ({ default: m.TaskModal })));
 const AnalyticsTab = lazy(() => import('./tasks/components/AnalyticsTab'));
 const ContextTab = lazy(() => import('./tasks/components/ContextTab'));
+// Type-only: erased at build, so it does NOT pull the lazy chunk into the main bundle.
+import type { ContextView } from './tasks/components/ContextTab';
 const TaskDetail = lazy(() => import('./tasks/components/TaskDetail'));
 const PromptModal = lazy(() => import('./tasks/components/PromptModal').then(m => ({ default: m.PromptModal })));
 const SettingsModal = lazy(() => import('./tasks/components/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -33,7 +35,6 @@ const ChatIntake = lazy(() => import('./tasks/components/ChatIntake'));
 const LogsTab = lazy(() => import('./tasks/components/LogsTab'));
 const DbTab = lazy(() => import('./tasks/components/DbTab'));
 const AgentsTab = lazy(() => import('./tasks/components/AgentsTab'));
-const CodeSearchTab = lazy(() => import('./tasks/components/CodeSearchTab'));
 const GitPanel = lazy(() => import('./tasks/components/GitPanel').then(m => ({ default: m.GitPanel })));
 const SystemStatus = lazy(() => import('./tasks/components/SystemStatus').then(m => ({ default: m.SystemStatus })));
 
@@ -75,10 +76,16 @@ const TasksPage: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [todosOpen, setTodosOpen] = useState(false);
   const { tab: urlTab } = useParams<{ tab?: string }>();
-  const PATH_TO_TAB: Record<string, 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents' | 'search'> = { context: 'context', analytics: 'analytics', logs: 'logs', database: 'db', agents: 'agents', search: 'search' };
-  const TAB_TO_PATH: Record<string, string> = { board: '', context: 'context', analytics: 'analytics', logs: 'logs', db: 'database', agents: 'agents', search: 'search' };
-  const activeTab: 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents' | 'search' = PATH_TO_TAB[urlTab ?? ''] ?? 'board';
-  const setActiveTab = (t: 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents' | 'search') => navigate(`/tasks${TAB_TO_PATH[t] ? '/' + TAB_TO_PATH[t] : ''}`);
+  // `search` is not a tab — it is the Search view of the Context tab. The path is kept so
+  // the old /tasks/search deep link (and anyone's bookmark) still lands somewhere correct.
+  const PATH_TO_TAB: Record<string, TabId> = { context: 'context', search: 'context', analytics: 'analytics', logs: 'logs', database: 'db', agents: 'agents' };
+  const TAB_TO_PATH: Record<TabId, string> = { board: '', context: 'context', analytics: 'analytics', logs: 'logs', db: 'database', agents: 'agents' };
+  const activeTab: TabId = PATH_TO_TAB[urlTab ?? ''] ?? 'board';
+  const setActiveTab = (t: TabId) => navigate(`/tasks${TAB_TO_PATH[t] ? '/' + TAB_TO_PATH[t] : ''}`);
+
+  // The Context view lives in the URL, so it survives reload and the back button.
+  const contextView: ContextView = urlTab === 'search' ? 'search' : 'memory';
+  const setContextView = (v: ContextView) => navigate(v === 'search' ? '/tasks/search' : '/tasks/context');
 
   // Closeable tabs the user has hidden. Persisted; restored from Settings → Visible Tabs.
   const [hiddenTabs, setHiddenTabs] = useState<Set<TabId>>(() => new Set(loadHiddenTabs()));
@@ -382,7 +389,7 @@ const TasksPage: React.FC = () => {
 
         {activeTab === 'context' ? (
           <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading context…</div>}>
-            <ContextTab activeId={activeId} />
+            <ContextTab activeId={activeId} view={contextView} onViewChange={setContextView} />
           </Suspense>
         ) : activeTab === 'analytics' ? (
           <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading analytics…</div>}>
@@ -399,10 +406,6 @@ const TasksPage: React.FC = () => {
         ) : activeTab === 'agents' ? (
           <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading agents…</div>}>
             <AgentsTab />
-          </Suspense>
-        ) : activeTab === 'search' ? (
-          <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading search…</div>}>
-            <CodeSearchTab />
           </Suspense>
         ) : (
         <TaskBoard
