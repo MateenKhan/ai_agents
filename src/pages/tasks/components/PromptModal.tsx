@@ -18,7 +18,7 @@ export function PromptModal({ isOpen, onClose, prompt, taskTitle, copied, onCopy
       onClose={onClose}
       title="Agent Command Ready"
       subtitle={taskTitle}
-      icon={<Sparkles className="w-5 h-5 text-indigo-600" />}
+      icon={<Sparkles className="w-5 h-5 text-accent-600" />}
       maxW="sm:max-w-2xl"
       featureId="prompt-modal"
       footer={
@@ -32,21 +32,21 @@ export function PromptModal({ isOpen, onClose, prompt, taskTitle, copied, onCopy
     >
       <div className="space-y-4">
         <p className="text-sm text-slate-600 leading-relaxed">
-          Copy this prompt into the <span className="text-indigo-600 font-bold">Antigravity</span> chat (Ctrl+L) to begin execution. The agent will automatically update the task status when finished.
+          Copy this prompt into the <span className="text-accent-600 font-bold">Antigravity</span> chat (Ctrl+L) to begin execution. The agent will automatically update the task status when finished.
         </p>
 
         <div className="relative group">
           <textarea
             readOnly
             value={prompt}
-            className="w-full bg-[#080e1d] border border-[#1e2d45] rounded-xl p-5 text-xs font-mono text-slate-300 leading-relaxed h-48 focus:outline-none custom-scrollbar"
+            className="w-full bg-surface-console border border-surface-border rounded-xl p-5 text-xs font-mono text-slate-300 leading-relaxed h-48 focus:outline-none custom-scrollbar"
           />
           <button
             onClick={onCopy}
             className={`absolute top-4 right-4 flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg ${
               copied
               ? 'bg-emerald-500 text-white'
-              : 'bg-indigo-600 hover:bg-indigo-500 text-white group-hover:scale-105'
+              : 'bg-accent-600 hover:bg-accent-500 text-white group-hover:scale-105'
             }`}
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}

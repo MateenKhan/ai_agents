@@ -8,10 +8,7 @@ import { loadColumns, saveColumns, DEFAULT_COLUMNS } from '../boardConfig';
 import { BoardColumnsEditor } from './BoardColumnsEditor';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
-
-const inputCls = 'w-full min-h-[44px] rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300';
-const btnPrimary = 'min-h-[44px] px-5 text-sm font-bold text-white bg-indigo-600 rounded-xl active:bg-indigo-700 sm:hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20 disabled:opacity-50 flex items-center justify-center gap-2';
-const btnGhost = 'min-h-[44px] px-4 text-sm font-bold text-slate-700 bg-white border border-slate-300 rounded-xl active:bg-slate-100 sm:hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-2';
+import { btnPrimary, btnGhost, inputCls } from '../ui';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
@@ -72,7 +69,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
       isOpen
       onClose={onClose}
       title="Import project"
-      icon={<FolderGit2 className="w-5 h-5 text-indigo-600" />}
+      icon={<FolderGit2 className="w-5 h-5 text-accent-600" />}
       maxW="sm:max-w-md"
       featureId="project-create"
       footer={
@@ -88,7 +85,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
           <input value={repoPath} onChange={e => setRepoPath(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} autoFocus placeholder="C:\code\my-repo  ·  git@github.com:acme/web.git" className={`${inputCls} font-mono text-xs sm:text-sm`} />
           {name && (
             <p className="text-[11px] text-slate-500 mt-1.5">
-              {isUrl ? 'Clones into folder ' : 'Project & folder: '}<span className="font-bold text-indigo-600">{name}</span>
+              {isUrl ? 'Clones into folder ' : 'Project & folder: '}<span className="font-bold text-accent-600">{name}</span>
               {onlyDefault && <span className="text-slate-400"> · renames the Default tab</span>}
             </p>
           )}
@@ -166,7 +163,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
       isOpen
       onClose={onClose}
       title="Edit project"
-      icon={<Pencil className="w-4 h-4 text-indigo-600" />}
+      icon={<Pencil className="w-4 h-4 text-accent-600" />}
       maxW="sm:max-w-md"
       featureId="project-edit"
       footer={
@@ -178,12 +175,12 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
                   Permanently deletes {project.repoPath ? <>the repo folder <span className="font-mono text-[10px]">({project.repoPath.split(/[\\/]/).pop()})</span>, </> : ''}all its tasks, and the code index (embeddings). Cannot be undone.
                 </p>
                 <div className="flex items-center gap-2">
-                  <button onClick={remove} disabled={busy} className="min-h-[44px] px-4 text-sm font-bold text-white bg-rose-600 rounded-xl active:bg-rose-700 sm:hover:bg-rose-500 flex items-center gap-2"><Trash2 size={15} /> Delete everything</button>
+                  <button onClick={remove} disabled={busy} className="min-h-control-lg px-4 text-sm font-bold text-white bg-rose-600 rounded-xl active:bg-rose-700 sm:hover:bg-rose-500 flex items-center gap-2"><Trash2 size={15} /> Delete everything</button>
                   <button onClick={() => setConfirmDelete(false)} className="text-xs font-bold text-slate-500 hover:text-slate-800">Cancel</button>
                 </div>
               </div>
             ) : (
-              <button onClick={() => setConfirmDelete(true)} className="min-h-[44px] px-4 text-sm font-bold text-rose-600 border border-rose-200 bg-rose-50 rounded-xl hover:bg-rose-100 flex items-center gap-2"><Trash2 size={15} /> Delete</button>
+              <button onClick={() => setConfirmDelete(true)} className="min-h-control-lg px-4 text-sm font-bold text-rose-600 border border-rose-200 bg-rose-50 rounded-xl hover:bg-rose-100 flex items-center gap-2"><Trash2 size={15} /> Delete</button>
             )
           ) : <span className="text-[11px] text-slate-400">Default project can't be deleted.</span>}
           <div className="flex gap-2">
@@ -208,7 +205,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
               className="w-full flex items-center justify-between gap-2 px-3 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors"
             >
               <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600">
-                <FolderGit2 className="w-4 h-4 text-indigo-600" /> Git repository
+                <FolderGit2 className="w-4 h-4 text-accent-600" /> Git repository
                 <span className="text-slate-400 font-bold normal-case tracking-normal truncate max-w-[120px]">· {repoPath ? repoPath.split(/[\\/]/).pop() : 'not set'}</span>
               </span>
               {gitOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
@@ -248,7 +245,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
               className="w-full flex items-center justify-between gap-2 px-3 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors"
             >
               <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600">
-                <Columns className="w-4 h-4 text-indigo-600" /> Boards
+                <Columns className="w-4 h-4 text-accent-600" /> Boards
                 <span className="text-slate-400 font-bold normal-case tracking-normal">· {boardCols.length} lanes</span>
               </span>
               {boardsOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
@@ -320,7 +317,7 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
             className="flex-1 min-w-0 flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg sm:hover:bg-slate-50 transition-colors"
           >
           <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 min-w-0">
-            <FolderGit2 className="w-4 h-4 text-indigo-600 shrink-0" /> Projects
+            <FolderGit2 className="w-4 h-4 text-accent-600 shrink-0" /> Projects
             <span className="flex items-center gap-1 text-slate-400 font-bold normal-case tracking-normal truncate">
               · <span>{activeProject?.emoji || '📁'}</span> {activeProject?.name ?? 'Default'}
             </span>
@@ -359,7 +356,7 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
                     title={p.name}
                     data-feature-id={`project-tab-${p.id}`}
                     className={`relative flex items-center gap-1.5 px-4 min-h-[42px] text-sm font-bold whitespace-nowrap transition-colors ${isFirst ? 'rounded-l-xl' : 'border-l border-slate-200'} ${isLast ? 'rounded-r-xl' : ''} ${active
-                      ? 'text-indigo-700 bg-gradient-to-b from-white to-indigo-50/70'
+                      ? 'text-accent-700 bg-gradient-to-b from-white to-accent-50/70'
                       : 'text-slate-500 sm:hover:text-slate-900 sm:hover:bg-slate-50'}`}
                   >
                     <span className="text-base leading-none">{p.emoji || '📁'}</span>
@@ -391,7 +388,7 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setEditing(p); } }}
                         aria-label={`Edit ${p.name}`}
                         title="Edit project"
-                        className="flex items-center justify-center -mr-1.5 ml-0.5 p-0.5 rounded text-indigo-400 sm:hover:text-indigo-700 sm:hover:bg-indigo-100 transition-colors cursor-pointer"
+                        className="flex items-center justify-center -mr-1.5 ml-0.5 p-0.5 rounded text-accent-400 sm:hover:text-accent-700 sm:hover:bg-accent-100 transition-colors cursor-pointer"
                       >
                         <Pencil size={13} />
                       </span>
@@ -405,7 +402,7 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
               aria-label="New project"
               title="New project"
               data-feature-id="project-add"
-              className="shrink-0 min-h-[42px] min-w-[42px] flex items-center justify-center rounded-xl text-slate-500 bg-slate-50 border border-slate-300 border-dashed active:bg-slate-100 sm:hover:bg-white sm:hover:text-indigo-600 transition-colors"
+              className="shrink-0 min-h-[42px] min-w-[42px] flex items-center justify-center rounded-xl text-slate-500 bg-slate-50 border border-slate-300 border-dashed active:bg-slate-100 sm:hover:bg-white sm:hover:text-accent-600 transition-colors"
             >
               <Plus size={18} strokeWidth={3} />
             </button>

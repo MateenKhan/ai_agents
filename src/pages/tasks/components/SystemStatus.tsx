@@ -32,7 +32,7 @@ function look(kind: string) {
     case 'indexing': return { Icon: Database, ring: 'text-violet-300', busy: true };
     case 'agents': return { Icon: Bot, ring: 'text-emerald-300', busy: true };
     case 'idle': return { Icon: CheckCircle2, ring: 'text-slate-400', busy: false };
-    default: return { Icon: Activity, ring: 'text-indigo-300', busy: true };
+    default: return { Icon: Activity, ring: 'text-accent-300', busy: true };
   }
 }
 
@@ -176,7 +176,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
               <div className="grid grid-cols-4 gap-px bg-slate-700/60 border-b border-slate-700/70">
                 {([
                   ['Pending', counts.pending, 'text-slate-300'],
-                  ['Working', counts.working, 'text-indigo-300'],
+                  ['Working', counts.working, 'text-accent-300'],
                   ['Testing', counts.testing, 'text-amber-300'],
                   ['Done', counts.done, 'text-emerald-300'],
                 ] as const).map(([label, val, cls]) => (
@@ -252,7 +252,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
         className={`w-full flex items-center gap-2.5 pl-2.5 pr-3 py-2 rounded-xl shadow-lg border backdrop-blur text-left transition-colors ${shellClass}`}
       >
         <span className="relative flex items-center justify-center w-6 h-6 shrink-0">
-          {busy && <span className={`absolute inline-flex h-full w-full rounded-full opacity-30 animate-ping ${corrupt || orchDown ? 'bg-rose-400' : 'bg-indigo-400'}`} />}
+          {busy && <span className={`absolute inline-flex h-full w-full rounded-full opacity-30 animate-ping ${corrupt || orchDown ? 'bg-rose-400' : 'bg-accent-400'}`} />}
           <Icon size={16} className={ring} />
         </span>
         <div className="min-w-0 flex-1">

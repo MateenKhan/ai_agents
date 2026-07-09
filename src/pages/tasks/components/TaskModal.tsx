@@ -75,7 +75,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
       isOpen={isOpen}
       onClose={onClose}
       title={editingTask ? 'Edit Task' : 'Create New Task'}
-      icon={<ClipboardList size={20} className="text-indigo-600" />}
+      icon={<ClipboardList size={20} className="text-accent-600" />}
       maxW="sm:max-w-2xl"
       featureId="task-modal"
       footer={
@@ -88,7 +88,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </button>
           <button
             onClick={() => handleSubmit()}
-            className="flex items-center gap-2 px-6 min-h-[48px] bg-indigo-600 active:bg-indigo-700 sm:hover:bg-indigo-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/20 transition-all active:scale-95"
+            className="flex items-center gap-2 px-6 min-h-[48px] bg-accent-600 active:bg-accent-700 sm:hover:bg-accent-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-accent-500/20 transition-all active:scale-95"
           >
             <Save size={16} />
             {editingTask ? 'Update Task' : 'Save Task'}
@@ -107,7 +107,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-accent-500 transition-colors"
               placeholder="Task summary..."
             />
           </div>
@@ -118,7 +118,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               value={description}
               onChange={e => setDescription(e.target.value)}
               rows={3}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-accent-500 transition-colors resize-none"
               placeholder="Add more details..."
             />
           </div>
@@ -159,7 +159,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               onChange={e => setProject(e.target.value)}
               disabled={!!editingTask}
               data-feature-id="task-modal-project"
-              className="w-full appearance-none bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full appearance-none bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-accent-500 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {projects.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
@@ -177,7 +177,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               <select
                 value={status}
                 onChange={e => setStatus(e.target.value)}
-                className="w-full appearance-none bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full appearance-none bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-accent-500 transition-colors"
               >
                 {COLUMNS.map(col => (
                   <option key={col.id} value={col.id}>{col.label}</option>
@@ -193,7 +193,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               <select
                 value={priority}
                 onChange={e => setPriority(parseInt(e.target.value))}
-                className="w-full appearance-none bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full appearance-none bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-accent-500 transition-colors"
               >
                 <option value={0}>P0 - Critical</option>
                 <option value={1}>P1 - High</option>
@@ -207,7 +207,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
 
         {/* Advanced Metadata */}
         <div className="pt-4 border-t border-slate-200 space-y-4">
-          <h3 className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Advanced Metadata</h3>
+          <h3 className="text-[10px] font-black uppercase text-accent-600 tracking-widest">Advanced Metadata</h3>
 
           <div className="space-y-1.5">
             <label className="flex items-center gap-2 text-[11px] font-bold uppercase text-slate-600 tracking-wide">
@@ -217,7 +217,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               type="text"
               value={dependsOn}
               onChange={e => setDependsOn(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-xs text-slate-900 focus:outline-none focus:border-accent-500 transition-colors font-mono"
               placeholder="TASK-ID-1, TASK-ID-2"
             />
           </div>
@@ -230,7 +230,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               type="text"
               value={files}
               onChange={e => setFiles(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-xs text-slate-900 focus:outline-none focus:border-accent-500 transition-colors font-mono"
               placeholder="src/main.ts, db/schema.sql"
             />
           </div>
@@ -241,7 +241,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               type="text"
               value={parentId}
               onChange={e => setParentId(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-xs text-slate-900 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
+              className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-xs text-slate-900 focus:outline-none focus:border-accent-500 transition-colors font-mono"
               placeholder="Leave empty if root task"
             />
           </div>

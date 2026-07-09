@@ -44,7 +44,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
       onClose={onClose}
       title="Settings"
       subtitle="Show or hide tabs and configure board swimlanes"
-      icon={<Settings className="w-5 h-5 text-indigo-600" />}
+      icon={<Settings className="w-5 h-5 text-accent-600" />}
       maxW="sm:max-w-2xl"
       featureId="settings-modal"
       footer={
@@ -61,7 +61,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
             <button
               onClick={handleSave}
               disabled={cols.length === 0}
-              className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-500 transition-all disabled:bg-indigo-600/50 disabled:cursor-not-allowed"
+              className="px-6 py-2 bg-accent-600 text-white rounded-xl text-sm font-bold hover:bg-accent-500 transition-all disabled:bg-accent-600/50 disabled:cursor-not-allowed"
             >
               Save Changes
             </button>
@@ -86,12 +86,12 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
                   <Icon size={15} className="text-slate-500" /> {t.label}
                 </span>
                 <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
-                  {hidden ? <><EyeOff size={13} /> Hidden</> : <><Eye size={13} className="text-indigo-500" /> Shown</>}
+                  {hidden ? <><EyeOff size={13} /> Hidden</> : <><Eye size={13} className="text-accent-500" /> Shown</>}
                   <input
                     type="checkbox"
                     checked={!hidden}
                     onChange={e => onSetTabHidden(t.id, !e.target.checked)}
-                    className="w-5 h-5 accent-indigo-600"
+                    className="w-5 h-5 accent-accent-600"
                   />
                 </span>
               </label>
@@ -114,7 +114,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
             value={agentMaxConc}
             onChange={e => setAgentMaxConc(e.target.value.replace(/[^\d]/g, ''))}
             data-feature-id="settings-agent-maxconc"
-            className="w-24 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-indigo-500"
+            className="w-24 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500"
           />
         </label>
         <p className="text-[10px] text-slate-500 mt-2">Default cap on how many agents run at once <span className="font-semibold">per project</span> — <span className="font-mono">0 = unlimited</span> (still bounded by CPU/RAM). A project can override this in its editor.</p>

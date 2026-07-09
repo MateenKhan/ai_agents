@@ -80,11 +80,14 @@ function parseLine(msg: string): Parsed {
   const tm = msg.match(/^\[(?:(\d{4}-\d{2}-\d{2})T)?(\d{2}:\d{2}:\d{2})(?:\.\d+)?Z?\]\s*/);
   const date = tm ? (tm[1] || '') : '';
   const time = tm ? tm[2] : '';
-  const s = tm ? msg.slice(tm[0].length) : msg;
+  // Strip leading emoji/pictographs — severity is already conveyed by color + tag, so the
+  // raw ⛔/✅/🚀 read as unpolished. Keeps logs looking like infra, not a hobby project.
+  const s = (tm ? msg.slice(tm[0].length) : msg)
+    .replace(/^(?:[←-➿⬀-⯿️‍⃣\u{1F000}-\u{1FAFF}]+\s*)+/u, '');
   if (/^──/.test(s)) return { type: 'divider', tag: '', color: 'text-slate-500', text: s.replace(/─+/g, '').trim(), noise: false, time, date };
   if (/error|failed|fatal|❌|🚨/i.test(s)) return { type: 'line', tag: '!', color: 'text-rose-400', text: s, noise: false, time, date };
   if (s.startsWith('$')) return { type: 'line', tag: '$', color: 'text-violet-400', text: s.replace(/^\$:?\s*/, ''), noise: false, time, date };
-  if (s.startsWith('·') || s.startsWith('—')) return { type: 'msg', tag: 'ai', color: 'text-indigo-300', text: s.replace(/^[·—]\s*/, ''), noise: false, time, date };
+  if (s.startsWith('·') || s.startsWith('—')) return { type: 'msg', tag: 'ai', color: 'text-accent-300', text: s.replace(/^[·—]\s*/, ''), noise: false, time, date };
   const m = s.match(/^(\w+):\s*(.*)/);
   if (m && PREFIX[m[1].toLowerCase()]) { const p = PREFIX[m[1].toLowerCase()]; return { type: 'line', tag: p.tag, color: p.color, text: m[2], noise: !!p.noise, time, date }; }
   return { type: 'line', tag: '', color: 'text-slate-300', text: s, noise: false, time, date };
@@ -209,7 +212,7 @@ export function LogConsole({
             onChange={e => setFilter(e.target.value)}
             placeholder="Search lines…"
             data-feature-id="logs-filter"
-            className="px-3 min-h-[34px] text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-indigo-500 placeholder:text-slate-400 w-40"
+            className="px-3 min-h-control text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500 placeholder:text-slate-400 w-40"
           />
         )}
         {historyControl && (
@@ -218,7 +221,7 @@ export function LogConsole({
             onChange={e => { const n = Number(e.target.value); setHistory(n); onHistoryLengthChange?.(n); }}
             data-feature-id="logs-history"
             title="How many recent lines to keep"
-            className="px-2 min-h-[34px] text-xs font-bold bg-white border border-slate-300 rounded-lg text-slate-600 focus:outline-none focus:border-indigo-500"
+            className="px-2 min-h-control text-xs font-bold bg-white border border-slate-300 rounded-lg text-slate-600 focus:outline-none focus:border-accent-500"
           >
             {historyOptions.map(n => <option key={n} value={n}>{n >= 1000 ? `${n / 1000}k` : n} lines</option>)}
           </select>
@@ -227,7 +230,7 @@ export function LogConsole({
           <button
             onClick={() => setLive(!liveOn)}
             data-feature-id="logs-live-toggle"
-            className={`flex items-center gap-1.5 px-3 min-h-[34px] text-xs font-bold rounded-lg border transition-colors ${liveOn ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-white text-slate-600 border-slate-300'}`}
+            className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${liveOn ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-white text-slate-600 border-slate-300'}`}
             title={liveOn ? 'Live tail on' : 'Paused'}
           >
             {liveOn ? <><Pause size={12} /> Live</> : <><Play size={12} /> Paused</>}
@@ -237,7 +240,7 @@ export function LogConsole({
           <button
             onClick={toggleTail}
             data-feature-id="logs-tail-toggle"
-            className={`flex items-center gap-1.5 px-3 min-h-[34px] text-xs font-bold rounded-lg border transition-colors ${autoScroll ? 'bg-indigo-50 text-indigo-700 border-indigo-300' : 'bg-white text-slate-600 border-slate-300'}`}
+            className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${autoScroll ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
             title={autoScroll ? 'Auto-scroll ON — following the tail' : 'Auto-scroll OFF'}
           >
             <ArrowDownToLine size={13} /> Tail
@@ -247,7 +250,7 @@ export function LogConsole({
           <button
             onClick={() => setShowTime(v => !v)}
             data-feature-id="logs-time-toggle"
-            className={`flex items-center gap-1.5 px-3 min-h-[34px] text-xs font-bold rounded-lg border transition-colors ${showTime ? 'bg-indigo-50 text-indigo-700 border-indigo-300' : 'bg-white text-slate-600 border-slate-300'}`}
+            className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${showTime ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
             title={showTime ? 'Per-line date + time shown' : 'Per-line date + time hidden'}
           >
             <Clock size={13} /> Date/Time
@@ -255,15 +258,15 @@ export function LogConsole({
         )}
         {sizeControls && (
           <div className="flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden" title="Font size">
-            <button onClick={() => setFontSize(s => Math.max(10, s - 1))} className="px-2.5 min-h-[34px] text-sm font-bold text-slate-600 hover:bg-slate-50">A−</button>
+            <button onClick={() => setFontSize(s => Math.max(10, s - 1))} className="px-2.5 min-h-control text-sm font-bold text-slate-600 hover:bg-slate-50">A−</button>
             <span className="px-1 text-[10px] text-slate-400 font-mono select-none">{fontSize}</span>
-            <button onClick={() => setFontSize(s => Math.min(22, s + 1))} className="px-2.5 min-h-[34px] text-base font-bold text-slate-600 hover:bg-slate-50">A+</button>
+            <button onClick={() => setFontSize(s => Math.min(22, s + 1))} className="px-2.5 min-h-control text-base font-bold text-slate-600 hover:bg-slate-50">A+</button>
           </div>
         )}
         {copyable && (
           <button
             onClick={copy}
-            className="flex items-center gap-1.5 px-3 min-h-[34px] text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+            className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
             title="Copy the visible log to clipboard"
           >
             {copied ? <><Check size={13} className="text-emerald-600" /> Copied</> : <><Copy size={13} /> Copy</>}
@@ -272,7 +275,7 @@ export function LogConsole({
         {onRefresh && (
           <button
             onClick={onRefresh}
-            className="flex items-center justify-center min-w-[34px] min-h-[34px] text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+            className="flex items-center justify-center min-w-[34px] min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
             title="Refresh"
           >
             <RefreshCw size={14} />
@@ -288,7 +291,7 @@ export function LogConsole({
   return (
     <div className={`${fill ? 'flex flex-col h-full min-h-0' : ''} space-y-2 ${!bare && !fill ? className : ''}`}>
       {toolbar}
-      <div className={`${fill ? 'flex-1 min-h-0 flex flex-col' : ''} bg-[#0d1117] border border-slate-300 rounded-xl overflow-hidden`}>
+      <div className={`${fill ? 'flex-1 min-h-0 flex flex-col' : ''} bg-surface-terminal border border-slate-300 rounded-xl overflow-hidden`}>
         {body}
       </div>
       {footer && <div className="text-[11px] text-slate-500 shrink-0">{footer}</div>}

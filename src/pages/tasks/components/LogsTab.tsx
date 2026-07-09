@@ -70,7 +70,7 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
           key={f.name}
           onClick={() => setActive(f.name)}
           data-feature-id="logs-agent-chip"
-          className={`flex items-center gap-1.5 px-3 min-h-[34px] text-xs font-bold font-mono rounded-lg border transition-colors ${active === f.name
+          className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold font-mono rounded-lg border transition-colors ${active === f.name
             ? 'bg-slate-800 text-emerald-300 border-slate-700'
             : f.kind === 'system'
               ? 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
@@ -88,7 +88,7 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
                 ? <span className="text-[10px] opacity-60 normal-case">{f.now}</span>
                 : <span className="text-[10px] opacity-60">{f.sizeKB}KB</span>)
             : f.busy && f.now
-              ? <span className="text-[10px] font-sans font-semibold text-indigo-500 normal-case">{f.name} · {f.now.split(' · ')[1]}</span>
+              ? <span className="text-[10px] font-sans font-semibold text-accent-500 normal-case">{f.name} · {f.now.split(' · ')[1]}</span>
               : <span className="text-[10px] opacity-60 normal-case">idle</span>}
         </button>
       ))}

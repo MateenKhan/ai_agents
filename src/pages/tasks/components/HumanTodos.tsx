@@ -158,7 +158,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
           </div>
           <button
             onClick={onClose}
-            className="flex items-center justify-center min-w-[44px] min-h-[44px] -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors"
+            className="flex items-center justify-center min-w-[44px] min-h-control-lg -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors"
           >
             <X size={20} />
           </button>
@@ -181,7 +181,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                       <h3 className="text-base font-bold text-slate-900 leading-snug">{task.title}</h3>
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
                         <span className="text-[11px] font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono uppercase">{task.id}</span>
-                        <span className="flex items-center gap-1 text-[11px] font-bold text-indigo-700 px-1.5 py-0.5 bg-indigo-50 rounded border border-indigo-200">
+                        <span className="flex items-center gap-1 text-[11px] font-bold text-accent-700 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200">
                           <GitBranch size={10} /> task/{task.id}
                         </span>
                         {task.claimedBy && (
@@ -200,8 +200,8 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                         return p.structured ? (
                           <div className="space-y-2.5">
                             {p.what && (
-                              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3.5">
-                                <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-700 mb-1.5">What the agent did</p>
+                              <div className="bg-accent-50 border border-accent-200 rounded-lg p-3.5">
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-accent-700 mb-1.5">What the agent did</p>
                                 <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap">{p.what}</p>
                               </div>
                             )}
@@ -213,8 +213,8 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                             )}
                           </div>
                         ) : (
-                          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3.5">
-                            <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-700 mb-2">Agent summary</p>
+                          <div className="bg-accent-50 border border-accent-200 rounded-lg p-3.5">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-accent-700 mb-2">Agent summary</p>
                             <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap">{task.summary}</p>
                           </div>
                         );
@@ -223,7 +223,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                       <div className="bg-slate-50 border border-dashed border-slate-300 rounded-lg p-3.5">
                         <p className="text-[13px] text-slate-600 leading-relaxed">
                           No reviewer summary from the agent (legacy task). Inspect the branch diff
-                          (<span className="font-mono text-indigo-700">git diff vps-dev...task/{task.id}</span>)
+                          (<span className="font-mono text-accent-700">git diff vps-dev...task/{task.id}</span>)
                           or Reject asking for a summary: "what you did + how to verify in 2 minutes".
                         </p>
                       </div>
@@ -266,7 +266,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                         className="bg-slate-50 border border-slate-200 rounded-lg overflow-hidden"
                         onToggle={(e) => { if ((e.target as HTMLDetailsElement).open) loadSpec(spec); }}
                       >
-                        <summary className="flex items-center gap-2 px-3.5 py-3 cursor-pointer text-[13px] font-bold text-indigo-700 select-none list-none [&::-webkit-details-marker]:hidden">
+                        <summary className="flex items-center gap-2 px-3.5 py-3 cursor-pointer text-[13px] font-bold text-accent-700 select-none list-none [&::-webkit-details-marker]:hidden">
                           <BookOpen size={14} /> What the DoD references (from {spec}) <ChevronDown size={14} className="ml-auto" />
                         </summary>
                         <div className="border-t border-slate-200 p-3.5 max-h-[45vh] overflow-y-auto custom-scrollbar space-y-3">
@@ -277,7 +277,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                               const points = extractRelevant(specs[spec]!, task.dod);
                               return points.length > 0 ? points.map(p => (
                                 <div key={p.label} className="bg-white border border-slate-200 rounded-lg p-3">
-                                  <p className="text-[11px] font-black uppercase tracking-wide text-indigo-700 mb-1">{p.label}</p>
+                                  <p className="text-[11px] font-black uppercase tracking-wide text-accent-700 mb-1">{p.label}</p>
                                   <pre className="text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap font-sans">{p.text}</pre>
                                 </div>
                               )) : (

@@ -13,6 +13,7 @@ import { useConfirm } from './ConfirmProvider';
 import { useProjects } from '../projectContext';
 import { LogConsole } from './LogConsole';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { btnPrimary, btnGhost, inputCls } from '../ui';
 
 // lucide has no Bitbucket brand glyph — minimal inline SVG matching the icon-size API.
 const Bitbucket = ({ size = 16, className = '' }: { size?: number; className?: string }) => (
@@ -109,10 +110,6 @@ function DiffView({ diff }: { diff: string }) {
   );
 }
 
-const inputCls = 'w-full min-h-[44px] rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-50';
-const btnPrimary = 'min-h-[44px] px-5 text-sm font-bold text-white bg-indigo-600 rounded-xl active:bg-indigo-700 sm:hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20 disabled:opacity-50 flex items-center justify-center gap-2';
-const btnGhost = 'min-h-[44px] px-4 text-sm font-bold text-slate-700 bg-white border border-slate-300 rounded-xl active:bg-slate-100 sm:hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-2';
-
 /** Full-width, styled, filterable combobox (replaces the unstyleable native <datalist>). */
 function SearchSelect({ value, onChange, options, placeholder, onOpen, loading, allowCustom, disabled, mono }: {
   value: string;
@@ -133,7 +130,7 @@ function SearchSelect({ value, onChange, options, placeholder, onOpen, loading, 
   const filtered = options.filter(o => o.label.toLowerCase().includes((open ? q : '').toLowerCase()));
   const openIt = () => { if (disabled) return; setOpen(true); setQ(''); onOpen?.(); };
   const pick = (v: string) => { onChange(v); setOpen(false); setQ(''); };
-  const cls = `w-full min-h-[44px] rounded-xl border border-slate-200 pl-3 pr-8 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 ${mono ? 'font-mono text-xs sm:text-sm' : ''}`;
+  const cls = `w-full min-h-control-lg rounded-xl border border-slate-200 pl-3 pr-8 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent-300 ${mono ? 'font-mono text-xs sm:text-sm' : ''}`;
   return (
     <div ref={ref} className="relative">
       <input
@@ -150,7 +147,7 @@ function SearchSelect({ value, onChange, options, placeholder, onOpen, loading, 
           {loading && <div className="px-3 py-2 text-xs text-slate-400">Loading…</div>}
           {!loading && filtered.map(o => (
             <button key={o.value} type="button" onMouseDown={e => { e.preventDefault(); pick(o.value); }}
-              className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 hover:bg-indigo-50 ${o.value === value ? 'bg-indigo-50/60 text-indigo-700 font-semibold' : 'text-slate-700'}`}>
+              className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 hover:bg-accent-50 ${o.value === value ? 'bg-accent-50/60 text-accent-700 font-semibold' : 'text-slate-700'}`}>
               <span className={`truncate ${mono ? 'font-mono text-xs' : ''}`}>{o.label}</span>
               {o.hint && <span className="text-[10px] text-slate-400 shrink-0">{o.hint}</span>}
             </button>
@@ -835,9 +832,9 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50">
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2 min-w-0">
-            <GitBranch className="w-5 h-5 text-indigo-600 shrink-0" /> Git Control
+            <GitBranch className="w-5 h-5 text-accent-600 shrink-0" /> Git Control
           </h2>
-          <button onClick={onClose} aria-label="Close (Esc)" title="Close (Esc)" className="flex flex-col items-center justify-center gap-0.5 p-2 min-h-[44px] min-w-[44px] hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-900 shrink-0">
+          <button onClick={onClose} aria-label="Close (Esc)" title="Close (Esc)" className="flex flex-col items-center justify-center gap-0.5 p-2 min-h-control-lg min-w-[44px] hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-900 shrink-0">
             <X size={20} />
             <span className="text-[9px] font-semibold uppercase tracking-wider leading-none text-slate-400">esc</span>
           </button>
@@ -849,7 +846,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
             const Icon = t.icon;
             return (
               <button key={t.id} onClick={() => { setTab(t.id); if (t.id === 'worktrees') loadWorktrees(); if (t.id === 'index') loadIndex(); if (t.id === 'tokens') loadGithubApps(); }}
-                className={`shrink-0 min-h-[40px] px-3 text-xs font-bold uppercase tracking-wider rounded-t-lg flex items-center gap-1.5 transition-colors ${tab === t.id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                className={`shrink-0 min-h-[40px] px-3 text-xs font-bold uppercase tracking-wider rounded-t-lg flex items-center gap-1.5 transition-colors ${tab === t.id ? 'bg-accent-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
                 <Icon size={14} /> {t.label}
               </button>
             );
@@ -878,7 +875,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 <>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1"><GitBranch size={13} className="text-slate-500" />{status.branch || '(detached)'}</span>
-                    {!!status.ahead && <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1">↑ {status.ahead}</span>}
+                    {!!status.ahead && <span className="text-[11px] font-bold text-accent-700 bg-accent-50 border border-accent-200 rounded-lg px-2 py-1">↑ {status.ahead}</span>}
                     {!!status.behind && <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">↓ {status.behind}</span>}
                   </div>
 
@@ -890,7 +887,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         const active = selectedFile === f.path;
                         return (
                           <div key={f.path}>
-                            <button onClick={() => loadDiff(f.path)} className={`w-full min-h-[44px] flex items-center gap-2.5 text-left px-2.5 py-2 rounded-lg border transition-colors ${active ? 'ring-2 ring-indigo-300 ' : ''}${fileColors(f)}`}>
+                            <button onClick={() => loadDiff(f.path)} className={`w-full min-h-control-lg flex items-center gap-2.5 text-left px-2.5 py-2 rounded-lg border transition-colors ${active ? 'ring-2 ring-accent-300 ' : ''}${fileColors(f)}`}>
                               <span className="text-[10px] font-black uppercase tracking-wider shrink-0 rounded px-1.5 py-0.5 bg-white/60 border border-black/10">{f.label}</span>
                               <span className="font-mono text-xs text-slate-700 break-all min-w-0">{f.path}</span>
                             </button>
@@ -909,7 +906,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                   <div className="pt-2 border-t border-slate-100 space-y-4">
                     {/* commit */}
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><GitCommit size={13} className="text-indigo-600" /> Commit</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><GitCommit size={13} className="text-accent-600" /> Commit</label>
                       <div className="flex flex-col sm:flex-row gap-2">
                         <input value={commitMsg} onChange={e => setCommitMsg(e.target.value)} placeholder="commit message (stages all changes)" className={inputCls} />
                         <button onClick={doCommit} disabled={acting} className={`${btnPrimary} shrink-0`}>Commit</button>
@@ -918,7 +915,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     {/* switch branch */}
                     {branches.list.length > 0 && (
                       <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><GitBranch size={13} className="text-indigo-600" /> Switch branch</label>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><GitBranch size={13} className="text-accent-600" /> Switch branch</label>
                         <select value={branches.current} onChange={e => e.target.value !== branches.current && doCheckout(e.target.value)} disabled={acting} data-feature-id="git-switch-branch" className={`${inputCls} cursor-pointer`}>
                           {!branches.list.includes(branches.current) && <option value={branches.current}>{branches.current || '(detached)'}</option>}
                           {branches.list.map(b => <option key={b} value={b}>{b}{b === branches.current ? '  (current)' : ''}</option>)}
@@ -927,7 +924,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     )}
                     {/* new branch */}
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><GitBranch size={13} className="text-indigo-600" /> New branch</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><GitBranch size={13} className="text-accent-600" /> New branch</label>
                       <div className="flex flex-col sm:flex-row gap-2">
                         <input value={branchName} onChange={e => setBranchName(e.target.value)} placeholder="branch name" className={inputCls} />
                         <input value={branchFrom} onChange={e => setBranchFrom(e.target.value)} placeholder="from (optional)" className={`${inputCls} sm:max-w-[40%]`} />
@@ -936,7 +933,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     </div>
                     {/* pull + push */}
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Upload size={13} className="text-indigo-600" /> Sync (read-write token)</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Upload size={13} className="text-accent-600" /> Sync (read-write token)</label>
                       <div className="flex flex-col sm:flex-row gap-2">
                         {tokenOptions(pushToken, setPushToken, t => t.scope === 'readwrite')}
                         <button onClick={doPull} disabled={acting} className={`${btnGhost} shrink-0`}><DownloadCloud size={14} /> Pull</button>
@@ -1101,8 +1098,8 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     const active = provider === id;
                     return (
                       <button key={id} type="button" onClick={() => pickProvider(id)}
-                        className={`flex flex-col items-center gap-1.5 py-2.5 rounded-xl border transition-colors ${active ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>
-                        <P.Icon size={20} className={active ? 'text-indigo-600' : 'text-slate-400'} />
+                        className={`flex flex-col items-center gap-1.5 py-2.5 rounded-xl border transition-colors ${active ? 'border-accent-500 bg-accent-50 text-accent-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>
+                        <P.Icon size={20} className={active ? 'text-accent-600' : 'text-slate-400'} />
                         <span className="text-[11px] font-bold">{P.label}</span>
                       </button>
                     );
@@ -1136,7 +1133,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         {/* App pseudo-tokens can't be edited (minted on demand); their delete
                             disconnects the underlying app (removes this row + the app row). */}
                         {t.source !== 'github-app' && (
-                          <button onClick={() => { editToken(t); setAddTokOpen(true); }} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-indigo-600 rounded-lg" aria-label="Edit"><Pencil size={15} /></button>
+                          <button onClick={() => { editToken(t); setAddTokOpen(true); }} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Edit"><Pencil size={15} /></button>
                         )}
                         <button
                           onClick={() => t.source === 'github-app' ? deleteGithubApp(t.id.replace(/^app:/, '')) : deleteToken(t.id)}
@@ -1170,7 +1167,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                               <>
                                 <span className="text-sm font-bold text-slate-800 truncate">{app.name}</span>
                                 <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${badge}`}>{app.state}</span>
-                                <button onClick={() => startRename(app.id, app.name || '')} className="ml-auto p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-indigo-600 rounded-lg" aria-label="Rename app" title="Rename / label this app"><Pencil size={15} /></button>
+                                <button onClick={() => startRename(app.id, app.name || '')} className="ml-auto p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Rename app" title="Rename / label this app"><Pencil size={15} /></button>
                                 <button onClick={() => deleteGithubApp(app.id)} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-lg" aria-label="Delete app"><Trash2 size={15} /></button>
                               </>
                             )}
@@ -1259,7 +1256,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
 
                   {/* instructions (shown once a connect has been started) */}
                   {connectStarted && (
-                    <ol className="list-decimal pl-5 space-y-1 text-[11px] text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2.5">
+                    <ol className="list-decimal pl-5 space-y-1 text-[11px] text-accent-800 bg-accent-50 border border-accent-200 rounded-lg px-3 py-2.5">
                       <li>Saw a <strong>500 error</strong>? You're logged out — sign into GitHub, then click Connect again.</li>
                       <li>In the GitHub tab, click <strong>Create GitHub App</strong>.</li>
                       <li>Then <strong>Install</strong> it on the repos you want.</li>
@@ -1341,8 +1338,8 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
 
               {/* guide */}
               <div>
-                <button onClick={() => setGuideOpen(o => !o)} className="w-full min-h-[44px] flex items-center justify-between gap-2 text-left px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100">
-                  <span className="text-xs font-bold text-slate-700 flex items-center gap-2"><KeyRound className="w-4 h-4 text-indigo-600" /> How to create a {activeProvider.label} {activeProvider.credName.toLowerCase()}</span>
+                <button onClick={() => setGuideOpen(o => !o)} className="w-full min-h-control-lg flex items-center justify-between gap-2 text-left px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-2"><KeyRound className="w-4 h-4 text-accent-600" /> How to create a {activeProvider.label} {activeProvider.credName.toLowerCase()}</span>
                   <ChevronDown size={16} className={`text-slate-400 transition-transform shrink-0 ${guideOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {guideOpen && (
@@ -1351,8 +1348,8 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                       {activeProvider.guide.map((step, i) => <li key={i}>{step}</li>)}
                     </ol>
                     <div className="flex items-center gap-2 flex-wrap bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                      <a href={activeProvider.tokenUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-mono text-xs break-all hover:underline">{activeProvider.tokenUrl}</a>
-                      <button type="button" onClick={copyLink} aria-label="Copy" className="p-1.5 min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg">{copiedLink ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}</button>
+                      <a href={activeProvider.tokenUrl} target="_blank" rel="noopener noreferrer" className="text-accent-600 font-mono text-xs break-all hover:underline">{activeProvider.tokenUrl}</a>
+                      <button type="button" onClick={copyLink} aria-label="Copy" className="p-1.5 min-h-control min-w-[36px] flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg">{copiedLink ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}</button>
                     </div>
                     <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">A PAT is a password. Give agents a <strong>readonly</strong> token; keep your <strong>readwrite</strong> push token separate. Always set an expiry.</p>
                   </div>
@@ -1366,8 +1363,8 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
             <div className="space-y-3">
               <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">Each agent authenticates git with its assigned token. Set the <strong>Default</strong> to give one token to every agent, or override per agent. Give agents a <strong>readonly</strong> token.</p>
               {/* default (*) */}
-              <div className="flex items-center gap-2 p-2.5 rounded-xl border border-indigo-200 bg-indigo-50/50">
-                <Bot size={16} className="text-indigo-600 shrink-0" />
+              <div className="flex items-center gap-2 p-2.5 rounded-xl border border-accent-200 bg-accent-50/50">
+                <Bot size={16} className="text-accent-600 shrink-0" />
                 <span className="text-sm font-bold text-slate-800 flex-1 min-w-0">Default — all agents</span>
                 <div className="w-[46%] max-w-[220px]">{tokenOptions(assignments['*'] || '', v => setAssign('*', v))}</div>
               </div>
@@ -1434,9 +1431,9 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                   const open = openCommit === c.hash;
                   return (
                     <div key={c.hash}>
-                      <button onClick={() => openCommitDetail(c.hash)} className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${open ? 'ring-2 ring-indigo-300 ' : ''}${c.merge ? 'bg-violet-50 border-violet-200' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                      <button onClick={() => openCommitDetail(c.hash)} className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${open ? 'ring-2 ring-accent-300 ' : ''}${c.merge ? 'bg-violet-50 border-violet-200' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-[11px] text-indigo-600 font-bold">{c.shortHash}</span>
+                          <span className="font-mono text-[11px] text-accent-600 font-bold">{c.shortHash}</span>
                           {c.merge && <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-violet-100 border border-violet-200 text-violet-700">merge</span>}
                           <span className="text-sm text-slate-800 break-words min-w-0 flex-1">{c.subject}</span>
                         </div>
@@ -1479,7 +1476,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
               {idx && (
                 <div className="rounded-xl border border-slate-200 overflow-hidden">
                   <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2 flex-wrap">
-                    <Database size={15} className="text-indigo-600" />
+                    <Database size={15} className="text-accent-600" />
                     <span className="text-xs font-bold text-slate-700">Active repo</span>
                     {idx.isDefault && <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-500">host default</span>}
                     <span className={`ml-auto text-[9px] font-black uppercase rounded px-1.5 py-0.5 border ${idx.rebuilding ? 'bg-amber-50 border-amber-200 text-amber-700' : idx.healthy ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>

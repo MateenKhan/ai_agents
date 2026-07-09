@@ -99,7 +99,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           </div>
           <button
             onClick={onClose}
-            className="flex items-center justify-center min-w-[44px] min-h-[44px] -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors shrink-0"
+            className="flex items-center justify-center min-w-[44px] min-h-control-lg -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors shrink-0"
           >
             <X size={18} />
           </button>
@@ -118,11 +118,11 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                     title="Open this agent's logs"
                     className="flex flex-col items-center gap-1 shrink-0 group focus:outline-none"
                   >
-                    <div className={`relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-transform group-hover:scale-110 ${i < stageIdx ? 'bg-emerald-500 text-white' : i === stageIdx ? 'bg-indigo-600 text-white ring-4 ring-indigo-100' : 'bg-slate-200 text-slate-400'}`}>
-                      {i === stageIdx && task.status === 'WORKING' && <span className="absolute -inset-1 rounded-full ring-2 ring-indigo-400 animate-ping" />}
+                    <div className={`relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-transform group-hover:scale-110 ${i < stageIdx ? 'bg-emerald-500 text-white' : i === stageIdx ? 'bg-accent-600 text-white ring-4 ring-accent-100' : 'bg-slate-200 text-slate-400'}`}>
+                      {i === stageIdx && task.status === 'WORKING' && <span className="absolute -inset-1 rounded-full ring-2 ring-accent-400 animate-ping" />}
                       <span className="relative">{i < stageIdx ? <CheckCircle2 size={13} /> : i + 1}</span>
                     </div>
-                    <span className={`text-[9px] font-semibold group-hover:underline ${i === stageIdx ? 'text-indigo-700' : i < stageIdx ? 'text-emerald-600' : 'text-slate-400'}`}>{s.label}</span>
+                    <span className={`text-[9px] font-semibold group-hover:underline ${i === stageIdx ? 'text-accent-700' : i < stageIdx ? 'text-emerald-600' : 'text-slate-400'}`}>{s.label}</span>
                   </button>
                   {i < STAGES.length - 1 && <div className={`flex-1 h-0.5 mx-1 ${i < stageIdx ? 'bg-emerald-400' : 'bg-slate-200'}`} />}
                 </React.Fragment>
@@ -142,7 +142,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                 <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showPlan ? 'rotate-180' : ''}`} />
               </button>
               {showPlan
-                ? <div className="px-4 py-4 border-t border-slate-200 min-h-[120px] max-h-[45vh] overflow-y-auto custom-scrollbar text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap bg-indigo-50/40">{task.summary}</div>
+                ? <div className="px-4 py-4 border-t border-slate-200 min-h-[120px] max-h-[45vh] overflow-y-auto custom-scrollbar text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap bg-accent-50/40">{task.summary}</div>
                 : <div className="px-4 py-2.5 border-t border-slate-100 text-xs text-slate-400 italic truncate">{task.summary.split('\n').find(Boolean)?.slice(0, 90)}…</div>}
             </div>
           )}
@@ -201,14 +201,14 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           </div>
 
           <Meta label="Branch">
-            <p className="text-xs font-mono text-indigo-700 flex items-center gap-1.5"><GitBranch size={13} />task/{task.id}</p>
+            <p className="text-xs font-mono text-accent-700 flex items-center gap-1.5"><GitBranch size={13} />task/{task.id}</p>
           </Meta>
 
           {task.dependsOn && task.dependsOn.length > 0 && (
             <Meta label="Depends on">
               <div className="flex flex-wrap gap-1.5">
                 {task.dependsOn.map(d => (
-                  <span key={d} className="flex items-center gap-1 text-[11px] font-bold text-indigo-700 px-2 py-1 bg-indigo-50 rounded border border-indigo-200"><LinkIcon size={10} />{d}</span>
+                  <span key={d} className="flex items-center gap-1 text-[11px] font-bold text-accent-700 px-2 py-1 bg-accent-50 rounded border border-accent-200"><LinkIcon size={10} />{d}</span>
                 ))}
               </div>
             </Meta>
@@ -269,7 +269,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                 onClick={() => onControl(task.id, 'start')}
                 disabled={isControlling}
                 data-feature-id="task-detail-rerun"
-                className={`flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-indigo-600 text-white rounded-xl active:bg-indigo-700 sm:hover:bg-indigo-500 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
+                className={`flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-accent-600 text-white rounded-xl active:bg-accent-700 sm:hover:bg-accent-500 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
               >
                 <RotateCcw size={14} /> Re-run
               </button>
@@ -300,7 +300,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           )}
           <button
             onClick={() => { onEdit(task); onClose(); }}
-            className="flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-indigo-600 text-white rounded-xl active:bg-indigo-700 sm:hover:bg-indigo-500 transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-accent-600 text-white rounded-xl active:bg-accent-700 sm:hover:bg-accent-500 transition-colors"
           >
             <Edit2 size={14} /> Edit
           </button>

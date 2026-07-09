@@ -69,7 +69,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
 
   // ── Actual agent time (from stageTimings: role → ms) ──
   const ROLE_ORDER = ['architect', 'dev', 'qa', 'merge'];
-  const ROLE_COLOR: Record<string, string> = { architect: 'bg-fuchsia-500', dev: 'bg-indigo-500', qa: 'bg-amber-500', merge: 'bg-emerald-500' };
+  const ROLE_COLOR: Record<string, string> = { architect: 'bg-fuchsia-500', dev: 'bg-accent-500', qa: 'bg-amber-500', merge: 'bg-emerald-500' };
   const tasksWithTime = tasks
     .map(t => { const timings = t.stageTimings || {}; return { t, timings, total: Object.values(timings).reduce((s, v) => s + v, 0) }; })
     .filter(x => x.total > 0);
@@ -110,7 +110,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
       </div>
 
       {/* Models */}
-      <Section icon={<Cpu size={14} className="text-indigo-600" />} title="Models used">
+      <Section icon={<Cpu size={14} className="text-accent-600" />} title="Models used">
         {Object.keys(byModel).length === 0 ? (
           <p className="text-xs text-slate-500">No model data yet — recorded on each dispatch (set CLAUDE_MODEL env to name it explicitly).</p>
         ) : (
@@ -119,7 +119,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
               <div key={model} className="flex items-center gap-3">
                 <span className="text-xs font-mono text-slate-800 min-w-[160px] truncate">{model}</span>
                 <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${(count / tasks.length) * 100}%` }} />
+                  <div className="h-full bg-accent-500 rounded-full" style={{ width: `${(count / tasks.length) * 100}%` }} />
                 </div>
                 <span className="text-xs font-bold text-slate-600 w-8 text-right">{count}</span>
               </div>
@@ -169,7 +169,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
       </Section>
 
       {/* Time per task, broken down by agent */}
-      <Section icon={<Clock size={14} className="text-indigo-600" />} title="Time per task (by agent)">
+      <Section icon={<Clock size={14} className="text-accent-600" />} title="Time per task (by agent)">
         {topByTime.length === 0 ? (
           <p className="text-xs text-slate-500">No per-task timing yet.</p>
         ) : (
@@ -258,7 +258,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
           <div className="space-y-1.5">
             {fileUsage.map(f => (
               <div key={f.path} className="flex items-center gap-2 text-[11px]">
-                {f.inContext ? <Pin size={11} className="text-indigo-500 shrink-0" /> : <FileCode size={11} className="text-slate-400 shrink-0" />}
+                {f.inContext ? <Pin size={11} className="text-accent-500 shrink-0" /> : <FileCode size={11} className="text-slate-400 shrink-0" />}
                 <span className="flex-1 min-w-0 truncate font-mono text-slate-700" title={f.path}>{f.path}</span>
                 {f.tokens != null && <span className="shrink-0 text-slate-400 tabular-nums">{f.tokens >= 1000 ? `${Math.round(f.tokens / 1000)}K` : f.tokens} tok</span>}
                 <span className="shrink-0 text-violet-700 font-bold tabular-nums">{f.uses}×</span>

@@ -44,7 +44,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
           <button
             onClick={addCustom}
             data-feature-id="board-editor-add-column"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide bg-accent-600 text-white rounded-lg hover:bg-accent-500 transition-colors"
           >
             <Plus size={14} /> Add Lane
           </button>
@@ -70,7 +70,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
                 type="text"
                 value={lane.label}
                 onChange={e => patch(lane.id, { label: e.target.value })}
-                className="flex-1 min-w-0 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-800 focus:outline-none focus:border-indigo-400"
+                className="flex-1 min-w-0 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-800 focus:outline-none focus:border-accent-400"
               />
 
               <span className="hidden sm:inline text-[9px] font-bold text-slate-400 uppercase tracking-tighter shrink-0">
@@ -100,7 +100,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
               <button
                 key={b.id}
                 onClick={() => addBuiltin(b)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold bg-white border border-slate-300 rounded-lg hover:border-indigo-400 hover:bg-slate-50 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold bg-white border border-slate-300 rounded-lg hover:border-accent-400 hover:bg-slate-50 transition-colors"
               >
                 <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
                 {b.label}

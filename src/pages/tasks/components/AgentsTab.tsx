@@ -8,6 +8,7 @@ import { API_BASE as API } from '../../../apiBase';
 // Same skill map the orchestrator injects into prompts (dependency-free module) — so
 // the UI shows exactly which superpowers each role runs, with no drift.
 import { skillsForRole, SKILL_DESCRIPTIONS } from '../../../../agentic/methodology/superpowers';
+import { btnPrimary, btnPrimarySm, btnGhost, inputCls, selectCls, textareaCls, selectSm } from '../ui';
 
 /**
  * Agents tab — edit the pipeline's role config (prompt + model + worktree + enabled),
@@ -204,11 +205,11 @@ export default function AgentsTab() {
               <button
                 onClick={() => setEditing(a)}
                 data-feature-id="agents-workflow-node"
-                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border-2 border-indigo-200 rounded-lg text-xs font-bold text-indigo-800 hover:bg-indigo-100 hover:border-indigo-400 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 bg-accent-50 border-2 border-accent-200 rounded-lg text-xs font-bold text-accent-800 hover:bg-accent-100 hover:border-accent-400 transition-colors"
                 title={`${a.label} · ${a.model} · click to edit`}
               >
-                <Bot size={13} className="text-indigo-600" /> {a.label}
-                <span className="text-[9px] font-mono text-indigo-500 bg-white px-1 rounded">{a.model}</span>
+                <Bot size={13} className="text-accent-600" /> {a.label}
+                <span className="text-[9px] font-mono text-accent-500 bg-white px-1 rounded">{a.model}</span>
               </button>
             </React.Fragment>
           ))}
@@ -220,9 +221,9 @@ export default function AgentsTab() {
               <ArrowRight size={16} className="text-slate-400 shrink-0" />
               <button onClick={() => setEditing((agents ?? []).find(a => a.role === 'architect')!)}
                 data-feature-id="agents-workflow-merge"
-                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border-2 border-dashed border-indigo-300 rounded-lg text-xs font-bold text-indigo-800 hover:bg-indigo-100 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2 bg-accent-50 border-2 border-dashed border-accent-300 rounded-lg text-xs font-bold text-accent-800 hover:bg-accent-100 transition-colors"
                 title="The same Architect merges the approved branch — click to edit its merge prompt">
-                <GitBranch size={13} className="text-indigo-600" /> Architect merges
+                <GitBranch size={13} className="text-accent-600" /> Architect merges
               </button>
             </>
           )}
@@ -234,16 +235,16 @@ export default function AgentsTab() {
       <div className="flex items-center gap-2 flex-wrap">
         <p className="text-sm text-slate-600">Configure each role's model, prompt, and workspace. Edits apply within ~10s.</p>
         <div className="ml-auto flex gap-2">
-          <button onClick={() => setWorkspaceOpen(true)} data-feature-id="agents-workspace-btn" className="flex items-center gap-1.5 px-3 min-h-[38px] text-xs font-bold bg-white text-indigo-700 border border-indigo-300 rounded-lg hover:bg-indigo-50"><WorkflowIcon size={14} /> Workspace</button>
-          <button onClick={addCustom} className="flex items-center gap-1.5 px-3 min-h-[38px] text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-500"><Plus size={14} /> Custom agent</button>
-          <button onClick={reset} className="flex items-center gap-1.5 px-3 min-h-[38px] text-xs font-bold bg-white text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50"><RotateCcw size={14} /> Reset defaults</button>
+          <button onClick={() => setWorkspaceOpen(true)} data-feature-id="agents-workspace-btn" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-white text-accent-700 border border-accent-300 rounded-lg hover:bg-accent-50"><WorkflowIcon size={14} /> Workspace</button>
+          <button onClick={addCustom} className={btnPrimarySm}><Plus size={14} /> Custom agent</button>
+          <button onClick={reset} className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-white text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50"><RotateCcw size={14} /> Reset defaults</button>
         </div>
       </div>
 
       {/* ── Workspace popup: workflow + supervisor guards (animated Modal) ── */}
       <AnimatePresence>
         {workspaceOpen && (
-          <Modal isOpen onClose={() => setWorkspaceOpen(false)} title="Workspace" subtitle="Pipeline & the always-on supervisor" icon={<WorkflowIcon size={20} className="text-indigo-600" />} maxW="sm:max-w-3xl" featureId="agents-workspace-popup">
+          <Modal isOpen onClose={() => setWorkspaceOpen(false)} title="Workspace" subtitle="Pipeline & the always-on supervisor" icon={<WorkflowIcon size={20} className="text-accent-600" />} maxW="sm:max-w-3xl" featureId="agents-workspace-popup">
             <div className="space-y-5">
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -332,7 +333,7 @@ export default function AgentsTab() {
                   {GUARDS.map(g => {
                     const open = openGuard === g.label;
                     return (
-                      <div key={g.label} className={`border rounded-xl overflow-hidden transition-colors ${open ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                      <div key={g.label} className={`border rounded-xl overflow-hidden transition-colors ${open ? 'border-accent-300 bg-accent-50/40' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                         <button
                           onClick={() => setOpenGuard(open ? null : g.label)}
                           className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left"
@@ -372,9 +373,9 @@ export default function AgentsTab() {
           {agents.map(a => (
             <div key={a.role} className={`bg-white border-2 rounded-xl p-4 space-y-3 shadow-sm ${a.enabled ? 'border-slate-200' : 'border-slate-200 opacity-60'}`}>
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 flex items-center justify-center bg-indigo-50 border border-indigo-200 rounded-lg"><Bot size={18} className="text-indigo-600" /></div>
+                <div className="w-9 h-9 flex items-center justify-center bg-accent-50 border border-accent-200 rounded-lg"><Bot size={18} className="text-accent-600" /></div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900">{a.label || a.role} {a.isSystem ? '' : <span className="text-[10px] font-black text-indigo-600">CUSTOM</span>}</h3>
+                  <h3 className="text-sm font-bold text-slate-900">{a.label || a.role} {a.isSystem ? '' : <span className="text-[10px] font-black text-accent-600">CUSTOM</span>}</h3>
                   <p className="text-[11px] font-mono text-slate-500">{a.role}</p>
                 </div>
                 <div className="ml-auto flex items-center gap-1.5">
@@ -386,12 +387,12 @@ export default function AgentsTab() {
               <div className="flex items-center gap-3 text-xs">
                 {/* Inline model picker — change the model without opening the editor */}
                 <label className="flex items-center gap-1 text-slate-700" title="Model — applies within ~10s">
-                  <Cpu size={12} className="text-indigo-500" />
+                  <Cpu size={12} className="text-accent-500" />
                   <select
                     value={a.model}
                     onChange={e => setModel(a, e.target.value)}
                     data-feature-id={`agent-model-${a.role}`}
-                    className="bg-slate-50 border border-slate-300 rounded-md px-1.5 py-1 text-xs font-semibold text-slate-800 cursor-pointer hover:border-indigo-400 focus:outline-none focus:border-indigo-500"
+                    className={`${selectSm} w-auto`}
                   >
                     {/* Include the current value even if it's a custom/unknown model string. */}
                     {!MODELS.some(m => m.v === a.model) && <option value={a.model}>{a.model}</option>}
@@ -417,13 +418,13 @@ export default function AgentsTab() {
           isOpen
           onClose={() => setEditing(null)}
           title={editing.isSystem ? `Edit ${editing.label}` : editing.role ? `Edit ${editing.role}` : 'New custom agent'}
-          icon={<Bot size={18} className="text-indigo-600" />}
+          icon={<Bot size={18} className="text-accent-600" />}
           maxW="sm:max-w-2xl"
           featureId="agent-editor"
           footer={
             <div className="flex justify-end gap-2 w-full">
-              <button onClick={() => setEditing(null)} className="px-4 min-h-[42px] text-xs font-bold text-slate-600 rounded-lg hover:bg-slate-100">Cancel</button>
-              <button onClick={save} disabled={busy || !editing.role} className="flex items-center gap-1.5 px-5 min-h-[42px] text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50"><Save size={14} /> Save</button>
+              <button onClick={() => setEditing(null)} className={btnGhost}>Cancel</button>
+              <button onClick={save} disabled={busy || !editing.role} className={btnPrimary}><Save size={14} /> Save</button>
             </div>
           }
         >
@@ -432,25 +433,25 @@ export default function AgentsTab() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-bold uppercase text-slate-600">Role id</label>
-                    <input value={editing.role} onChange={e => setEditing({ ...editing, role: e.target.value.replace(/[^\w-]/g, '') })} className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 font-mono" placeholder="reviewer" />
+                    <input value={editing.role} onChange={e => setEditing({ ...editing, role: e.target.value.replace(/[^\w-]/g, '') })} className={`${inputCls} mt-1 font-mono`} placeholder="reviewer" />
                   </div>
                   <div>
                     <label className="text-[10px] font-bold uppercase text-slate-600">Label</label>
-                    <input value={editing.label} onChange={e => setEditing({ ...editing, label: e.target.value })} className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900" placeholder="Reviewer" />
+                    <input value={editing.label} onChange={e => setEditing({ ...editing, label: e.target.value })} className={`${inputCls} mt-1`} placeholder="Reviewer" />
                   </div>
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold uppercase text-slate-600">Model</label>
-                  <select value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900">
+                  <select value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} className={`${selectCls} mt-1`}>
                     {!MODELS.some(m => m.v === editing.model) && <option value={editing.model}>{editing.model}</option>}
                     {MODELS.map(m => <option key={m.v} value={m.v}>{m.label}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold uppercase text-slate-600">Workspace</label>
-                  <select value={editing.worktreeMode} onChange={e => setEditing({ ...editing, worktreeMode: e.target.value })} className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900">
+                  <select value={editing.worktreeMode} onChange={e => setEditing({ ...editing, worktreeMode: e.target.value })} className={`${selectCls} mt-1`}>
                     {WORKTREES.map(w => <option key={w.v} value={w.v}>{w.v} — {w.d}</option>)}
                   </select>
                 </div>
@@ -458,7 +459,7 @@ export default function AgentsTab() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[10px] font-bold uppercase text-slate-600">Workflow order</label>
-                  <input type="number" value={editing.ord} onChange={e => setEditing({ ...editing, ord: parseInt(e.target.value) || 0 })} className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900" />
+                  <input type="number" value={editing.ord} onChange={e => setEditing({ ...editing, ord: parseInt(e.target.value) || 0 })} className={`${inputCls} mt-1`} />
                   <p className="text-[10px] text-slate-500 mt-0.5">lower = earlier in the flow</p>
                 </div>
                 <div className="flex items-end pb-1">
@@ -470,8 +471,8 @@ export default function AgentsTab() {
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase text-slate-600">{editing.role === 'architect' ? 'Plan prompt (job 1: planning)' : 'Prompt template'}</label>
-                <textarea value={editing.promptTemplate} onChange={e => setEditing({ ...editing, promptTemplate: e.target.value })} rows={editing.role === 'architect' ? 12 : 16} className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 font-mono resize-y" />
-                <p className="text-[10px] text-slate-500 mt-1.5">Placeholders (filled per task): {PLACEHOLDERS.map(p => <code key={p} className="mx-0.5 px-1 bg-slate-100 rounded text-indigo-700">{`{{${p}}}`}</code>)}</p>
+                <textarea value={editing.promptTemplate} onChange={e => setEditing({ ...editing, promptTemplate: e.target.value })} rows={editing.role === 'architect' ? 12 : 16} className={`${textareaCls} mt-1 text-xs font-mono`} />
+                <p className="text-[10px] text-slate-500 mt-1.5">Placeholders (filled per task): {PLACEHOLDERS.map(p => <code key={p} className="mx-0.5 px-1 bg-slate-100 rounded text-accent-700">{`{{${p}}}`}</code>)}</p>
               </div>
 
               {/* Superpowers — auto-injected ahead of the prompt above by the orchestrator */}
@@ -488,7 +489,7 @@ export default function AgentsTab() {
               {editing.role === 'architect' && (
                 <div>
                   <label className="text-[10px] font-bold uppercase text-slate-600">Merge prompt (job 2: same architect merges the approved branch)</label>
-                  <textarea value={editing.mergePromptTemplate || ''} onChange={e => setEditing({ ...editing, mergePromptTemplate: e.target.value })} rows={12} className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-900 font-mono resize-y" />
+                  <textarea value={editing.mergePromptTemplate || ''} onChange={e => setEditing({ ...editing, mergePromptTemplate: e.target.value })} rows={12} className={`${textareaCls} mt-1 text-xs font-mono`} />
                   <p className="text-[10px] text-slate-500 mt-1.5">The architect who planned the task also merges it after your approval — one agent, both jobs.</p>
                 </div>
               )}

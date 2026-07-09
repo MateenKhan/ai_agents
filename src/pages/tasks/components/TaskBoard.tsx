@@ -41,7 +41,7 @@ function DropIndicator() {
       transition={{ type: 'spring', stiffness: 500, damping: 40, mass: 0.6 }}
       className="origin-top"
     >
-      <div className="flex items-center justify-center h-14 rounded-xl border-2 border-dashed border-indigo-400 bg-indigo-100/50 text-[10px] font-black uppercase tracking-widest text-indigo-500">
+      <div className="flex items-center justify-center h-14 rounded-xl border-2 border-dashed border-accent-400 bg-accent-100/50 text-[10px] font-black uppercase tracking-widest text-accent-500">
         Drop here
       </div>
     </motion.div>
@@ -115,8 +115,8 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
             data-feature-id={`tasks-lane-${col.id.toLowerCase()}`}
             className={`flex flex-col max-h-full min-w-[86vw] max-w-[86vw] sm:min-w-[300px] sm:max-w-[320px] snap-center sm:snap-align-none rounded-2xl overflow-hidden shadow-sm transition-all duration-200 ${
               isDropTarget
-                ? 'bg-indigo-50/70 border-2 border-indigo-500 ring-2 ring-indigo-400/40 shadow-lg shadow-indigo-500/10'
-                : 'bg-slate-50 border-2 border-slate-300 sm:hover:border-indigo-400'
+                ? 'bg-accent-50/70 border-2 border-accent-500 ring-2 ring-accent-400/40 shadow-lg shadow-accent-500/10'
+                : 'bg-slate-50 border-2 border-slate-300 sm:hover:border-accent-400'
             }`}
           >
             {/* Column Header */}
@@ -130,7 +130,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
                     ref={el => { if (el) el.indeterminate = someInLaneSelected && !allInLaneSelected; }}
                     onChange={() => toggleLane(colTasks)}
                     disabled={colTasks.length === 0}
-                    className="w-5 h-5 accent-indigo-600 disabled:opacity-20"
+                    className="w-5 h-5 accent-accent-600 disabled:opacity-20"
                     title={allInLaneSelected ? 'Deselect all in lane' : 'Select all in lane'}
                   />
                 </label>
@@ -145,7 +145,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
               <button
                 onClick={() => onAddTask(col.id)}
                 data-feature-id="tasks-lane-add"
-                className="flex items-center justify-center min-w-[44px] min-h-[44px] -m-1.5 active:bg-slate-200 sm:hover:bg-slate-100 rounded-md text-slate-500 sm:hover:text-slate-900 transition-all shrink-0"
+                className="flex items-center justify-center min-w-[44px] min-h-control-lg -m-1.5 active:bg-slate-200 sm:hover:bg-slate-100 rounded-md text-slate-500 sm:hover:text-slate-900 transition-all shrink-0"
               >
                 <Plus size={18} />
               </button>
@@ -209,7 +209,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
       {selected.size > 0 && (
         <div
           data-feature-id="tasks-bulk-action-bar"
-          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-2.5 w-[calc(100vw-1.5rem)] sm:w-auto justify-between sm:justify-start bg-white border border-indigo-300 rounded-2xl shadow-2xl shadow-slate-400/40"
+          className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 sm:gap-3 px-4 sm:px-5 py-2.5 w-[calc(100vw-1.5rem)] sm:w-auto justify-between sm:justify-start bg-white border border-accent-300 rounded-2xl shadow-2xl shadow-slate-400/40"
         >
           <span className="text-sm font-bold text-slate-900 whitespace-nowrap">{selected.size} selected</span>
           <div className="hidden sm:block w-px h-5 bg-slate-200" />
@@ -217,14 +217,14 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
             <button
               data-feature-id="tasks-bulk-delete"
               onClick={handleBulkDelete}
-              className="flex items-center gap-1.5 px-4 min-h-[44px] text-xs font-bold uppercase tracking-wide bg-rose-50 text-rose-600 border border-rose-300 rounded-xl active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors"
+              className="flex items-center gap-1.5 px-4 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-rose-50 text-rose-600 border border-rose-300 rounded-xl active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors"
             >
               <Trash2 size={14} /> Delete
             </button>
             <button
               data-feature-id="tasks-bulk-clear"
               onClick={clearSelection}
-              className="flex items-center gap-1.5 px-4 min-h-[44px] text-xs font-bold uppercase tracking-wide bg-white text-slate-700 border border-slate-300 rounded-xl active:bg-slate-100 sm:hover:bg-slate-50 transition-colors"
+              className="flex items-center gap-1.5 px-4 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-white text-slate-700 border border-slate-300 rounded-xl active:bg-slate-100 sm:hover:bg-slate-50 transition-colors"
             >
               <X size={14} /> Clear
             </button>

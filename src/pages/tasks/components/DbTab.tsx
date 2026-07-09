@@ -125,7 +125,7 @@ export default function DbTab() {
   const STATUS_CLASS: Record<string, string> = {
     TODO: 'bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200',
     AVAILABLE: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-    WORKING: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    WORKING: 'bg-accent-50 text-accent-700 border-accent-200',
     BLOCKED: 'bg-rose-50 text-rose-700 border-rose-200',
     TESTING: 'bg-amber-50 text-amber-700 border-amber-200',
     DONE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -159,8 +159,8 @@ export default function DbTab() {
             key={t.name}
             onClick={() => switchTable(t.name)}
             data-feature-id="db-table-chip"
-            className={`flex items-center gap-1.5 px-3 min-h-[38px] text-xs font-bold font-mono rounded-lg border transition-colors ${active === t.name
-              ? 'bg-indigo-600 text-white border-indigo-600'
+            className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold font-mono rounded-lg border transition-colors ${active === t.name
+              ? 'bg-accent-600 text-white border-accent-600'
               : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
           >
             <Database size={12} /> {t.name} <span className="text-[10px] opacity-70">{t.rows}</span>
@@ -174,13 +174,13 @@ export default function DbTab() {
               onChange={e => { setQ(e.target.value); setOffset(0); }}
               placeholder="Search all text columns…"
               data-feature-id="db-search"
-              className="pl-8 pr-3 min-h-[38px] text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-indigo-500 placeholder:text-slate-400 w-52"
+              className="pl-8 pr-3 min-h-control text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500 placeholder:text-slate-400 w-52"
             />
           </div>
           <button
             onClick={() => setEditing({})}
             data-feature-id="db-add-row"
-            className="flex items-center gap-1.5 px-3 min-h-[38px] text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-colors"
+            className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-accent-600 text-white rounded-lg hover:bg-accent-500 transition-colors"
           >
             <Plus size={14} /> Row
           </button>
@@ -189,15 +189,15 @@ export default function DbTab() {
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 flex-wrap px-4 py-2.5 bg-indigo-50 border-2 border-indigo-200 rounded-xl" data-feature-id="db-bulk-bar">
-          <span className="text-sm font-bold text-indigo-900">{selected.size} selected</span>
-          <div className="w-px h-5 bg-indigo-200" />
+        <div className="flex items-center gap-3 flex-wrap px-4 py-2.5 bg-accent-50 border-2 border-accent-200 rounded-xl" data-feature-id="db-bulk-bar">
+          <span className="text-sm font-bold text-accent-900">{selected.size} selected</span>
+          <div className="w-px h-5 bg-accent-200" />
           {bulkEdit ? (
             <div className="flex items-center gap-2 flex-wrap">
               <select
                 value={bulkEdit.col}
                 onChange={e => setBulkEdit({ ...bulkEdit, col: e.target.value })}
-                className="px-2 min-h-[36px] text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-900"
+                className="px-2 min-h-control text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-900"
               >
                 <option value="">column…</option>
                 {cols.filter(c => !c.pk).map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
@@ -206,35 +206,35 @@ export default function DbTab() {
                 value={bulkEdit.val}
                 onChange={e => setBulkEdit({ ...bulkEdit, val: e.target.value })}
                 placeholder="new value (empty = null)"
-                className="px-3 min-h-[36px] text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-900 w-44"
+                className="px-3 min-h-control text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-900 w-44"
               />
               <button onClick={bulkUpdate} disabled={busy || !bulkEdit.col}
-                className="px-3 min-h-[36px] text-xs font-bold bg-indigo-600 text-white rounded-lg disabled:opacity-40 hover:bg-indigo-500">
+                className="px-3 min-h-control text-xs font-bold bg-accent-600 text-white rounded-lg disabled:opacity-40 hover:bg-accent-500">
                 Apply to {selected.size}
               </button>
-              <button onClick={() => setBulkEdit(null)} className="px-2 min-h-[36px] text-xs font-bold text-slate-600 hover:text-slate-900">Cancel</button>
+              <button onClick={() => setBulkEdit(null)} className="px-2 min-h-control text-xs font-bold text-slate-600 hover:text-slate-900">Cancel</button>
             </div>
           ) : (
             <>
               <button onClick={() => setBulkEdit({ col: '', val: '' })} data-feature-id="db-bulk-update"
-                className="flex items-center gap-1.5 px-3 min-h-[36px] text-xs font-bold bg-white text-indigo-700 border border-indigo-300 rounded-lg hover:bg-indigo-100">
+                className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-white text-accent-700 border border-accent-300 rounded-lg hover:bg-accent-100">
                 <PencilLine size={13} /> Set column…
               </button>
               {confirmBulkDel ? (
                 <button onClick={bulkDelete} disabled={busy} data-feature-id="db-bulk-delete-confirm"
-                  className="px-3 min-h-[36px] text-xs font-black bg-rose-600 text-white rounded-lg">
+                  className="px-3 min-h-control text-xs font-black bg-rose-600 text-white rounded-lg">
                   DELETE {selected.size} ROWS — SURE?
                 </button>
               ) : (
                 <button onClick={() => setConfirmBulkDel(true)} data-feature-id="db-bulk-delete"
-                  className="flex items-center gap-1.5 px-3 min-h-[36px] text-xs font-bold bg-white text-rose-600 border border-rose-300 rounded-lg hover:bg-rose-50">
+                  className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-white text-rose-600 border border-rose-300 rounded-lg hover:bg-rose-50">
                   <Trash2 size={13} /> Delete
                 </button>
               )}
             </>
           )}
           <button onClick={() => { setSelected(new Set()); setConfirmBulkDel(false); setBulkEdit(null); }}
-            className="ml-auto flex items-center gap-1 px-2 min-h-[36px] text-xs font-bold text-slate-500 hover:text-slate-900">
+            className="ml-auto flex items-center gap-1 px-2 min-h-control text-xs font-bold text-slate-500 hover:text-slate-900">
             <X size={13} /> Clear
           </button>
         </div>
@@ -247,14 +247,14 @@ export default function DbTab() {
             <tr className="bg-gradient-to-b from-slate-200 to-slate-100 shadow-[0_2px_0_0_#94a3b8]">
               <th className="px-3 py-3 w-10 border-r border-slate-300 bg-slate-200/70">
                 <input type="checkbox" checked={pageAllSelected} onChange={togglePage}
-                  className="w-4 h-4 accent-indigo-600" title="Select page" data-feature-id="db-select-page" />
+                  className="w-4 h-4 accent-accent-600" title="Select page" data-feature-id="db-select-page" />
               </th>
               {cols.map(c => (
                 <th
                   key={c.name}
                   onClick={() => toggleSort(c.name)}
                   data-feature-id="db-sort-header"
-                  className={`px-3 py-3 text-[11px] font-black uppercase tracking-wide whitespace-nowrap cursor-pointer select-none border-r border-slate-300 transition-colors ${sort?.col === c.name ? 'text-indigo-700 bg-indigo-100/70' : 'text-slate-700 hover:bg-slate-200/80'}`}
+                  className={`px-3 py-3 text-[11px] font-black uppercase tracking-wide whitespace-nowrap cursor-pointer select-none border-r border-slate-300 transition-colors ${sort?.col === c.name ? 'text-accent-700 bg-accent-100/70' : 'text-slate-700 hover:bg-slate-200/80'}`}
                   title={`Sort by ${c.name}`}
                 >
                   <span className="inline-flex items-center gap-1">
@@ -271,10 +271,10 @@ export default function DbTab() {
               <tr><td colSpan={cols.length + 2} className="px-4 py-10 text-center text-sm text-slate-400">No rows{q ? ' match the search' : ''}.</td></tr>
             ) : rows.map((r, ri) => (
               <tr key={r._rowid}
-                className={`border-b border-slate-100 transition-colors ${selected.has(r._rowid) ? 'bg-indigo-50/70' : ri % 2 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-indigo-50/40`}>
+                className={`border-b border-slate-100 transition-colors ${selected.has(r._rowid) ? 'bg-accent-50/70' : ri % 2 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-accent-50/40`}>
                 <td className="px-3 py-2 align-top border-r border-slate-100">
                   <input type="checkbox" checked={selected.has(r._rowid)} onChange={() => toggleRow(r._rowid)}
-                    className="w-4 h-4 accent-indigo-600" data-feature-id="db-select-row" />
+                    className="w-4 h-4 accent-accent-600" data-feature-id="db-select-row" />
                 </td>
                 {cols.map(c => (
                   <td key={c.name} className="px-3 py-2 text-xs text-slate-800 font-mono max-w-[260px] truncate align-top border-r border-slate-100" title={String(r[c.name] ?? '')}>
@@ -282,7 +282,7 @@ export default function DbTab() {
                   </td>
                 ))}
                 <td className="px-3 py-2 text-right whitespace-nowrap align-top">
-                  <button onClick={() => setEditing({ ...r })} className="p-1.5 text-slate-500 hover:text-indigo-600 transition-colors" title="Edit"><Edit2 size={14} /></button>
+                  <button onClick={() => setEditing({ ...r })} className="p-1.5 text-slate-500 hover:text-accent-600 transition-colors" title="Edit"><Edit2 size={14} /></button>
                   {confirmDel === r._rowid ? (
                     <button onClick={() => del(r._rowid)} disabled={busy} className="px-2 py-1 text-[10px] font-black text-white bg-rose-600 rounded" title="Confirm delete">SURE?</button>
                   ) : (
@@ -300,11 +300,11 @@ export default function DbTab() {
         <p className="text-xs text-slate-500">{total} rows · page {page}/{pages}</p>
         <div className="flex gap-2">
           <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}
-            className="flex items-center gap-1 px-3 min-h-[36px] text-xs font-bold bg-white border border-slate-300 rounded-lg disabled:opacity-40 hover:bg-slate-50 text-slate-700 transition-colors">
+            className="flex items-center gap-1 px-3 min-h-control text-xs font-bold bg-white border border-slate-300 rounded-lg disabled:opacity-40 hover:bg-slate-50 text-slate-700 transition-colors">
             <ChevronLeft size={14} /> Prev
           </button>
           <button disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}
-            className="flex items-center gap-1 px-3 min-h-[36px] text-xs font-bold bg-white border border-slate-300 rounded-lg disabled:opacity-40 hover:bg-slate-50 text-slate-700 transition-colors">
+            className="flex items-center gap-1 px-3 min-h-control text-xs font-bold bg-white border border-slate-300 rounded-lg disabled:opacity-40 hover:bg-slate-50 text-slate-700 transition-colors">
             Next <ChevronRight size={14} />
           </button>
         </div>
@@ -320,13 +320,13 @@ export default function DbTab() {
           isOpen
           onClose={() => setEditing(null)}
           title={editing._rowid === undefined ? `New row in ${active}` : `Edit ${active} #${editing._rowid}`}
-          icon={<Database size={18} className="text-indigo-600" />}
+          icon={<Database size={18} className="text-accent-600" />}
           maxW="sm:max-w-xl"
           featureId="db-row-edit"
           footer={
             <div className="flex justify-end gap-2 w-full">
               <button onClick={() => setEditing(null)} className="px-4 min-h-[42px] text-xs font-bold text-slate-600 rounded-lg hover:bg-slate-100">Cancel</button>
-              <button onClick={save} disabled={busy} className="flex items-center gap-1.5 px-5 min-h-[42px] text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50">
+              <button onClick={save} disabled={busy} className="flex items-center gap-1.5 px-5 min-h-[42px] text-xs font-bold bg-accent-600 text-white rounded-lg hover:bg-accent-500 disabled:opacity-50">
                 <Save size={14} /> {editing._rowid === undefined ? 'Insert' : 'Update'}
               </button>
             </div>
@@ -340,7 +340,7 @@ export default function DbTab() {
                   rows={String(editing[c.name] ?? '').length > 60 ? 3 : 1}
                   value={editing[c.name] ?? ''}
                   onChange={e => setEditing({ ...editing, [c.name]: e.target.value === '' ? null : e.target.value })}
-                  className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-indigo-500 resize-y"
+                  className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-accent-500 resize-y"
                 />
               </div>
             ))}

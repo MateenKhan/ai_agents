@@ -64,7 +64,7 @@ export const ChatIntake: React.FC<Props> = ({ isOpen, onClose, onCreated }) => {
       onClose={onClose}
       title="Chat to create tasks"
       subtitle="Describe the work — it’s split into tasks the agents run."
-      icon={<MessagesSquare size={20} className="text-indigo-600" />}
+      icon={<MessagesSquare size={20} className="text-accent-600" />}
       maxW="sm:max-w-lg"
       featureId="chat-intake"
       footer={
@@ -73,7 +73,7 @@ export const ChatIntake: React.FC<Props> = ({ isOpen, onClose, onCreated }) => {
           <button
             onClick={submit}
             disabled={busy || !message.trim()}
-            className="px-4 py-2 text-xs font-bold rounded-lg bg-indigo-600 text-white disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 text-xs font-bold rounded-lg bg-accent-600 text-white disabled:opacity-50 flex items-center gap-2"
           >
             {busy && <span className="w-3 h-3 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />}
             {busy ? 'Breaking it down…' : 'Create tasks'}
@@ -89,7 +89,7 @@ export const ChatIntake: React.FC<Props> = ({ isOpen, onClose, onCreated }) => {
           rows={4}
           disabled={busy}
           placeholder="e.g. add a keyboard shortcut to toggle the grid, and fix the export button on mobile"
-          className="w-full rounded-xl border border-slate-200 p-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none disabled:bg-slate-50"
+          className="w-full rounded-xl border border-slate-200 p-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent-300 resize-none disabled:bg-slate-50"
           autoFocus
         />
 
@@ -105,8 +105,8 @@ export const ChatIntake: React.FC<Props> = ({ isOpen, onClose, onCreated }) => {
         )}
 
         {busy && (
-          <div className="flex items-center gap-2 justify-center text-[12px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
-            <span className="w-3 h-3 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+          <div className="flex items-center gap-2 justify-center text-[12px] text-accent-600 bg-accent-50 border border-accent-100 rounded-lg px-3 py-2">
+            <span className="w-3 h-3 border-2 border-accent-400 border-t-transparent rounded-full animate-spin" />
             <span>{PHASES[phase]}</span>
           </div>
         )}

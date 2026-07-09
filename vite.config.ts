@@ -4,6 +4,20 @@ import react from '@vitejs/plugin-react';
 // Standalone AI-Agents shell. Talks to the db-server (:6952) via VITE_API_BASE.
 export default defineConfig({
   plugins: [react()],
+  build: {
+    target: 'es2022',
+    // Split rarely-changing vendor code into its own long-cached chunks so an app-code
+    // deploy doesn't bust the React/framer-motion cache. Per-route views are already
+    // code-split via React.lazy, so the app chunk itself stays lean.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          motion: ['framer-motion'],
+        },
+      },
+    },
+  },
   server: {
     port: 6951,
     // Never hop to another port. Without this, if 6951 is busy vite silently

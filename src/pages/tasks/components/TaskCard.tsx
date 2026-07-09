@@ -29,7 +29,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
     switch (p) {
       case 0: return { label: 'P0', class: 'bg-rose-50 text-rose-600 border-rose-300' };
       case 1: return { label: 'P1', class: 'bg-amber-50 text-amber-700 border-amber-300' };
-      case 2: return { label: 'P2', class: 'bg-indigo-50 text-indigo-600 border-indigo-300' };
+      case 2: return { label: 'P2', class: 'bg-accent-50 text-accent-600 border-accent-300' };
       default: return { label: 'P3', class: 'bg-slate-50 text-slate-600 border-slate-300' };
     }
   };
@@ -76,16 +76,16 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
       onClick={() => onView(task)}
       className={`group relative bg-white border rounded-xl p-4 shadow-sm cursor-pointer transition-[transform,box-shadow,opacity,border-color] duration-200 sm:hover:shadow-md sm:hover:-translate-y-0.5 active:bg-slate-50 ${
         isDragging
-          ? 'cursor-grabbing opacity-50 scale-[0.97] rotate-[1.5deg] border-indigo-500 ring-2 ring-indigo-400/50 shadow-lg shadow-indigo-500/20'
+          ? 'cursor-grabbing opacity-50 scale-[0.97] rotate-[1.5deg] border-accent-500 ring-2 ring-accent-400/50 shadow-lg shadow-accent-500/20'
           : selected
-            ? 'border-indigo-500 ring-1 ring-indigo-400/60'
-            : 'border-slate-300 sm:hover:border-indigo-400'
+            ? 'border-accent-500 ring-1 ring-accent-400/60'
+            : 'border-slate-300 sm:hover:border-accent-400'
       }`}>
       <div className="space-y-3">
         {/* Title row — checkbox has a 44px hit area via padding */}
         <div className="flex items-start gap-1">
           <label
-            className="flex items-center justify-center -m-2 p-2 min-w-[44px] min-h-[44px] cursor-pointer shrink-0"
+            className="flex items-center justify-center -m-2 p-2 min-w-[44px] min-h-control-lg cursor-pointer shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
             <input
@@ -95,7 +95,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onChange={() => onToggleSelect(task.id)}
               draggable={false}
               onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
-              className="w-5 h-5 accent-indigo-600 rounded"
+              className="w-5 h-5 accent-accent-600 rounded"
               title="Select task"
             />
           </label>
@@ -139,7 +139,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           )}
 
           {task.dependsOn && task.dependsOn.length > 0 && (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 px-1.5 py-0.5 bg-indigo-50 rounded border border-indigo-200" title="Has dependencies">
+            <span className="flex items-center gap-1 text-[10px] font-bold text-accent-600 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200" title="Has dependencies">
               <Link size={9} /> {task.dependsOn.length}
             </span>
           )}
@@ -169,7 +169,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
             <button
               onClick={(e) => { e.stopPropagation(); onOpenLogs?.(task.claimedBy || undefined); }}
               title={`${stageLabel} — click for live logs`}
-              className="flex items-center gap-1 text-[10px] font-bold text-indigo-700 px-1.5 py-0.5 bg-indigo-50 rounded border border-indigo-300 hover:bg-indigo-100 transition-colors"
+              className="flex items-center gap-1 text-[10px] font-bold text-accent-700 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-300 hover:bg-accent-100 transition-colors"
             >
               <Loader2 size={10} className="animate-spin" /> {stageLabel}
             </button>
@@ -205,7 +205,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onClick={() => onControl(task.id, 'start')}
               disabled={isControlling}
               data-feature-id="task-card-rerun"
-              className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-300 active:bg-indigo-600 active:text-white sm:hover:bg-indigo-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
+              className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-accent-50 text-accent-700 border border-accent-300 active:bg-accent-600 active:text-white sm:hover:bg-accent-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
               title="Re-run — re-queue this task"
             >
               <RotateCcw size={15} />

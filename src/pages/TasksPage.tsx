@@ -247,14 +247,14 @@ const TasksPage: React.FC = () => {
   if (loading && tasks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-100 gap-4">
-        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-12 h-12 border-4 border-accent-500 border-t-transparent rounded-full animate-spin" />
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Initializing AI-Agents...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 selection:bg-indigo-200 selection:text-indigo-900">
+    <div className="min-h-screen bg-slate-100 text-slate-800 selection:bg-accent-200 selection:text-accent-900">
       <ProjectBar onOpenGit={() => setGitOpen(true)} />
 
       <main className="max-w-[1600px] mx-auto">
@@ -271,7 +271,7 @@ const TasksPage: React.FC = () => {
                   data-feature-id={`tasks-tab-${t.id}`}
                   onClick={() => setActiveTab(t.id)}
                   className={`relative -mb-px shrink-0 flex items-center gap-1.5 px-4 min-h-[42px] text-xs font-bold uppercase tracking-widest rounded-t-lg border transition-colors ${active
-                    ? 'z-10 bg-white border-slate-300 border-b-white text-indigo-700 shadow-sm'
+                    ? 'z-10 bg-white border-slate-300 border-b-white text-accent-700 shadow-sm'
                     : 'border-transparent text-slate-500 sm:hover:text-slate-900 sm:hover:bg-slate-50'}`}
                 >
                   {active && (
@@ -280,18 +280,18 @@ const TasksPage: React.FC = () => {
                       <motion.span
                         layoutId="tasks-tab-underline"
                         transition={{ type: 'spring', stiffness: 500, damping: 38 }}
-                        className="absolute left-3 right-3 -bottom-px h-[3px] rounded-full bg-gradient-to-r from-indigo-400 via-indigo-500 to-indigo-400 shadow-[0_6px_14px_0_rgba(99,102,241,0.9),0_11px_26px_1px_rgba(99,102,241,0.6)]"
+                        className="absolute left-3 right-3 -bottom-px h-[3px] rounded-full bg-gradient-to-r from-accent-400 via-accent-500 to-accent-400 shadow-[0_6px_14px_0_rgba(99,102,241,0.9),0_11px_26px_1px_rgba(99,102,241,0.6)]"
                       />
                       {/* Soft light pooling downward only */}
                       <motion.span
                         layoutId="tasks-tab-glow"
                         transition={{ type: 'spring', stiffness: 500, damping: 38 }}
                         aria-hidden
-                        className="absolute left-2 right-2 -bottom-1.5 h-5 bg-gradient-to-b from-indigo-400/55 to-transparent blur-md pointer-events-none"
+                        className="absolute left-2 right-2 -bottom-1.5 h-5 bg-gradient-to-b from-accent-400/55 to-transparent blur-md pointer-events-none"
                       />
                     </>
                   )}
-                  <Icon size={14} className={active ? 'text-indigo-600' : ''} />
+                  <Icon size={14} className={active ? 'text-accent-600' : ''} />
                   {t.label}
                   {t.closeable && (
                     <span
@@ -301,7 +301,7 @@ const TasksPage: React.FC = () => {
                       title={`Hide ${t.label} — restore from Settings`}
                       onClick={(e) => { e.stopPropagation(); hideTab(t.id); }}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); hideTab(t.id); } }}
-                      className="flex items-center justify-center min-w-[32px] min-h-[36px] -mr-2 ml-0.5 p-1 rounded text-slate-400 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
+                      className="flex items-center justify-center min-w-[32px] min-h-control -mr-2 ml-0.5 p-1 rounded text-slate-400 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
                     >
                       <X size={12} />
                     </span>
@@ -340,7 +340,7 @@ const TasksPage: React.FC = () => {
                   </button>
                 </Tooltip>
                 <Tooltip label="Refresh board">
-                  <button onClick={fetchTasks} aria-label="Refresh board" className={`flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 transition-colors ${loading ? 'animate-spin text-indigo-600' : ''}`}>
+                  <button onClick={fetchTasks} aria-label="Refresh board" className={`flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 transition-colors ${loading ? 'animate-spin text-accent-600' : ''}`}>
                     <RefreshCw size={16} />
                   </button>
                 </Tooltip>
@@ -564,15 +564,6 @@ const TasksPage: React.FC = () => {
       <Suspense fallback={null}>
         <SystemStatus activeId={activeId} />
       </Suspense>
-
-      <style>{`
-        @keyframes healStepIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-        .custom-scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; border: 2px solid #e2e8f0; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
-        .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #94a3b8 #e2e8f0; }
-      `}</style>
     </div>
   );
 };

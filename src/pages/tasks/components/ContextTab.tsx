@@ -39,7 +39,7 @@ const OP_STYLE: Record<string, string> = {
   keep: 'text-emerald-700 bg-emerald-50 border-emerald-200',
   read: 'text-sky-700 bg-sky-50 border-sky-200',
   evict: 'text-rose-700 bg-rose-50 border-rose-200',
-  pin: 'text-indigo-700 bg-indigo-50 border-indigo-200',
+  pin: 'text-accent-700 bg-accent-50 border-accent-200',
   unpin: 'text-slate-600 bg-slate-50 border-slate-200',
   sweep: 'text-amber-700 bg-amber-50 border-amber-200',
   refresh: 'text-violet-700 bg-violet-50 border-violet-200',
@@ -136,13 +136,13 @@ export default function ContextTab({ activeId }: { activeId: string }) {
     return (
       <div key={n.path} className="group flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-slate-100" style={{ paddingLeft: 8 + depth * 12 }}>
         <FileCode size={13} className="text-slate-400 shrink-0" />
-        <button onClick={() => openPreview(n.path)} className="flex-1 min-w-0 text-left text-xs text-slate-700 truncate hover:text-indigo-700" title={n.path}>{n.name}</button>
+        <button onClick={() => openPreview(n.path)} className="flex-1 min-w-0 text-left text-xs text-slate-700 truncate hover:text-accent-700" title={n.path}>{n.name}</button>
         <button
           onClick={() => addToContext(n.path)}
           disabled={added}
           data-feature-id="context-add-file"
           title={added ? 'Already in context' : 'Add to context'}
-          className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-colors ${added ? 'text-emerald-500' : 'text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 sm:opacity-0 sm:group-hover:opacity-100'}`}
+          className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-colors ${added ? 'text-emerald-500' : 'text-slate-400 hover:text-accent-600 hover:bg-accent-50 sm:opacity-0 sm:group-hover:opacity-100'}`}
         >
           {added ? <Pin size={12} /> : <Plus size={13} />}
         </button>
@@ -167,13 +167,13 @@ export default function ContextTab({ activeId }: { activeId: string }) {
       {/* Header: title · refresh · budget · gauge */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <div className="flex items-center gap-2">
-          <BrainCircuit size={18} className="text-indigo-600" />
+          <BrainCircuit size={18} className="text-accent-600" />
           <h2 className="text-sm font-black uppercase tracking-widest text-slate-900">Context Memory</h2>
         </div>
-        <button onClick={refresh} data-feature-id="context-refresh" className="flex items-center gap-1.5 px-3 min-h-[36px] text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
-          <RefreshCw size={13} className={busy ? 'animate-spin text-indigo-600' : ''} /> Refresh
+        <button onClick={refresh} data-feature-id="context-refresh" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
+          <RefreshCw size={13} className={busy ? 'animate-spin text-accent-600' : ''} /> Refresh
         </button>
-        <button onClick={sweep} data-feature-id="context-sweep" title="Garbage-collect: age out stale + evict over budget" className="flex items-center gap-1.5 px-3 min-h-[36px] text-xs font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100">
+        <button onClick={sweep} data-feature-id="context-sweep" title="Garbage-collect: age out stale + evict over budget" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100">
           <Trash2 size={13} /> Sweep
         </button>
 
@@ -189,7 +189,7 @@ export default function ContextTab({ activeId }: { activeId: string }) {
         {stats && (
           <div className="flex items-center gap-2 min-w-[180px] flex-1 max-w-xs">
             <div className="flex-1 h-2.5 rounded-full bg-slate-200 overflow-hidden">
-              <div className={`h-full rounded-full transition-all ${over ? 'bg-rose-500' : gaugePct > 80 ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${gaugePct}%` }} />
+              <div className={`h-full rounded-full transition-all ${over ? 'bg-rose-500' : gaugePct > 80 ? 'bg-amber-500' : 'bg-accent-500'}`} style={{ width: `${gaugePct}%` }} />
             </div>
             <span className={`text-[11px] font-black tabular-nums ${over ? 'text-rose-600' : 'text-slate-600'}`}>{fmt(stats.totalTokens)}/{fmt(cap)}</span>
           </div>
@@ -215,7 +215,7 @@ export default function ContextTab({ activeId }: { activeId: string }) {
               <div className="p-6 text-center space-y-2">
                 <FolderGit2 size={22} className="mx-auto text-slate-300" />
                 <p className="text-[12px] font-bold text-slate-600">No project loaded</p>
-                <p className="text-[11px] text-slate-400 leading-relaxed">This is AI-Agents' own repo. Each git repository is one project — open the <span className="font-bold text-indigo-600">Projects</span> switcher (top-left) and add/point a project at your git repo to manage its context here.</p>
+                <p className="text-[11px] text-slate-400 leading-relaxed">This is AI-Agents' own repo. Each git repository is one project — open the <span className="font-bold text-accent-600">Projects</span> switcher (top-left) and add/point a project at your git repo to manage its context here.</p>
               </div>
             ) : filteredTree.length ? filteredTree.map(n => renderNode(n)) : (
               <p className="p-4 text-center text-[11px] text-slate-400">No files found in this project's repo.</p>
@@ -233,7 +233,7 @@ export default function ContextTab({ activeId }: { activeId: string }) {
             <span className="flex-1 min-w-0 text-xs font-mono text-slate-600 truncate">{preview?.path || 'Select a file to preview'}</span>
             {preview && <span className="text-[10px] font-bold text-violet-700 px-1.5 py-0.5 bg-violet-50 rounded border border-violet-200 shrink-0">{fmt(preview.tokens)} tok</span>}
             {preview && !inContext.has(preview.path) && (
-              <button onClick={() => addToContext(preview.path)} className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 px-2 py-1 rounded-md"><Plus size={11} /> Add</button>
+              <button onClick={() => addToContext(preview.path)} className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-white bg-accent-600 hover:bg-accent-500 px-2 py-1 rounded-md"><Plus size={11} /> Add</button>
             )}
           </div>
           {previewOpen && (
@@ -256,13 +256,13 @@ export default function ContextTab({ activeId }: { activeId: string }) {
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5 space-y-1">
               {files.length ? files.map(f => (
-                <div key={f.path} data-feature-id="context-memory-item" className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-lg border ${f.pinned ? 'border-indigo-200 bg-indigo-50/40' : 'border-slate-200 bg-slate-50/60'}`}>
+                <div key={f.path} data-feature-id="context-memory-item" className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-lg border ${f.pinned ? 'border-accent-200 bg-accent-50/40' : 'border-slate-200 bg-slate-50/60'}`}>
                   <FileCode size={12} className="text-slate-400 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-semibold text-slate-800 truncate" title={f.path}>{f.path}</div>
                     <div className="text-[9px] text-slate-400">{fmt(f.tokens)} tok · used {f.useCount}× · {f.addedBy || 'agent'}</div>
                   </div>
-                  <button onClick={() => togglePin(f)} title={f.pinned ? 'Unpin (allow auto-evict)' : 'Pin (never auto-evict)'} className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md ${f.pinned ? 'text-indigo-600' : 'text-slate-400 hover:text-indigo-600'}`}>
+                  <button onClick={() => togglePin(f)} title={f.pinned ? 'Unpin (allow auto-evict)' : 'Pin (never auto-evict)'} className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md ${f.pinned ? 'text-accent-600' : 'text-slate-400 hover:text-accent-600'}`}>
                     {f.pinned ? <Pin size={12} /> : <PinOff size={12} />}
                   </button>
                   <button onClick={() => remove(f.path)} title="Remove from context" className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600"><X size={12} /></button>
@@ -271,13 +271,13 @@ export default function ContextTab({ activeId }: { activeId: string }) {
             </div>
             {/* Model tier for this budget */}
             <div className="flex items-center gap-2 px-3 py-2 border-t border-slate-200">
-              <Cpu size={13} className="text-indigo-500 shrink-0" />
+              <Cpu size={13} className="text-accent-500 shrink-0" />
               <select value={applyModel} onChange={e => setApplyModel(e.target.value)} data-feature-id="context-model" className="flex-1 bg-slate-50 border border-slate-300 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-800 cursor-pointer">
                 <option value="haiku" disabled={!haikuOk}>Haiku{!haikuOk ? ' — max 200K' : ' — fast/cheap'}</option>
                 <option value="sonnet">Sonnet — 1M, balanced</option>
                 <option value="opus">Opus — 1M, deepest</option>
               </select>
-              <button onClick={applyToAgents} className="shrink-0 text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 px-2.5 py-1.5 rounded-md">Apply all</button>
+              <button onClick={applyToAgents} className="shrink-0 text-[10px] font-bold text-white bg-accent-600 hover:bg-accent-500 px-2.5 py-1.5 rounded-md">Apply all</button>
             </div>
           </div>
 

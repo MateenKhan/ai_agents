@@ -41,11 +41,11 @@ export function TerminalMonitor({
         initial={{ y: 100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         style={{ pointerEvents: 'auto' }}
-        className="bg-[#0f172a] border border-[#1e2d45] rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="bg-surface-panel border border-surface-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
       >
         {/* Terminal Header */}
         <div 
-          className="flex items-center justify-between px-4 py-3 bg-white/5 border-b border-[#1e2d45] cursor-move select-none"
+          className="flex items-center justify-between px-4 py-3 bg-white/5 border-b border-surface-border cursor-move select-none"
           onPointerDown={(e) => dragControls.start(e)}
         >
           <div className="flex items-center gap-3">
@@ -56,7 +56,7 @@ export function TerminalMonitor({
             </div>
             <div className="w-px h-4 bg-white/10 mx-1" />
             <div className="flex items-center gap-2">
-              <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+              <Terminal className="w-3.5 h-3.5 text-accent-400" />
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">
                 Agent Monitor — {agentName || 'Initializing...'}
               </span>
@@ -73,8 +73,8 @@ export function TerminalMonitor({
         {/* Terminal Body */}
         {!minimized && (
           <>
-            <div ref={bodyRef as any} className="h-80 flex flex-col p-3 bg-[#080e1d]">
-              <div className="flex items-center gap-2 text-indigo-400 mb-2 opacity-60 shrink-0">
+            <div ref={bodyRef as any} className="h-80 flex flex-col p-3 bg-surface-console">
+              <div className="flex items-center gap-2 text-accent-400 mb-2 opacity-60 shrink-0">
                 <ChevronRight size={14} />
                 <span>Monitoring session for agent {agentName}...</span>
               </div>
@@ -98,7 +98,7 @@ export function TerminalMonitor({
             </div>
 
             {/* Footer / Status */}
-            <div className="px-4 py-1.5 bg-black/40 border-t border-[#1e2d45] flex items-center justify-between">
+            <div className="px-4 py-1.5 bg-black/40 border-t border-surface-border flex items-center justify-between">
               <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">
                 Task ID: {taskId?.slice(-8) || 'N/A'}
               </span>

@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Piranha — throw a task in, watch the swarm</title>
+<meta name="description" content="A swarm of AI agents that strips your backlog to the bone — they plan, build, and QA in isolated git worktrees, and nothing lands in main without your click. Free, self-hosted, MIT.">
+<meta name="theme-color" content="#0A0E14">
+<meta property="og:title" content="Piranha — throw a task in, watch the swarm">
+<meta property="og:description" content="A swarm of AI agents. Plan → build → QA in isolated worktrees, nothing merges without your click. Free & open source (MIT). Runs on your Claude subscription.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230A0E14'/%3E%3Cg fill='%23FF3B1D'%3E%3Cpath d='M18 28 L28 54 L38 28 Z'/%3E%3Cpath d='M36 28 L46 54 L56 28 Z'/%3E%3Cpath d='M54 28 L64 54 L74 28 Z'/%3E%3Cpath d='M27 74 L37 48 L47 74 Z'/%3E%3Cpath d='M45 74 L55 48 L65 74 Z'/%3E%3Cpath d='M63 74 L73 48 L83 74 Z'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  :root{
+    --ink:#0A0E14; --surface:#11161F; --surface-2:#1A2130;
+    --accent:#FF3B1D; --accent-hover:#E62E12; --accent-soft:rgba(255,59,29,.12); --accent-line:rgba(255,59,29,.34);
+    --text:#F5F7FA; --muted:#8A94A6; --faint:#5b6577;
+    --teal:#14B8A6; --teal-soft:rgba(20,184,166,.14);
+    --line:#1e2634; --line-2:#2a3446;
+    --radius:14px; --rail:1120px;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --shadow:0 1px 0 rgba(255,255,255,.02), 0 24px 60px -28px rgba(0,0,0,.75);
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  /* Offset anchor targets so the sticky header (62px) never covers the heading. */
+  section[id]{scroll-margin-top:78px}
+  body{
+    margin:0; background:var(--ink); color:var(--text);
+    font-family:var(--sans); font-size:16px; line-height:1.55;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    background-image:
+      radial-gradient(760px 420px at 78% -6%, var(--accent-soft), transparent 62%),
+      radial-gradient(680px 520px at 8% 4%, rgba(20,184,166,.05), transparent 60%);
+    background-attachment:fixed;
+  }
+  a{color:inherit;text-decoration:none}
+  ::selection{background:var(--accent);color:#fff}
+  .rail{max-width:var(--rail);margin-inline:auto;padding-inline:24px}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  h1,h2,h3{margin:0;text-wrap:balance;letter-spacing:-.025em;line-height:1.06}
+  p{margin:0}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:8px}
+
+  /* header */
+  header{position:sticky;top:0;z-index:20;backdrop-filter:saturate(140%) blur(12px);
+    background:color-mix(in srgb, var(--ink) 74%, transparent);border-bottom:1px solid var(--line)}
+  .nav{display:flex;align-items:center;gap:16px;height:62px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;font-size:17px}
+  .brand svg{width:26px;height:26px;border-radius:7px;flex:none}
+  .nav .spacer{flex:1}
+  .nav a.lnk{color:var(--muted);font-size:14px;font-weight:500;padding:8px 10px;border-radius:8px}
+  .nav a.lnk:hover{color:var(--text);background:var(--surface-2)}
+  .btn{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 18px;border-radius:11px;
+    font-weight:700;font-size:14.5px;cursor:pointer;border:1px solid transparent;transition:transform .12s ease,background .12s ease,filter .12s ease;white-space:nowrap}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--accent);color:#fff;box-shadow:0 10px 26px -12px var(--accent)}
+  .btn-primary:hover{background:var(--accent-hover)}
+  .btn-ghost{background:var(--surface);color:var(--text);border-color:var(--line-2)}
+  .btn-ghost:hover{background:var(--surface-2)}
+  .btn-sm{height:38px;padding:0 14px;font-size:13.5px}
+
+  /* hero */
+  .hero{padding:74px 0 40px;display:grid;gap:46px}
+  @media(min-width:940px){.hero{grid-template-columns:1.04fr 1fr;align-items:center;padding:100px 0 60px}}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+  .pill{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;padding:5px 11px;border-radius:999px;
+    border:1px solid var(--line-2);background:var(--surface);color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+  .pill.free{color:var(--accent);border-color:var(--accent-line);background:var(--accent-soft);font-weight:600}
+  .pill.plan{color:var(--teal);border-color:rgba(20,184,166,.3);background:var(--teal-soft)}
+  .pill .d{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .hero h1{font-size:clamp(38px,6vw,66px);font-weight:820;letter-spacing:-.035em}
+  .hero h1 .swarm{color:var(--accent)}
+  .hero .sub{margin-top:22px;color:var(--muted);font-size:clamp(16px,1.6vw,19px);max-width:40ch}
+  .hero .sub b{color:var(--text);font-weight:650}
+  .cta-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:28px}
+  .cta-note{margin-top:14px;color:var(--faint);font-size:13px;font-family:var(--mono)}
+
+  .copyline{margin-top:26px;max-width:520px}
+  .copyline .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
+  .code{display:flex;align-items:center;gap:10px;background:#080b11;border:1px solid var(--line-2);border-radius:12px;padding:12px 12px 12px 16px;box-shadow:var(--shadow)}
+  .code code{font-family:var(--mono);font-size:13.5px;color:var(--text);white-space:nowrap;overflow-x:auto;flex:1}
+  .code code b{color:var(--accent);font-weight:600}
+  .copybtn{flex:none;display:inline-grid;place-items:center;width:34px;height:34px;border-radius:8px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--muted);cursor:pointer}
+  .copybtn:hover{color:var(--text)}
+  .copybtn.ok{color:var(--teal);border-color:var(--teal)}
+
+  /* hero board mock = demo slot */
+  .demo{position:relative;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+  .demo .bar{display:flex;align-items:center;gap:7px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+  .demo .bar i{width:11px;height:11px;border-radius:50%;background:var(--line-2)}
+  .demo .bar i:first-child{background:var(--accent)}
+  .demo .bar .t{font-family:var(--mono);font-size:12px;color:var(--faint);margin-left:8px}
+  .board{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:14px;min-height:250px}
+  .lane{border:1px solid var(--line);border-radius:10px;background:var(--surface-2);padding:8px;display:flex;flex-direction:column;gap:8px}
+  .lane .h{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);display:flex;align-items:center;gap:5px}
+  .lane .h::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--faint)}
+  .lane.plan .h::before{background:#d29922}.lane.build .h::before{background:#539bf5}
+  .lane.qa .h::before{background:#a371f7}.lane.review .h::before{background:var(--accent)}
+  .lane.merge .h::before{background:var(--teal)}
+  .chip{background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:8px;font-size:11px;color:var(--muted)}
+  .chip b{display:block;color:var(--text);font-size:11.5px;font-weight:600;margin-bottom:3px;letter-spacing:-.01em}
+  .chip .prog{height:3px;border-radius:2px;background:var(--line-2);margin-top:7px;overflow:hidden}
+  .chip .prog i{display:block;height:100%;background:var(--accent)}
+  .lane.review .chip{border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+  .gate{display:flex;align-items:center;justify-content:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;color:#fff;background:var(--accent);border-radius:7px;padding:7px;animation:pulse 2.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--accent-soft)}50%{box-shadow:0 0 0 8px transparent}}
+  .demo .cap{position:absolute;bottom:10px;right:12px;font-family:var(--mono);font-size:10.5px;color:var(--faint);background:color-mix(in srgb,var(--surface) 82%,transparent);padding:3px 8px;border-radius:6px;border:1px solid var(--line)}
+  @media(max-width:520px){.board{grid-template-columns:repeat(3,1fr)}.lane.review,.lane.merge{display:none}}
+
+  /* typewriter caret */
+  .caret{display:inline-block;width:3px;height:.86em;background:var(--accent);margin-left:5px;vertical-align:-2px;border-radius:1px;animation:blink 1.05s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* board — "live" motion: work shimmer + a drag-to-approve lift on the review card */
+  .chip .prog i{background:linear-gradient(90deg,var(--accent),#ff7a63,var(--accent));background-size:200% 100%;animation:shimmer 2.4s linear infinite}
+  @keyframes shimmer{to{background-position:-200% 0}}
+  .lane.review .chip{animation:lift 4s ease-in-out infinite}
+  @keyframes lift{0%,68%,100%{transform:none}78%{transform:translateY(-6px) rotate(-1.3deg)}88%{transform:translateY(-2px) rotate(-.4deg)}}
+
+  /* beyond-code band */
+  .usecases{padding:24px 24px 4px;margin-top:4px}
+  .uc-eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  .uc-row{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+  .uc{font-size:13px;font-weight:600;color:var(--text);background:var(--surface);border:1px solid var(--line-2);border-radius:999px;padding:8px 14px;transition:border-color .16s ease,transform .16s ease}
+  .uc:hover{border-color:var(--accent-line);transform:translateY(-1px)}
+  .uc-note{color:var(--muted);font-size:14px;margin-top:14px;max-width:72ch}
+
+  /* sections */
+  section{padding:48px 0;border-top:1px solid var(--line)}
+  .sec-head{max-width:54ch;margin-bottom:24px}
+  .sec-head h2{font-size:clamp(26px,3.4vw,38px);font-weight:800;margin-top:12px}
+  .sec-head p{color:var(--muted);margin-top:12px;font-size:16.5px}
+
+  .grid-lead{display:grid;gap:16px;grid-template-columns:1fr}
+  @media(min-width:720px){.grid-lead{grid-template-columns:1fr 1fr}}
+  .grid-rest{display:grid;gap:14px;grid-template-columns:1fr;margin-top:16px}
+  @media(min-width:640px){.grid-rest{grid-template-columns:1fr 1fr}}
+  @media(min-width:720px){.grid-rest{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}}
+  .card{position:relative;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:18px;box-shadow:var(--shadow);transition:border-color .18s ease,transform .18s ease}
+  .card:hover{border-color:var(--line-2);transform:translateY(-2px)}
+  .card.lead{padding:22px}
+  .card.lead::after{content:"";position:absolute;inset:0;border-radius:var(--radius);pointer-events:none;box-shadow:inset 0 0 0 1px var(--accent-line)}
+  .ic{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:9px;background:var(--accent-soft);color:var(--accent);margin-bottom:11px}
+  .card.lead .ic{width:40px;height:40px}
+  .card h3{font-size:16px;font-weight:720;letter-spacing:-.015em}
+  .card.lead h3{font-size:19px}
+  .card .mech{color:var(--muted);margin-top:6px;font-size:13.5px;line-height:1.45}
+  .card .mech b{color:var(--text);font-weight:600}
+  .card code{font-family:var(--mono);font-size:.86em;color:var(--accent);background:var(--accent-soft);padding:1px 5px;border-radius:5px}
+  .tag{position:absolute;top:16px;right:16px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+  .shot{margin-top:12px;border:1px dashed var(--line-2);border-radius:10px;background:var(--surface-2);height:88px;display:grid;place-items:center;font-family:var(--mono);font-size:10.5px;color:var(--faint);text-align:center}
+
+  .micro{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:26px;padding-top:22px;border-top:1px dashed var(--line)}
+  .micro span{font-family:var(--mono);font-size:12.5px;color:var(--muted);display:inline-flex;align-items:center;gap:8px}
+  .micro span::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent)}
+
+  /* compare */
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:580px;font-size:14.5px}
+  th,td{text-align:left;padding:15px 18px;border-bottom:1px solid var(--line)}
+  thead th{font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--muted);font-weight:600;background:var(--surface-2)}
+  tbody tr:last-child td{border-bottom:none}
+  th.us,td.us{background:var(--accent-soft);border-left:1px solid var(--accent-line);border-right:1px solid var(--accent-line)}
+  thead th.us{color:var(--accent)}
+  td.feat{font-weight:600;color:var(--text)}
+  .yes{color:var(--accent);font-weight:800}
+  td.us .yes{color:var(--accent)}
+  .no{color:var(--faint)}
+  .partial{color:var(--muted);font-size:12.5px;font-family:var(--mono)}
+
+  /* how it works */
+  .how{display:grid;gap:14px;grid-template-columns:1fr}
+  @media(min-width:680px){.how{grid-template-columns:repeat(4,1fr)}}
+  .stepcard{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:20px;position:relative}
+  .stepcard .n{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.1em}
+  .stepcard h3{font-size:16px;font-weight:700;margin-top:10px}
+  .stepcard p{color:var(--muted);font-size:13.5px;margin-top:6px}
+  .stepcard .arrow{position:absolute;right:-11px;top:50%;transform:translateY(-50%);color:var(--line-2);z-index:1}
+  @media(max-width:679px){.stepcard .arrow{display:none}}
+
+  /* install */
+  .install{display:grid;gap:22px}
+  @media(min-width:820px){.install{grid-template-columns:1fr 1fr;align-items:start}}
+  .codeblock{background:#080b11;border:1px solid var(--line-2);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+  .codeblock .h{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:10px}
+  .codeblock pre{margin:0;font-family:var(--mono);font-size:13px;color:var(--text);white-space:pre;overflow-x:auto;line-height:1.7}
+  .codeblock .cmt{color:var(--faint)}.codeblock .k{color:var(--accent)}
+
+  footer{border-top:1px solid var(--line);padding:38px 0 58px;color:var(--muted)}
+  .foot{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
+  .foot .brand{font-size:15px}
+  .foot .lic{font-family:var(--mono);font-size:12.5px;color:var(--faint)}
+  .foot a:hover{color:var(--text)}
+
+  .reveal{opacity:0;transform:translateY(14px)}
+  .reveal.in{opacity:1;transform:none;transition:opacity .6s ease,transform .6s cubic-bezier(.2,.7,.2,1)}
+  @media(prefers-reduced-motion:reduce){
+    .reveal{opacity:1!important;transform:none!important;transition:none}
+    .gate,.caret,.chip .prog i,.lane.review .chip{animation:none}
+  }
+</style>
+</head>
+<body>
+<!-- teeth logo, reused as an inline symbol -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mark" viewBox="0 0 100 100"><rect width="100" height="100" rx="22" fill="#0A0E14"/><g fill="#FF3B1D"><path d="M18 28 L28 54 L38 28 Z"/><path d="M36 28 L46 54 L56 28 Z"/><path d="M54 28 L64 54 L74 28 Z"/><path d="M27 74 L37 48 L47 74 Z"/><path d="M45 74 L55 48 L65 74 Z"/><path d="M63 74 L73 48 L83 74 Z"/></g></symbol></svg>
+
+<header>
+  <div class="rail nav">
+    <span class="brand"><svg><use href="#mark"/></svg>Piranha</span>
+    <span class="spacer"></span>
+    <a class="lnk" href="#features">Features</a>
+    <a class="lnk" href="#compare">Compare</a>
+    <a class="lnk" href="#install">Install</a>
+    <a class="btn btn-ghost btn-sm" href="https://github.com/MateenKhan/piranha" aria-label="Star Piranha on GitHub">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12a11.5 11.5 0 0 0 7.9 10.9c.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7 0-.7 0-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.9 18.3 5.2 18.3 5.2c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5Z"/></svg>
+      Star
+    </a>
+  </div>
+</header>
+
+<main>
+  <div class="rail hero">
+    <div>
+      <div class="pills">
+        <span class="pill free"><span class="d"></span>Free &amp; open source · MIT</span>
+        <span class="pill plan"><span class="d"></span>Runs on your Claude subscription</span>
+      </div>
+      <h1 id="h1" data-full="Throw a task in. " data-accent="Watch the swarm."><span class="tw"></span><span class="swarm tw-a"></span><span class="caret" aria-hidden="true"></span></h1>
+      <p class="sub">A swarm of AI agents that chews through your backlog — each works in its own sandbox, learns as it goes, and <b>nothing ships without your click.</b> Built for shipping code; ready for <b>any task an AI can do.</b></p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/MateenKhan/piranha">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.9 6.3 6.9.6-5.2 4.6 1.6 6.8L12 17.3 5.8 20.9l1.6-6.8L2.2 8.9l6.9-.6L12 2z"/></svg>
+          Star on GitHub
+        </a>
+        <a class="btn btn-ghost" href="#install">Deploy hosted <span aria-hidden="true">&rarr;</span></a>
+      </div>
+      <p class="cta-note">$0 to run. Self-host on your machine or a $5 VPS — code stays local, secrets encrypted at rest.</p>
+
+      <div class="copyline">
+        <div class="lbl">One-line install</div>
+        <div class="code">
+          <code id="cmd"><b>ANTHROPIC_API_KEY=</b>sk-... docker compose up</code>
+          <button class="copybtn" id="copy" aria-label="Copy install command" title="Copy">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo reveal" aria-label="Product preview: the agent board">
+      <div class="bar"><i></i><i></i><i></i><span class="t">piranha · board</span></div>
+      <div class="board">
+        <div class="lane plan"><span class="h">Plan</span><div class="chip"><b>Add rate limiter</b>architect · opus<div class="prog"><i style="width:100%"></i></div></div></div>
+        <div class="lane build"><span class="h">Build</span><div class="chip"><b>Fix auth redirect</b>dev · sonnet<div class="prog"><i style="width:72%"></i></div></div></div>
+        <div class="lane qa"><span class="h">QA</span><div class="chip"><b>CSV export</b>qa · browser check<div class="prog"><i style="width:88%"></i></div></div></div>
+        <div class="lane review"><span class="h">Review</span><div class="chip"><b>Dark mode toggle</b>waiting for you</div><div class="gate">▲ Approve &amp; merge</div></div>
+        <div class="lane merge"><span class="h">Merged</span><div class="chip"><b>Search endpoint</b>merged · done</div></div>
+      </div>
+      <span class="cap">demo GIF here &rarr; docs/assets/demo.gif</span>
+    </div>
+  </div>
+
+  <!-- BEYOND CODE -->
+  <div class="rail usecases reveal">
+    <span class="uc-eyebrow">Not just code — any task an AI can do</span>
+    <div class="uc-row">
+      <span class="uc">&#128187; Ship features</span>
+      <span class="uc">&#128188; Land a job — tailor &amp; apply</span>
+      <span class="uc">&#127912; Generate &amp; post content</span>
+      <span class="uc">&#128269; Research &amp; summarize</span>
+      <span class="uc">&#9881;&#65039; Data &amp; ops chores</span>
+    </div>
+    <p class="uc-note">Coding is the flagship — but the engine is generic. Describe any repeatable job; the swarm plans it, does the work, and waits for your approval before anything goes live.</p>
+  </div>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="rail">
+      <div class="sec-head reveal">
+        <span class="eyebrow">The bite</span>
+        <h2>Four things nobody else pairs.</h2>
+        <p>The differentiators up top — the rest of a real dev team, automated, below them.</p>
+      </div>
+
+      <div class="grid-lead">
+        <div class="card lead reveal">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="15" r="2.5"/><path d="M6 8.5v7M8.4 6.6c3.4.2 7 1.4 7 5.8"/></svg></div>
+          <h3>Human-gated merge</h3>
+          <p class="mech">QA passes, a <b>live preview</b> of the running app spins up, you approve. Agents never push — the orchestrator alone merges.</p>
+        </div>
+        <div class="card lead reveal">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9zM4 9H2M4 15H2M22 9h-2M22 15h-2M9 4V2M15 4V2M9 22v-2M15 22v-2"/></svg></div>
+          <h3>Local embeddings</h3>
+          <p class="mech">An on-device semantic index powers agent search — <b>no source ever uploaded.</b></p>
+        </div>
+        <div class="card lead reveal">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6v1a4 4 0 0 0 4 4M9 3a3 3 0 0 1 3 3v13a3 3 0 0 1-3 1M15 3a4 4 0 0 1 4 4v1a3 3 0 0 1 0 6v1a4 4 0 0 1-4 4M15 3a3 3 0 0 0-3 3"/></svg></div>
+          <h3>Agents that learn</h3>
+          <p class="mech"><b>The more they ship, the sharper they get.</b> Learnings + a pinned context cache feed the next task — the swarm stops repeating mistakes.</p>
+        </div>
+        <div class="card lead reveal">
+          <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5V11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8.5M12 13v2.5"/></svg></div>
+          <h3>Worktree isolation</h3>
+          <p class="mech">A dedicated git worktree per agent, per task — zero collisions, clean diffs, safe parallelism.</p>
+        </div>
+      </div>
+
+      <div class="grid-rest">
+        <div class="card reveal">
+          <span class="tag">screenshot</span>
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/></svg></div>
+          <h3>Visual Kanban board</h3>
+          <p class="mech">Watch agents work, live — every task a card moving lane to lane.</p>
+          <div class="shot">screenshot slot<br>docs/assets/board.png</div>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h4l2 3M4 6l-1 12h18L20 6h-4l-2 3H10"/><path d="M9 13h6"/></svg></div>
+          <h3>Plan &rarr; Build &rarr; QA &rarr; Merge</h3>
+          <p class="mech">A real dev team, automated — role-tiered models per stage (Opus plans, Sonnet builds).</p>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 5 4-12 2 7h6"/></svg></div>
+          <h3>Runs unattended</h3>
+          <p class="mech">Survives API outages, stalls, and restarts — circuit breaker + watchdog. A stuck task gets auto re-planned, not dropped.</p>
+        </div>
+        <div class="card reveal">
+          <span class="tag">screenshot</span>
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-4 3v-3H4z"/><path d="M8 10h8M8 13h5"/></svg></div>
+          <h3>Chat intake</h3>
+          <p class="mech">Paste a message &rarr; get tasks. Decomposed into GIVEN / WHEN / THEN.</p>
+          <div class="shot">screenshot slot<br>docs/assets/context.png</div>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M8 11h6M11 8v6" opacity=".5"/></svg></div>
+          <h3>Real-browser QA</h3>
+          <p class="mech"><b>A real browser, not just unit tests</b> — QA drives the running app, screenshots it, fails on any console/network error.</p>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.5"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2.5 2.5M16.5 16.5 19 19M19 5l-2.5 2.5M7.5 16.5 5 19"/></svg></div>
+          <h3>Blast-radius planning</h3>
+          <p class="mech">The architect maps callers, dependents &amp; covering tests before a line changes — edits stay scoped.</p>
+        </div>
+        <div class="card reveal">
+          <span class="tag">roadmap</span>
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="7" ry="2.6"/><path d="M5 5v14c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V5M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></svg></div>
+          <h3>Optional Postgres</h3>
+          <p class="mech"><b>Point the swarm at a shared DB</b> for team-wide, multi-node state — connection string encrypted at rest.</p>
+        </div>
+      </div>
+
+      <div class="micro reveal">
+        <span>Multi-project</span>
+        <span>Encrypted secrets (AES-256)</span>
+        <span>Per-project tokens &amp; GitHub App</span>
+        <span>Cost &amp; model control</span>
+        <span>Project brief · context brain</span>
+        <span>One-command Docker</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARE -->
+  <section id="compare">
+    <div class="rail">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Honest comparison</span>
+        <h2>How the swarm stacks up.</h2>
+        <p>Blanks mean &ldquo;not a core focus&rdquo; or unverified — we&rsquo;d rather leave a cell empty than overclaim.</p>
+      </div>
+      <div class="tablewrap reveal">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col" class="us">Piranha</th>
+              <th scope="col">OpenHands</th>
+              <th scope="col">Aider</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="feat">Visual Kanban board</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="no">&mdash;</span></td><td><span class="no">&mdash;</span></td></tr>
+            <tr><td class="feat">Human-gated merge</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="partial">optional</span></td><td><span class="yes">&#10003;</span></td></tr>
+            <tr><td class="feat">Per-agent worktree isolation</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="no">&mdash;</span></td><td><span class="no">&mdash;</span></td></tr>
+            <tr><td class="feat">Local / private embeddings</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="partial">partial</span></td><td><span class="partial">repo map</span></td></tr>
+            <tr><td class="feat">Self-learning memory</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="no">&mdash;</span></td><td><span class="no">&mdash;</span></td></tr>
+            <tr><td class="feat">Runs unattended</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="no">&mdash;</span></td><td><span class="no">&mdash;</span></td></tr>
+            <tr><td class="feat">Self-hosted</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="yes">&#10003;</span></td><td><span class="yes">&#10003;</span></td></tr>
+            <tr><td class="feat">Open source (MIT)</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="partial">MIT</span></td><td><span class="partial">Apache-2.0</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="how">
+    <div class="rail">
+      <div class="sec-head reveal">
+        <span class="eyebrow">How it works</span>
+        <h2>Task in, merge out — in four moves.</h2>
+      </div>
+      <div class="how">
+        <div class="stepcard reveal"><span class="n">01</span><h3>Task</h3><p>Type it, or paste a message and let intake split it into scenarios.</p><svg class="arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+        <div class="stepcard reveal"><span class="n">02</span><h3>Swarm</h3><p>Agents fan out into isolated worktrees — plan, build, QA in parallel.</p><svg class="arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+        <div class="stepcard reveal"><span class="n">03</span><h3>Review</h3><p>QA passes → the task parks in review. You preview the branch.</p><svg class="arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+        <div class="stepcard reveal"><span class="n">04</span><h3>Merge</h3><p>You click approve. The orchestrator merges — the only thing that can.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTALL -->
+  <section id="install">
+    <div class="rail">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Get running</span>
+        <h2>Free to run. Two minutes to your first agent.</h2>
+        <p>Uses Claude Code under the hood — authenticate with <b>your Claude Pro/Max subscription</b> or an API key. No metered bill required.</p>
+      </div>
+      <div class="install">
+        <div class="codeblock reveal">
+          <div class="h">Docker — one command</div>
+<pre><span class="cmt"># board + swarm + local index</span>
+ANTHROPIC_API_KEY=sk-... docker compose up
+
+<span class="cmt"># open the board</span>
+<span class="k">open</span> http://localhost:6951</pre>
+        </div>
+        <div class="codeblock reveal">
+          <div class="h">From source</div>
+<pre>git clone https://github.com/MateenKhan/piranha
+<span class="k">cd</span> piranha &amp;&amp; pnpm install
+
+<span class="cmt"># sign in with your Claude plan, or set a key</span>
+npm run agents</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="rail foot">
+    <span class="brand"><svg width="22" height="22"><use href="#mark"/></svg>Piranha</span>
+    <span class="lic">MIT License · &copy; 2026 Piranha contributors</span>
+    <span>
+      <a href="https://github.com/MateenKhan/piranha/blob/main/ROADMAP.md">Roadmap</a> &nbsp;·&nbsp;
+      <a href="https://github.com/MateenKhan/piranha">GitHub</a> &nbsp;·&nbsp;
+      <a href="#install">Deploy</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // Typewriter headline — reserve the final height first so nothing below jumps.
+  var h1=document.getElementById("h1");
+  if(h1){
+    var tw=h1.querySelector(".tw"), twa=h1.querySelector(".tw-a"), caret=h1.querySelector(".caret");
+    var full=h1.getAttribute("data-full")||"", acc=h1.getAttribute("data-accent")||"";
+    var reduce=window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    tw.textContent=full; twa.textContent=acc;                 // render full to measure
+    h1.style.minHeight=h1.offsetHeight+"px";                  // lock height → no reflow
+    if(reduce){ if(caret) caret.style.display="none"; }
+    else{
+      tw.textContent=""; twa.textContent="";
+      var i=0,j=0;
+      (function type(){
+        if(i<full.length){ tw.textContent+=full.charAt(i++); setTimeout(type,40); }
+        else if(j<acc.length){ twa.textContent+=acc.charAt(j++); setTimeout(type,52); }
+      })();
+    }
+  }
+
+  var copy=document.getElementById("copy");
+  if(copy) copy.addEventListener("click",function(){
+    var txt="ANTHROPIC_API_KEY=sk-... docker compose up";
+    function done(){copy.classList.add("ok");setTimeout(function(){copy.classList.remove("ok");},1400);}
+    function fb(){try{var t=document.createElement("textarea");t.value=txt;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);done();}catch(e){}}
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done).catch(fb);}else fb();
+  });
+  var els=[].slice.call(document.querySelectorAll(".reveal"));
+  if("IntersectionObserver" in window && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)){
+    var io=new IntersectionObserver(function(en){en.forEach(function(e){if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target);}});},{rootMargin:"0px 0px -8% 0px"});
+    els.forEach(function(el,i){el.style.transitionDelay=(Math.min(i%4,3)*55)+"ms";io.observe(el);});
+  } else { els.forEach(function(el){el.classList.add("in");}); }
+})();
+</script>
+</body>
+</html>

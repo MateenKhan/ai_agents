@@ -37,7 +37,7 @@ function renderAnswer(md: string): React.ReactNode {
     return seg.split('\n').map((line, j) => {
       const bits = line.split(/(`[^`]+`)/g).map((b, k) =>
         b.startsWith('`') && b.endsWith('`')
-          ? <code key={k} className="px-1 py-0.5 rounded bg-slate-100 text-indigo-700 font-mono text-[12px]">{b.slice(1, -1)}</code>
+          ? <code key={k} className="px-1 py-0.5 rounded bg-slate-100 text-accent-700 font-mono text-[12px]">{b.slice(1, -1)}</code>
           : <React.Fragment key={k}>{b}</React.Fragment>);
       return <p key={`${i}-${j}`} className="leading-relaxed">{bits}</p>;
     });
@@ -133,7 +133,7 @@ export default function CodeSearchTab() {
             value={project}
             onChange={e => setProject(e.target.value)}
             data-feature-id="code-search-project"
-            className="h-11 pl-3 pr-8 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-700 focus:outline-none focus:border-indigo-500 appearance-none cursor-pointer"
+            className="h-11 pl-3 pr-8 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-700 focus:outline-none focus:border-accent-500 appearance-none cursor-pointer"
             title="Which project's code index to query"
           >
             {projects.length === 0 && <option value={project}>{project}</option>}
@@ -151,7 +151,7 @@ export default function CodeSearchTab() {
             onKeyDown={e => { if (e.key === 'Enter') run(); }}
             placeholder={mode === 'search' ? 'Search code — e.g. "where are git tokens stored"' : 'Ask a question about the codebase…'}
             data-feature-id="code-search-input"
-            className="w-full h-11 pl-9 pr-3 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:border-indigo-500 placeholder:text-slate-400"
+            className="w-full h-11 pl-9 pr-3 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:border-accent-500 placeholder:text-slate-400"
           />
         </div>
 
@@ -159,13 +159,13 @@ export default function CodeSearchTab() {
         <div className="flex items-center rounded-lg border border-slate-300 bg-slate-100 p-0.5 shrink-0">
           <button
             onClick={() => setMode('search')}
-            className={`flex items-center gap-1.5 px-3 h-10 rounded-md text-xs font-bold transition-colors ${mode === 'search' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+            className={`flex items-center gap-1.5 px-3 h-10 rounded-md text-xs font-bold transition-colors ${mode === 'search' ? 'bg-white text-accent-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <Search size={14} /> Search
           </button>
           <button
             onClick={() => setMode('ask')}
-            className={`flex items-center gap-1.5 px-3 h-10 rounded-md text-xs font-bold transition-colors ${mode === 'ask' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+            className={`flex items-center gap-1.5 px-3 h-10 rounded-md text-xs font-bold transition-colors ${mode === 'ask' ? 'bg-white text-accent-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <Sparkles size={14} /> Ask
           </button>
@@ -175,7 +175,7 @@ export default function CodeSearchTab() {
           onClick={run}
           disabled={loading || !q.trim()}
           data-feature-id="code-search-run"
-          className="flex items-center justify-center gap-2 px-4 h-11 rounded-lg bg-indigo-600 text-white text-sm font-black shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
+          className="flex items-center justify-center gap-2 px-4 h-11 rounded-lg bg-accent-600 text-white text-sm font-black shadow-lg shadow-accent-600/20 hover:bg-accent-500 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <CornerDownLeft size={16} />}
           {loading ? (mode === 'ask' ? 'Thinking…' : 'Searching…') : (mode === 'ask' ? 'Ask' : 'Search')}
@@ -192,7 +192,7 @@ export default function CodeSearchTab() {
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2">
           <button onClick={() => setBriefOpen(o => !o)} className="flex items-center gap-2 min-w-0 flex-1 text-left">
-            <BookOpen size={15} className="text-indigo-500 shrink-0" />
+            <BookOpen size={15} className="text-accent-500 shrink-0" />
             <span className="text-xs font-bold text-slate-700">Project context brief</span>
             {brief?.generatedAt
               ? <span className="text-[10px] text-slate-400">· {new Date(brief.generatedAt).toLocaleString()}</span>
@@ -226,8 +226,8 @@ export default function CodeSearchTab() {
       {/* RAG answer */}
       {answer != null && (
         <div className="space-y-3">
-          <div className="p-4 rounded-xl border border-indigo-200 bg-indigo-50/50">
-            <div className="flex items-center gap-1.5 mb-2 text-[10px] font-black uppercase tracking-wider text-indigo-500">
+          <div className="p-4 rounded-xl border border-accent-200 bg-accent-50/50">
+            <div className="flex items-center gap-1.5 mb-2 text-[10px] font-black uppercase tracking-wider text-accent-500">
               <Sparkles size={12} /> Answer
             </div>
             <div className="text-sm text-slate-800 space-y-1.5">{renderAnswer(answer)}</div>

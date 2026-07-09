@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Database, HardDrive, Server, Eye, EyeOff, RefreshCw, Save, Plug, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import { API_BASE } from '../../../apiBase';
+import { btnPrimary, btnGhost, inputCls } from '../ui';
 
 /**
  * Datastore backend config (Phase 2) — pick SQLite (default) or Postgres, test a
@@ -14,10 +15,6 @@ import { API_BASE } from '../../../apiBase';
 
 type Kind = 'sqlite' | 'postgres';
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
-
-const inputCls = 'w-full min-h-[44px] rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-50';
-const btnPrimary = 'min-h-[44px] px-5 text-sm font-bold text-white bg-indigo-600 rounded-xl active:bg-indigo-700 sm:hover:bg-indigo-500 transition-colors shadow-lg shadow-indigo-600/20 disabled:opacity-50 flex items-center justify-center gap-2';
-const btnGhost = 'min-h-[44px] px-4 text-sm font-bold text-slate-700 bg-white border border-slate-300 rounded-xl active:bg-slate-100 sm:hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-2';
 
 export default function DbBackendTab() {
   const [kind, setKind] = useState<Kind>('sqlite');
@@ -84,7 +81,7 @@ export default function DbBackendTab() {
     <div className="space-y-5">
       {/* Current backend */}
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex items-center gap-3">
-        <Database size={18} className="text-indigo-600 shrink-0" />
+        <Database size={18} className="text-accent-600 shrink-0" />
         <div className="min-w-0">
           <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Current backend</div>
           <div className="text-sm font-bold text-slate-800 truncate">
@@ -107,13 +104,13 @@ export default function DbBackendTab() {
           const active = kind === o.id;
           return (
             <button key={o.id} onClick={() => setKind(o.id)} type="button"
-              className={`text-left rounded-xl border-2 px-4 py-3 transition-colors ${active ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white sm:hover:bg-slate-50'}`}>
+              className={`text-left rounded-xl border-2 px-4 py-3 transition-colors ${active ? 'border-accent-500 bg-accent-50' : 'border-slate-200 bg-white sm:hover:bg-slate-50'}`}>
               <div className="flex items-center gap-2">
-                <span className={`flex items-center justify-center w-5 h-5 rounded-full border-2 ${active ? 'border-indigo-500' : 'border-slate-300'}`}>
-                  {active && <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />}
+                <span className={`flex items-center justify-center w-5 h-5 rounded-full border-2 ${active ? 'border-accent-500' : 'border-slate-300'}`}>
+                  {active && <span className="w-2.5 h-2.5 rounded-full bg-accent-500" />}
                 </span>
-                <o.Icon size={16} className={active ? 'text-indigo-600' : 'text-slate-500'} />
-                <span className={`text-sm font-bold ${active ? 'text-indigo-700' : 'text-slate-700'}`}>{o.label}</span>
+                <o.Icon size={16} className={active ? 'text-accent-600' : 'text-slate-500'} />
+                <span className={`text-sm font-bold ${active ? 'text-accent-700' : 'text-slate-700'}`}>{o.label}</span>
               </div>
               <p className="text-xs text-slate-500 mt-1.5 ml-7">{o.note}</p>
             </button>
