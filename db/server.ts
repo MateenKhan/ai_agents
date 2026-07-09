@@ -112,6 +112,8 @@ function ragAnswer(question: string, ctx: string, cwd: string): Promise<string> 
 }
 
 import { getAllTasks, getTask, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, setProjectReadiness, setProjectMaxConcurrency, getAgentDefaults, setAgentDefaults, type RunConfig } from './tasks.js';
+// Datastore backend config (Phase 2: config + connection test only; live swap is a TODO).
+import { setBackendConfig, getMaskedBackendConfig } from './backendConfig.ts';
 
 // ── project scoping helpers ────────────────────────────────────────────────────
 // Every project-scoped route reads ?project=<id> (default 'default'); body routes may
@@ -2554,9 +2556,71 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  // ── Datastore backend (Phase 2: config + connection test) ────────────────────
+  // Selects/records the datastore backend and (for Postgres) its ENCRYPTED URL.
+  // The live datastore is NOT switched here — the query-layer/adapter swap +
+  // migrations are the documented TODO below. Passwords are never returned.
+  //
+  //   GET  /backend        → { kind, target }  (masked; no password)
+  //   POST /backend/test   { url } → { ok } | { ok:false, error }  (does NOT persist)
+  //   PUT  /backend        { kind, url? } → masked  (encrypts + persists)
+  if (req.url === '/backend' && req.method === 'GET') {
+    try { res.end(JSON.stringify(getMaskedBackendConfig())); }
+    catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.url === '/backend/test' && req.method === 'POST') {
+    try {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const url = String(body.url || '').trim();
+      if (!url) { res.statusCode = 400; res.end(JSON.stringify({ ok: false, error: 'url is required' })); return; }
+      if (!/^postgres(ql)?:\/\//i.test(url)) { res.statusCode = 400; res.end(JSON.stringify({ ok: false, error: 'url must be a postgres:// connection string' })); return; }
+      const result = await testPostgres(url);
+      res.end(JSON.stringify(result)); // 200 even on ok:false — the probe ran; the DB just refused/timed out
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ ok: false, error: e.message })); }
+    return;
+  }
+  if (req.url === '/backend' && req.method === 'PUT') {
+    try {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const masked = setBackendConfig({ kind: body.kind, url: body.url });
+      // TODO(adapter-swap): persisting here only RECORDS the choice. Wire getTasksDb/
+      // getLogsDb/getDbFor (agentic/db/connection.ts) to a Postgres adapter behind
+      // getBackendConfig(), add pg-side migrations, then switch on db-server restart.
+      res.end(JSON.stringify(masked));
+    } catch (e: any) { res.statusCode = 400; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
   res.statusCode = 404;
   res.end(JSON.stringify({ error: 'Not found' }));
 });
+
+/**
+ * Open a short-lived Postgres connection, run `SELECT 1`, and report reachability.
+ * Never persists and never throws — connection/timeout failures return { ok:false }.
+ * `pg` is imported lazily so the db-server still boots if the dep is absent.
+ */
+async function testPostgres(url: string): Promise<{ ok: boolean; error?: string }> {
+  const TIMEOUT_MS = 5000;
+  let Client: any;
+  try {
+    ({ Client } = await import('pg'));
+  } catch {
+    return { ok: false, error: 'pg module not installed on the server (run pnpm install)' };
+  }
+  const client = new Client({ connectionString: url, connectionTimeoutMillis: TIMEOUT_MS, statement_timeout: TIMEOUT_MS });
+  const guard = new Promise<never>((_, reject) => setTimeout(() => reject(new Error('connection timed out (5s)')), TIMEOUT_MS));
+  try {
+    await Promise.race([client.connect(), guard]);
+    await Promise.race([client.query('SELECT 1'), guard]);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: String(e?.message || e) };
+  } finally {
+    try { await client.end(); } catch { /* already closed / never connected */ }
+  }
+}
 
 // Bind to loopback by default — this server has no auth and holds credentials, so it must
 // not be reachable from the network unless the operator opts in. Set HOST=0.0.0.0 (and a
