@@ -83,17 +83,17 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
     >
       <div className="space-y-3">
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Git repo path or URL</label>
+          <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Git repo path or URL</label>
           <input value={repoPath} onChange={e => setRepoPath(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} autoFocus placeholder="C:\code\my-repo  ·  git@github.com:acme/web.git" className={`${inputCls} font-mono text-xs sm:text-sm`} />
           {name && (
-            <p className="text-[11px] text-slate-500 mt-1.5">
+            <p className="text-2xs text-slate-500 mt-1.5">
               {isUrl ? 'Clones into folder ' : 'Project & folder: '}<span className="font-bold text-accent-600">{name}</span>
               {onlyDefault && <span className="text-slate-500"> · renames the Default tab</span>}
             </p>
           )}
         </div>
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Emoji (optional)</label>
+          <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Emoji (optional)</label>
           <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="🚀" maxLength={4} className={`${inputCls} sm:max-w-[100px]`} />
         </div>
         {msg && <div className={`text-xs rounded-lg px-3 py-2 border ${msg.kind === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>{msg.text}</div>}
@@ -190,7 +190,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
             <button onClick={askDelete} disabled={busy} className={btnDanger} data-feature-id="project-delete">
               <Trash2 size={15} /> Delete project
             </button>
-          ) : <span className="text-[11px] text-slate-500">Default project can't be deleted.</span>}
+          ) : <span className="text-2xs text-slate-500">Default project can't be deleted.</span>}
           <div className="flex gap-2">
             <button onClick={onClose} className={btnGhost}>Cancel</button>
             <button onClick={save} disabled={busy} className={btnPrimary}>Save</button>
@@ -200,7 +200,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
     >
       <div className="space-y-3">
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Name</label>
+          <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Name</label>
           <input value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="My project" className={inputCls} />
         </div>
           {/* Git repository accordion — TOP: every git repo is one project. Its repo path
@@ -212,7 +212,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
               data-feature-id="project-edit-git-toggle"
               className="w-full flex items-center justify-between gap-2 px-3 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors"
             >
-              <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600">
+              <span className="flex items-center gap-2 text-2xs font-black uppercase tracking-widest text-slate-600">
                 <FolderGit2 className="w-4 h-4 text-accent-600" /> Git repository
                 <span className="text-slate-500 font-bold normal-case tracking-normal truncate max-w-[120px]">· {repoPath ? repoPath.split(/[\\/]/).pop() : 'not set'}</span>
               </span>
@@ -220,20 +220,20 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
             </button>
             {gitOpen && (
               <div className="p-3 border-t border-slate-200 space-y-1.5">
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">Local repo path</label>
+                <label className="block text-micro font-bold uppercase tracking-widest text-slate-500">Local repo path</label>
                 <input value={repoPath} onChange={e => setRepoPath(e.target.value)} placeholder="C:\code\my-repo" disabled={isDefault} className={`${inputCls} font-mono text-xs sm:text-sm disabled:opacity-50`} />
-                <p className="text-[10px] text-slate-500">{isDefault ? 'The Default project is Piranha itself — it has no user repo.' : 'This git repo is the project. Its files + context show in the Context tab; agents work inside it.'}</p>
+                <p className="text-micro text-slate-500">{isDefault ? 'The Default project is Piranha itself — it has no user repo.' : 'This git repo is the project. Its files + context show in the Context tab; agents work inside it.'}</p>
               </div>
             )}
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Emoji (optional)</label>
+            <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Emoji (optional)</label>
             <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="🚀" maxLength={4} className={`${inputCls} sm:max-w-[100px]`} />
           </div>
 
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Max concurrent agents</label>
+            <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Max concurrent agents</label>
             <input
               value={maxConc}
               onChange={e => setMaxConc(e.target.value.replace(/[^\d]/g, ''))}
@@ -241,7 +241,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
               placeholder="Inherit default"
               className={`${inputCls} sm:max-w-[160px]`}
             />
-            <p className="text-[10px] text-slate-500 mt-1">How many agents may run at once for this project. Blank = use the global default (Settings); 0 = unlimited (capped only by CPU/RAM).</p>
+            <p className="text-micro text-slate-500 mt-1">How many agents may run at once for this project. Blank = use the global default (Settings); 0 = unlimited (capped only by CPU/RAM).</p>
           </div>
 
           {/* Boards accordion — same swimlane editor as the Board tab, scoped to this project. */}
@@ -252,7 +252,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
               data-feature-id="project-edit-boards-toggle"
               className="w-full flex items-center justify-between gap-2 px-3 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors"
             >
-              <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600">
+              <span className="flex items-center gap-2 text-2xs font-black uppercase tracking-widest text-slate-600">
                 <Columns className="w-4 h-4 text-accent-600" /> Boards
                 <span className="text-slate-500 font-bold normal-case tracking-normal">· {boardCols.length} lanes</span>
               </span>
@@ -265,12 +265,12 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
                   <Tooltip label="Reset to default lanes"><button
                     type="button"
                     onClick={() => updateBoardCols(DEFAULT_COLUMNS)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-slate-500 hover:text-slate-900 transition-all"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-2xs font-bold text-slate-500 hover:text-slate-900 transition-all"
                   >
                     <RotateCcw size={13} /> Reset lanes
                   </button></Tooltip>
                 </div>
-                <p className="text-[10px] text-slate-500">Board changes save automatically for this project.</p>
+                <p className="text-micro text-slate-500">Board changes save automatically for this project.</p>
               </div>
             )}
           </div>
@@ -333,7 +333,7 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
             data-feature-id="projects-accordion-toggle"
             className="flex-1 min-w-0 flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg sm:hover:bg-slate-50 transition-colors"
           >
-          <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 min-w-0">
+          <span className="flex items-center gap-2 text-2xs font-black uppercase tracking-widest text-slate-600 min-w-0">
             <FolderGit2 className="w-4 h-4 text-accent-600 shrink-0" /> Projects
             <span className="flex items-center gap-1 text-slate-500 font-bold normal-case tracking-normal truncate">
               · <span>{activeProject?.emoji || '📁'}</span> {activeProject?.name ?? 'Default'}

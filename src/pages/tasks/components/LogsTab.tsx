@@ -110,11 +110,11 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
             : (f.busy && f.now ? f.now.split(' · ')[0] : f.name)}
           {f.kind === 'system'
             ? ((f.name === '__clone__' || f.name === '__index__')
-                ? <span className="text-[10px] opacity-60 normal-case">{f.now}</span>
-                : <span className="text-[10px] opacity-60">{f.sizeKB}KB</span>)
+                ? <span className="text-micro opacity-60 normal-case">{f.now}</span>
+                : <span className="text-micro opacity-60">{f.sizeKB}KB</span>)
             : f.busy && f.now
-              ? <span className="text-[10px] font-sans font-semibold text-accent-500 normal-case">{f.name} · {f.now.split(' · ')[1]}</span>
-              : <span className="text-[10px] opacity-60 normal-case">idle</span>}
+              ? <span className="text-micro font-sans font-semibold text-accent-500 normal-case">{f.name} · {f.now.split(' · ')[1]}</span>
+              : <span className="text-micro opacity-60 normal-case">idle</span>}
         </button></Tooltip>
       ))}
     </div>

@@ -188,7 +188,7 @@ export function RecordButton() {
                       key={t.id}
                       disabled={!t.supported}
                       onClick={() => setTier(t.id)}
-                      className={`min-h-[32px] rounded-md border text-[11px] font-bold transition-colors ${!t.supported
+                      className={`min-h-[32px] rounded-md border text-2xs font-bold transition-colors ${!t.supported
                         ? 'border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed'
                         : tier === t.id
                           ? 'border-accent-500 bg-accent-50 text-accent-700'
@@ -207,7 +207,7 @@ export function RecordButton() {
                     <button
                       key={f}
                       onClick={() => setFps(f)}
-                      className={`min-h-[32px] rounded-md border text-[11px] font-bold transition-colors ${fps === f
+                      className={`min-h-[32px] rounded-md border text-2xs font-bold transition-colors ${fps === f
                         ? 'border-accent-500 bg-accent-50 text-accent-700'
                         : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
                     >
@@ -217,7 +217,7 @@ export function RecordButton() {
                 </div>
               </div>
 
-              <p className="text-[11px] text-slate-500 leading-snug">
+              <p className="text-2xs text-slate-500 leading-snug">
                 Target {projected.width}×{projected.height} · ~{mbps(estimateBitrate(projected.width, projected.height, fps))}.
                 Clamped to the shared surface — never upscaled.
               </p>

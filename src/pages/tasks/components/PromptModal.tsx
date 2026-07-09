@@ -59,7 +59,7 @@ export function PromptModal({ isOpen, onClose, prompt, taskTitle, copied, onCopy
           <div className="p-2 bg-amber-50 rounded-lg">
             <Terminal className="w-4 h-4 text-amber-600" />
           </div>
-          <p className="text-[10px] text-slate-500 leading-tight">
+          <p className="text-micro text-slate-500 leading-tight">
             <span className="text-amber-600 font-bold block mb-0.5">Tip</span>
             Watch it work in the <span className="text-slate-700 font-semibold">Logs</span> tab.
           </p>

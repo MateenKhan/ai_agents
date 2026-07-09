@@ -103,10 +103,10 @@ function ToastRow({ t, onDismiss }: { t: Toast; onDismiss: (id: number) => void 
             {t.message && <p className="text-xs text-slate-500 mt-0.5 leading-snug break-words">{t.message}</p>}
             {t.details && (
               <div className="mt-1.5 flex items-center gap-2">
-                <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-slate-800">
+                <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1 text-2xs font-bold text-slate-500 hover:text-slate-800">
                   <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} /> Details
                 </button>
-                <Tooltip label="Copy message + stack trace"><button onClick={copy} data-feature-id="toast-copy" className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-accent-700">
+                <Tooltip label="Copy message + stack trace"><button onClick={copy} data-feature-id="toast-copy" className="flex items-center gap-1 text-2xs font-bold text-slate-500 hover:text-accent-700">
                   {copied ? <><Check size={12} className="text-emerald-600" /> Copied</> : <><Copy size={12} /> Copy</>}
                 </button></Tooltip>
               </div>

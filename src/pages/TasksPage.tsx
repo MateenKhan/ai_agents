@@ -257,7 +257,7 @@ const TasksPage: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-100 gap-4">
         <div className="w-12 h-12 border-4 border-accent-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Waking the swarm…</p>
+        <p className="text-micro font-black uppercase tracking-widest text-slate-500">Waking the swarm…</p>
       </div>
     );
   }
@@ -344,7 +344,7 @@ const TasksPage: React.FC = () => {
                   >
                     <ClipboardCheck size={16} />
                     {reviewQueue.length > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-black bg-amber-500 text-white rounded-full">{reviewQueue.length}</span>
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-micro font-black bg-amber-500 text-white rounded-full">{reviewQueue.length}</span>
                     )}
                   </button>
                 </Tooltip>
@@ -383,7 +383,7 @@ const TasksPage: React.FC = () => {
         {error && (
           <div className="m-6 p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between">
             <span className="text-xs font-bold text-rose-600 uppercase tracking-widest">Error: {error}</span>
-            <button onClick={fetchTasks} className="text-[10px] font-black underline uppercase tracking-tighter text-rose-600">Try again</button>
+            <button onClick={fetchTasks} className="text-micro font-black underline uppercase tracking-tighter text-rose-600">Try again</button>
           </div>
         )}
 
@@ -505,10 +505,10 @@ const TasksPage: React.FC = () => {
                       <div className="font-bold text-slate-700">{s.step}</div>
                       <div className="text-slate-500 mt-0.5">{s.detail}</div>
                     </div>
-                    <span className="text-[10px] text-slate-500 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">logs ›</span>
+                    <span className="text-micro text-slate-500 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">logs ›</span>
                   </button>
                 ))}
-                <p className="text-[11px] text-slate-500 pt-1">Swarm restarted — the tasks it reset pick back up in a few seconds.</p>
+                <p className="text-2xs text-slate-500 pt-1">Swarm restarted — the tasks it reset pick back up in a few seconds.</p>
               </div>
             </Modal>
           )}

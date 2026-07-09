@@ -84,7 +84,7 @@ export default function DbBackendTab() {
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex items-center gap-3">
         <Database size={18} className="text-accent-600 shrink-0" />
         <div className="min-w-0">
-          <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Current backend</div>
+          <div className="text-micro font-black uppercase tracking-wider text-slate-500">Current backend</div>
           <div className="text-sm font-bold text-slate-800 truncate">
             {loading ? 'Loading…' : current ? (
               <><span className="uppercase">{current.kind}</span> <span className="text-slate-500">·</span> <span className="font-mono text-xs text-slate-600">{current.target}</span></>
@@ -123,7 +123,7 @@ export default function DbBackendTab() {
       {kind === 'postgres' && (
         <div className="space-y-3">
           <div>
-            <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Connection URL</label>
+            <label className="text-micro font-black uppercase tracking-wider text-slate-500">Connection URL</label>
             <div className="relative mt-1">
               <input
                 type={showUrl ? 'text' : 'password'}
@@ -138,7 +138,7 @@ export default function DbBackendTab() {
                 {showUrl ? <EyeOff size={16} /> : <Eye size={16} />}
               </button></Tooltip>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">Stored encrypted on the server. The saved value is never shown back — the password is masked.</p>
+            <p className="text-2xs text-slate-500 mt-1">Stored encrypted on the server. The saved value is never shown back — the password is masked.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={test} disabled={testing || !url.trim()} className={btnGhost}>
@@ -158,7 +158,7 @@ export default function DbBackendTab() {
       {msgBox(saveMsg)}
 
       {/* Scope note */}
-      <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-1.5">
+      <div className="text-2xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-1.5">
         <Info size={13} className="mt-px shrink-0" />
         <span>
           Saving records the choice and (for Postgres) the encrypted URL. It takes effect on{' '}

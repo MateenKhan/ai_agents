@@ -20,9 +20,9 @@ const fmtAgo = (iso: string) => fmtMins(Date.now() - new Date(iso).getTime()) + 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</p>
+      <p className="text-micro font-bold uppercase tracking-widest text-slate-500">{label}</p>
       <p className="text-2xl font-black text-slate-900 mt-1">{value}</p>
-      {sub && <p className="text-[11px] text-slate-500 mt-0.5">{sub}</p>}
+      {sub && <p className="text-2xs text-slate-500 mt-0.5">{sub}</p>}
     </div>
   );
 }
@@ -157,10 +157,10 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
                   <div className={`h-full ${ROLE_COLOR[role] || 'bg-slate-400'} rounded-full`} style={{ width: `${(roleTotals[role] / grandTotal) * 100}%` }} />
                 </div>
                 <span className="text-xs font-bold text-slate-700 w-14 text-right">{fmtMins(roleTotals[role])}</span>
-                <span className="text-[10px] text-slate-500 w-9 text-right">{Math.round((roleTotals[role] / grandTotal) * 100)}%</span>
+                <span className="text-micro text-slate-500 w-9 text-right">{Math.round((roleTotals[role] / grandTotal) * 100)}%</span>
               </div>
             ))}
-            <div className="pt-1.5 mt-1 border-t border-slate-100 flex justify-between text-[11px] text-slate-500">
+            <div className="pt-1.5 mt-1 border-t border-slate-100 flex justify-between text-2xs text-slate-500">
               <span>Total agent time across {tasksWithTime.length} task{tasksWithTime.length !== 1 ? 's' : ''}</span>
               <span className="font-bold text-slate-700">{fmtMins(grandTotal)}</span>
             </div>
@@ -187,7 +187,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
                   {ROLE_ORDER.filter(r => timings[r]).map(role => (
-                    <span key={role} className="text-[10px] text-slate-500 capitalize">
+                    <span key={role} className="text-micro text-slate-500 capitalize">
                       <span className={`inline-block w-2 h-2 rounded-sm mr-1 align-middle ${ROLE_COLOR[role] || 'bg-slate-400'}`} />
                       {role} {fmtMins(timings[role])}
                     </span>
@@ -209,10 +209,10 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
               <div key={t.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-slate-900 truncate">{t.title}</span>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-300 shrink-0">{t.status}</span>
+                  <span className="text-micro font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-300 shrink-0">{t.status}</span>
                 </div>
-                <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">{why}</p>
-                {t.claimedBy && <p className="text-[10px] text-slate-500 mt-0.5">last agent: {t.claimedBy}</p>}
+                <p className="text-2xs text-slate-600 mt-1 leading-relaxed">{why}</p>
+                {t.claimedBy && <p className="text-micro text-slate-500 mt-0.5">last agent: {t.claimedBy}</p>}
               </div>
             ))}
           </div>
@@ -257,7 +257,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
         ) : (
           <div className="space-y-1.5">
             {fileUsage.map(f => (
-              <div key={f.path} className="flex items-center gap-2 text-[11px]">
+              <div key={f.path} className="flex items-center gap-2 text-2xs">
                 {f.inContext ? <Pin size={11} className="text-accent-500 shrink-0" /> : <FileCode size={11} className="text-slate-400 shrink-0" />}
                 <span className="flex-1 min-w-0 truncate font-mono text-slate-700" title={f.path}>{f.path}</span>
                 {f.tokens != null && <span className="shrink-0 text-slate-500 tabular-nums">{f.tokens >= 1000 ? `${Math.round(f.tokens / 1000)}K` : f.tokens} tok</span>}

@@ -58,7 +58,7 @@ export function Tooltip({
             top: side === 'top' ? pos.y - 8 : pos.y + 8,
             transform: side === 'top' ? 'translate(-50%, -100%)' : 'translate(-50%, 0)',
           }}
-          className="z-[200] pointer-events-none px-2 py-1 rounded-md bg-slate-900 text-white text-[11px] font-bold whitespace-nowrap shadow-lg"
+          className="z-[200] pointer-events-none px-2 py-1 rounded-md bg-slate-900 text-white text-2xs font-bold whitespace-nowrap shadow-lg"
           role="tooltip"
         >
           {label}

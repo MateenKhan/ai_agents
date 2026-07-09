@@ -119,41 +119,41 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
         )}
 
         {task.status === 'BLOCKED' && task.lastError && (
-          <div className="flex items-start gap-1.5 text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5" title={task.lastError}>
+          <div className="flex items-start gap-1.5 text-2xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5" title={task.lastError}>
             <AlertCircle size={12} className="mt-0.5 shrink-0" />
             <span className="line-clamp-2">{task.lastError}</span>
           </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono uppercase">
+          <span className="text-micro font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono uppercase">
             {task.id.slice(-6)}
           </span>
 
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${pb.class}`}>
+          <span className={`text-micro font-bold px-1.5 py-0.5 rounded border ${pb.class}`}>
             {pb.label}
           </span>
 
           {isPaused && (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-300" title="Task paused by you">
+            <span className="flex items-center gap-1 text-micro font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-300" title="Task paused by you">
               <Pause size={9} fill="currentColor" /> Paused
             </span>
           )}
 
           {isStopping && (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-rose-700 px-1.5 py-0.5 bg-rose-50 rounded border border-rose-300 animate-pulse" title="Orchestrator is halting this task">
+            <span className="flex items-center gap-1 text-micro font-bold text-rose-700 px-1.5 py-0.5 bg-rose-50 rounded border border-rose-300 animate-pulse" title="Orchestrator is halting this task">
               <Square size={9} fill="currentColor" /> Stopping…
             </span>
           )}
 
           {task.dependsOn && task.dependsOn.length > 0 && (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-accent-600 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200" title="Has dependencies">
+            <span className="flex items-center gap-1 text-micro font-bold text-accent-600 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200" title="Has dependencies">
               <Link size={9} /> {task.dependsOn.length}
             </span>
           )}
 
           {task.files && task.files.length > 0 && (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-200" title="Associated files">
+            <span className="flex items-center gap-1 text-micro font-bold text-emerald-700 px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-200" title="Associated files">
               <FileText size={9} /> {task.files.length}
             </span>
           )}
@@ -161,13 +161,13 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           {task.claimedBy && (agentAlive ? (
             <Tooltip label="Agent working — click for live logs"><button
               onClick={(e) => { e.stopPropagation(); onOpenLogs?.(task.claimedBy || undefined); }}
-              className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-300 hover:bg-emerald-100 transition-colors"
+              className="flex items-center gap-1.5 text-micro font-bold text-emerald-700 px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-300 hover:bg-emerald-100 transition-colors"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               {task.claimedBy}
             </button></Tooltip>
           ) : (
-            <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200">
+            <span className="flex items-center gap-1 text-micro font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200">
               <User size={9} /> {task.claimedBy}
             </span>
           ))}
@@ -175,7 +175,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           {agentAlive && (
             <Tooltip label={`${stageLabel} — click for live logs`}><button
               onClick={(e) => { e.stopPropagation(); onOpenLogs?.(task.claimedBy || undefined); }}
-              className="flex items-center gap-1 text-[10px] font-bold text-accent-700 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-300 hover:bg-accent-100 transition-colors"
+              className="flex items-center gap-1 text-micro font-bold text-accent-700 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-300 hover:bg-accent-100 transition-colors"
             >
               <Loader2 size={10} className="animate-spin" /> {stageLabel}
             </button></Tooltip>
@@ -184,7 +184,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           {agentAlive && etc && (
             <span
               title="Estimated time to complete — counts down; caps at 30 min"
-              className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${etc.overdue ? 'text-rose-700 bg-rose-50 border-rose-300 animate-pulse' : 'text-ai-700 bg-ai-50 border-ai-300'}`}
+              className={`flex items-center gap-1 text-micro font-bold px-1.5 py-0.5 rounded border ${etc.overdue ? 'text-rose-700 bg-rose-50 border-rose-300 animate-pulse' : 'text-ai-700 bg-ai-50 border-ai-300'}`}
             >
               <Clock size={9} /> {etc.overdue ? `+${etc.text}` : etc.text}
             </span>
@@ -268,7 +268,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onChange={(e) => onMove(task.id, e.target.value)}
               data-feature-id="task-card-move"
               title="Move to lane"
-              className="w-full min-h-[40px] appearance-none pl-8 pr-2 text-[11px] font-bold uppercase tracking-wide bg-slate-50 text-slate-700 border border-slate-300 rounded-lg active:bg-slate-100 sm:hover:bg-slate-100 transition-colors cursor-pointer"
+              className="w-full min-h-[40px] appearance-none pl-8 pr-2 text-2xs font-bold uppercase tracking-wide bg-slate-50 text-slate-700 border border-slate-300 rounded-lg active:bg-slate-100 sm:hover:bg-slate-100 transition-colors cursor-pointer"
             >
               {/* Keep the current status selectable even if its lane is hidden/removed. */}
               {!moveOptions.some(c => c.id === task.status) && (

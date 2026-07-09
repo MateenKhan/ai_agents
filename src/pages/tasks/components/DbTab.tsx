@@ -137,7 +137,7 @@ export default function DbTab() {
     if (v === null || v === undefined) return <span className="text-slate-300 italic">null</span>;
     const s = String(v);
     if (colName === 'status' && STATUS_CLASS[s]) {
-      return <span className={`inline-block px-2 py-0.5 text-[10px] font-black rounded-full border ${STATUS_CLASS[s]}`}>{s}</span>;
+      return <span className={`inline-block px-2 py-0.5 text-micro font-black rounded-full border ${STATUS_CLASS[s]}`}>{s}</span>;
     }
     if (colName === 'type' && ['error', 'warning', 'success', 'info'].includes(s)) {
       const c = s === 'error' ? 'text-rose-600' : s === 'warning' ? 'text-amber-600' : s === 'success' ? 'text-emerald-600' : 'text-slate-500';
@@ -165,7 +165,7 @@ export default function DbTab() {
               ? 'bg-accent-600 text-white border-accent-600'
               : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'}`}
           >
-            <Database size={12} /> {t.name} <span className="text-[10px] opacity-70">{t.rows}</span>
+            <Database size={12} /> {t.name} <span className="text-micro opacity-70">{t.rows}</span>
           </button>
         ))}
         <div className="flex items-center gap-2 ml-auto">
@@ -256,7 +256,7 @@ export default function DbTab() {
                   key={c.name}
                   onClick={() => toggleSort(c.name)}
                   data-feature-id="db-sort-header"
-                  className={`px-3 py-3 text-[11px] font-black uppercase tracking-wide whitespace-nowrap cursor-pointer select-none border-r border-slate-300 transition-colors ${sort?.col === c.name ? 'text-accent-700 bg-accent-100/70' : 'text-slate-700 hover:bg-slate-200/80'}`}
+                  className={`px-3 py-3 text-2xs font-black uppercase tracking-wide whitespace-nowrap cursor-pointer select-none border-r border-slate-300 transition-colors ${sort?.col === c.name ? 'text-accent-700 bg-accent-100/70' : 'text-slate-700 hover:bg-slate-200/80'}`}
                   title={`Sort by ${c.name}`}
                 >
                   <span className="inline-flex items-center gap-1">
@@ -265,7 +265,7 @@ export default function DbTab() {
                   </span>
                 </th>
               ))}
-              <th className="px-3 py-3 text-[11px] font-black uppercase text-slate-700 text-right">Actions</th>
+              <th className="px-3 py-3 text-2xs font-black uppercase text-slate-700 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -312,7 +312,7 @@ export default function DbTab() {
         </div>
       </div>
 
-      <p className="flex items-center gap-1.5 text-[11px] text-amber-700">
+      <p className="flex items-center gap-1.5 text-2xs text-amber-700">
         <AlertTriangle size={12} /> Direct edits bypass the board's rules (DoD checks, status flow) — prefer the Board UI for task changes; use this for inspection and cleanup.
       </p>
 
@@ -337,7 +337,7 @@ export default function DbTab() {
           <div className="space-y-3">
             {cols.map(c => (
               <div key={c.name}>
-                <label className="text-[10px] font-bold uppercase text-slate-500 tracking-wide">{c.name} <span className="text-slate-500">({c.type || 'TEXT'})</span></label>
+                <label className="text-micro font-bold uppercase text-slate-500 tracking-wide">{c.name} <span className="text-slate-500">({c.type || 'TEXT'})</span></label>
                 <textarea
                   rows={String(editing[c.name] ?? '').length > 60 ? 3 : 1}
                   value={editing[c.name] ?? ''}

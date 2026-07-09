@@ -30,7 +30,7 @@ function SkillChip({ name }: { name: string }) {
   return (
     <span
       title={SKILL_DESCRIPTIONS[name] || 'superpowers skill'}
-      className="inline-flex items-center gap-1 text-[10px] font-bold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200"
+      className="inline-flex items-center gap-1 text-micro font-bold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200"
     >
       <Sparkles size={9} /> {name}
     </span>
@@ -248,16 +248,16 @@ export default function AgentsTab() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-xs font-black uppercase tracking-widest text-slate-700">Workflow</h4>
-                  <span className="text-[11px] text-slate-500">click a stage to edit it</span>
+                  <span className="text-2xs text-slate-500">click a stage to edit it</span>
                 </div>
                 <WorkflowFlow />
-                <p className="text-[11px] text-slate-500 mt-2.5">Disabled stages are skipped. Toggle a role's power button in the list to add/remove it, or reorder via each stage's order field.</p>
+                <p className="text-2xs text-slate-500 mt-2.5">Disabled stages are skipped. Toggle a role's power button in the list to add/remove it, or reorder via each stage's order field.</p>
               </div>
 
               {/* Pseudo-code: the pipeline as DB writes */}
               <div>
-                <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">Pipeline as DB writes</p>
-                <p className="text-[11px] text-slate-500 mb-3">Exactly what each step writes — <span className="font-mono text-cyan-700">table</span>, column, value. This is the ground truth of the framework. Click a step to expand its writes.</p>
+                <p className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-1">Pipeline as DB writes</p>
+                <p className="text-2xs text-slate-500 mb-3">Exactly what each step writes — <span className="font-mono text-cyan-700">table</span>, column, value. This is the ground truth of the framework. Click a step to expand its writes.</p>
                 <div className="space-y-2">
                   {STEPS.map(s => {
                     const open = openStep === s.label;
@@ -269,7 +269,7 @@ export default function AgentsTab() {
                           data-feature-id="agents-pipeline-accordion"
                         >
                           <span className="text-[12px] font-black font-mono text-amber-700">{s.label}</span>
-                          <span className="text-[11px] text-slate-500 truncate">— {s.who}</span>
+                          <span className="text-2xs text-slate-500 truncate">— {s.who}</span>
                           <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }} className="ml-auto shrink-0 text-slate-400"><ChevronDown size={16} /></motion.span>
                         </button>
                         <AnimatePresence initial={false}>
@@ -281,7 +281,7 @@ export default function AgentsTab() {
                               transition={{ duration: 0.22, ease: 'easeOut' }}
                               className="overflow-hidden"
                             >
-                              <div className="px-3.5 pb-3 pt-0 overflow-x-auto custom-scrollbar font-mono text-[11px] leading-relaxed">
+                              <div className="px-3.5 pb-3 pt-0 overflow-x-auto custom-scrollbar font-mono text-2xs leading-relaxed">
                                 <div className="pl-2 border-l-2 border-amber-200">{s.lines.map(codeLine)}</div>
                               </div>
                             </motion.div>
@@ -313,7 +313,7 @@ export default function AgentsTab() {
                               transition={{ duration: 0.22, ease: 'easeOut' }}
                               className="overflow-hidden"
                             >
-                              <div className="px-3.5 pb-3 pt-0 overflow-x-auto custom-scrollbar font-mono text-[11px] leading-relaxed">
+                              <div className="px-3.5 pb-3 pt-0 overflow-x-auto custom-scrollbar font-mono text-2xs leading-relaxed">
                                 <div className="pl-2 border-l-2 border-emerald-200">{GUARD_WRITES.map(codeLine)}</div>
                               </div>
                             </motion.div>
@@ -326,8 +326,8 @@ export default function AgentsTab() {
               </div>
 
               <div>
-                <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-1">The Supervisor — always-on guards</p>
-                <p className="text-[11px] text-slate-500 mb-3">Plain deterministic code (no LLM) — keeps working even when the Claude API is down. Agents can crash or hang; the board still converges to truth on its own.</p>
+                <p className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-1">The Supervisor — always-on guards</p>
+                <p className="text-2xs text-slate-500 mb-3">Plain deterministic code (no LLM) — keeps working even when the Claude API is down. Agents can crash or hang; the board still converges to truth on its own.</p>
                 <div className="space-y-2">
                   {GUARDS.map(g => {
                     const open = openGuard === g.label;
@@ -374,8 +374,8 @@ export default function AgentsTab() {
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 flex items-center justify-center bg-accent-50 border border-accent-200 rounded-lg"><Bot size={18} className="text-accent-600" /></div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900">{a.label || a.role} {a.isSystem ? '' : <span className="text-[10px] font-black text-accent-600">CUSTOM</span>}</h3>
-                  <p className="text-[11px] font-mono text-slate-500">{a.role}</p>
+                  <h3 className="text-sm font-bold text-slate-900">{a.label || a.role} {a.isSystem ? '' : <span className="text-micro font-black text-accent-600">CUSTOM</span>}</h3>
+                  <p className="text-2xs font-mono text-slate-500">{a.role}</p>
                 </div>
                 <div className="ml-auto flex items-center gap-1.5">
                   <Tooltip label={a.enabled ? 'Enabled' : 'Disabled'}><button onClick={() => toggle(a)} className={`p-2 rounded-lg border transition-colors ${a.enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}><Power size={14} /></button></Tooltip>
@@ -402,10 +402,10 @@ export default function AgentsTab() {
               </div>
               {/* Superpowers — the skills this role leads with (from the shared skill map) */}
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Superpowers</span>
+                <span className="text-micro font-black uppercase tracking-wider text-slate-500">Superpowers</span>
                 {skillsForRole(a.role).map(s => <SkillChip key={s} name={s} />)}
               </div>
-              <p className="text-[11px] text-slate-500 font-mono bg-slate-50 border border-slate-200 rounded-lg p-2 line-clamp-3 whitespace-pre-wrap">{a.promptTemplate}</p>
+              <p className="text-2xs text-slate-500 font-mono bg-slate-50 border border-slate-200 rounded-lg p-2 line-clamp-3 whitespace-pre-wrap">{a.promptTemplate}</p>
             </div>
           ))}
         </div>
@@ -431,25 +431,25 @@ export default function AgentsTab() {
               {!editing.isSystem && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-600">Role id</label>
+                    <label className="text-micro font-bold uppercase text-slate-600">Role id</label>
                     <input value={editing.role} onChange={e => setEditing({ ...editing, role: e.target.value.replace(/[^\w-]/g, '') })} className={`${inputCls} mt-1 font-mono`} placeholder="reviewer" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-600">Label</label>
+                    <label className="text-micro font-bold uppercase text-slate-600">Label</label>
                     <input value={editing.label} onChange={e => setEditing({ ...editing, label: e.target.value })} className={`${inputCls} mt-1`} placeholder="Reviewer" />
                   </div>
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-600">Model</label>
+                  <label className="text-micro font-bold uppercase text-slate-600">Model</label>
                   <select value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} className={`${selectCls} mt-1`}>
                     {!MODELS.some(m => m.v === editing.model) && <option value={editing.model}>{editing.model}</option>}
                     {MODELS.map(m => <option key={m.v} value={m.v}>{m.label}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-600">Workspace</label>
+                  <label className="text-micro font-bold uppercase text-slate-600">Workspace</label>
                   <select value={editing.worktreeMode} onChange={e => setEditing({ ...editing, worktreeMode: e.target.value })} className={`${selectCls} mt-1`}>
                     {WORKTREES.map(w => <option key={w.v} value={w.v}>{w.v} — {w.d}</option>)}
                   </select>
@@ -457,9 +457,9 @@ export default function AgentsTab() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-600">Workflow order</label>
+                  <label className="text-micro font-bold uppercase text-slate-600">Workflow order</label>
                   <input type="number" value={editing.ord} onChange={e => setEditing({ ...editing, ord: parseInt(e.target.value) || 0 })} className={`${inputCls} mt-1`} />
-                  <p className="text-[10px] text-slate-500 mt-0.5">lower = earlier in the flow</p>
+                  <p className="text-micro text-slate-500 mt-0.5">lower = earlier in the flow</p>
                 </div>
                 <div className="flex items-end pb-1">
                   <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
@@ -469,27 +469,27 @@ export default function AgentsTab() {
                 </div>
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase text-slate-600">{editing.role === 'architect' ? 'Plan prompt (job 1: planning)' : 'Prompt template'}</label>
+                <label className="text-micro font-bold uppercase text-slate-600">{editing.role === 'architect' ? 'Plan prompt (job 1: planning)' : 'Prompt template'}</label>
                 <textarea value={editing.promptTemplate} onChange={e => setEditing({ ...editing, promptTemplate: e.target.value })} rows={editing.role === 'architect' ? 12 : 16} className={`${textareaCls} mt-1 text-xs font-mono`} />
-                <p className="text-[10px] text-slate-500 mt-1.5">Placeholders (filled per task): {PLACEHOLDERS.map(p => <code key={p} className="mx-0.5 px-1 bg-slate-100 rounded text-accent-700">{`{{${p}}}`}</code>)}</p>
+                <p className="text-micro text-slate-500 mt-1.5">Placeholders (filled per task): {PLACEHOLDERS.map(p => <code key={p} className="mx-0.5 px-1 bg-slate-100 rounded text-accent-700">{`{{${p}}}`}</code>)}</p>
               </div>
 
               {/* Superpowers — auto-injected ahead of the prompt above by the orchestrator */}
               <div className="rounded-lg border border-ai-200 bg-ai-50/50 p-3">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <Sparkles size={13} className="text-ai-600" />
-                  <span className="text-[10px] font-black uppercase tracking-wider text-ai-700">Superpowers skills</span>
+                  <span className="text-micro font-black uppercase tracking-wider text-ai-700">Superpowers skills</span>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {skillsForRole(editing.role || 'custom').map(s => <SkillChip key={s} name={s} />)}
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2">Auto-prepended to this prompt at dispatch, telling the agent which <a href="https://github.com/obra/superpowers" target="_blank" rel="noreferrer" className="text-ai-700 underline">superpowers</a> skills to lead with. Requires superpowers installed in the agent runtime.</p>
+                <p className="text-micro text-slate-500 mt-2">Auto-prepended to this prompt at dispatch, telling the agent which <a href="https://github.com/obra/superpowers" target="_blank" rel="noreferrer" className="text-ai-700 underline">superpowers</a> skills to lead with. Requires superpowers installed in the agent runtime.</p>
               </div>
               {editing.role === 'architect' && (
                 <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-600">Merge prompt (job 2: same architect merges the approved branch)</label>
+                  <label className="text-micro font-bold uppercase text-slate-600">Merge prompt (job 2: same architect merges the approved branch)</label>
                   <textarea value={editing.mergePromptTemplate || ''} onChange={e => setEditing({ ...editing, mergePromptTemplate: e.target.value })} rows={12} className={`${textareaCls} mt-1 text-xs font-mono`} />
-                  <p className="text-[10px] text-slate-500 mt-1.5">The architect who planned the task also merges it after your approval — one agent, both jobs.</p>
+                  <p className="text-micro text-slate-500 mt-1.5">The architect who planned the task also merges it after your approval — one agent, both jobs.</p>
                 </div>
               )}
           </div>

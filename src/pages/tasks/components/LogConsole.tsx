@@ -235,7 +235,7 @@ export function LogConsole({
   const toolbar = hasToolbar && (
     <div className="flex items-center gap-2 flex-wrap">
       {title && (
-        <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-300">
+        <span className="flex items-center gap-2 text-micro font-black uppercase tracking-widest text-slate-300">
           {live && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />}
           {title}
         </span>
@@ -292,7 +292,7 @@ export function LogConsole({
         {sizeControls && show('size') && (
           <div className="flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden" title="Font size">
             <button onClick={() => setFontSize(s => Math.max(10, s - 1))} className="px-2.5 min-h-control text-sm font-bold text-slate-600 hover:bg-slate-50">A−</button>
-            <span className="px-1 text-[10px] text-slate-400 font-mono select-none">{fontSize}</span>
+            <span className="px-1 text-micro text-slate-400 font-mono select-none">{fontSize}</span>
             <button onClick={() => setFontSize(s => Math.min(22, s + 1))} className="px-2.5 min-h-control text-base font-bold text-slate-600 hover:bg-slate-50">A+</button>
           </div>
         )}
@@ -370,7 +370,7 @@ export function LogConsole({
       <div className={`${fill ? 'flex-1 min-h-0 flex flex-col' : ''} bg-surface-terminal border border-slate-300 rounded-xl overflow-hidden`}>
         {body}
       </div>
-      {footer && <div className="text-[11px] text-slate-500 shrink-0">{footer}</div>}
+      {footer && <div className="text-2xs text-slate-500 shrink-0">{footer}</div>}
     </div>
   );
 }

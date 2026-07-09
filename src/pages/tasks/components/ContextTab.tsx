@@ -189,14 +189,14 @@ function ContextMemory({ activeId }: { activeId: string }) {
             <div className="flex-1 h-2.5 rounded-full bg-slate-200 overflow-hidden">
               <div className={`h-full rounded-full transition-all ${over ? 'bg-rose-500' : gaugePct > 80 ? 'bg-amber-500' : 'bg-accent-500'}`} style={{ width: `${gaugePct}%` }} />
             </div>
-            <span className={`text-[11px] font-black tabular-nums ${over ? 'text-rose-600' : 'text-slate-600'}`}>{fmt(stats.totalTokens)}/{fmt(cap)}</span>
+            <span className={`text-2xs font-black tabular-nums ${over ? 'text-rose-600' : 'text-slate-600'}`}>{fmt(stats.totalTokens)}/{fmt(cap)}</span>
           </div>
         )}
       </div>
 
       {/* Model advisory: Haiku unavailable past 200K */}
       {!haikuOk && (
-        <div className="flex items-center gap-2 mb-3 px-3 py-2 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg">
+        <div className="flex items-center gap-2 mb-3 px-3 py-2 text-2xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg">
           <AlertTriangle size={13} className="shrink-0" /> Budget over 200K — Haiku can't hold this context. Use Sonnet or Opus (both 1M).
         </div>
       )}
@@ -213,10 +213,10 @@ function ContextMemory({ activeId }: { activeId: string }) {
               <div className="p-6 text-center space-y-2">
                 <FolderGit2 size={22} className="mx-auto text-slate-300" />
                 <p className="text-[12px] font-bold text-slate-600">No project loaded</p>
-                <p className="text-[11px] text-slate-500 leading-relaxed">This is Piranha's own repo. Each git repository is one project — open the <span className="font-bold text-accent-600">Projects</span> switcher (top-left) and add/point a project at your git repo to manage its context here.</p>
+                <p className="text-2xs text-slate-500 leading-relaxed">This is Piranha's own repo. Each git repository is one project — open the <span className="font-bold text-accent-600">Projects</span> switcher (top-left) and add/point a project at your git repo to manage its context here.</p>
               </div>
             ) : filteredTree.length ? filteredTree.map(n => renderNode(n)) : (
-              <p className="p-4 text-center text-[11px] text-slate-500">No files found in this project's repo.</p>
+              <p className="p-4 text-center text-2xs text-slate-500">No files found in this project's repo.</p>
             )}
           </div>
         </div>
@@ -229,18 +229,18 @@ function ContextMemory({ activeId }: { activeId: string }) {
             </button></Tooltip>
             <FileCode size={13} className="text-slate-400 shrink-0" />
             <span className="flex-1 min-w-0 text-xs font-mono text-slate-600 truncate">{preview?.path || 'Select a file to preview'}</span>
-            {preview && <span className="text-[10px] font-bold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200 shrink-0">{fmt(preview.tokens)} tok</span>}
+            {preview && <span className="text-micro font-bold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200 shrink-0">{fmt(preview.tokens)} tok</span>}
             {preview && !inContext.has(preview.path) && (
-              <button onClick={() => addToContext(preview.path)} className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-white bg-slate-900 hover:bg-slate-800 px-2 py-1 rounded-md"><Plus size={11} /> Add</button>
+              <button onClick={() => addToContext(preview.path)} className="shrink-0 flex items-center gap-1 text-micro font-bold text-white bg-slate-900 hover:bg-slate-800 px-2 py-1 rounded-md"><Plus size={11} /> Add</button>
             )}
           </div>
           {previewOpen && (
             <div className="flex-1 overflow-auto custom-scrollbar">
               {preview ? (
                 preview.truncated
-                  ? <p className="p-4 text-[11px] text-slate-500">File too large to preview ({fmt(preview.tokens)} tokens).</p>
-                  : <pre className="p-3 text-[11px] leading-relaxed font-mono text-slate-700 whitespace-pre">{preview.content}</pre>
-              ) : <p className="p-4 text-center text-[11px] text-slate-500">Tap a file on the left, then Add it to context.</p>}
+                  ? <p className="p-4 text-2xs text-slate-500">File too large to preview ({fmt(preview.tokens)} tokens).</p>
+                  : <pre className="p-3 text-2xs leading-relaxed font-mono text-slate-700 whitespace-pre">{preview.content}</pre>
+              ) : <p className="p-4 text-center text-2xs text-slate-500">Tap a file on the left, then Add it to context.</p>}
             </div>
           )}
         </div>
@@ -249,15 +249,15 @@ function ContextMemory({ activeId }: { activeId: string }) {
         <div className="flex flex-col gap-3">
           <div className="border border-slate-200 rounded-xl bg-white flex flex-col max-h-[calc(100dvh-260px)]">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200">
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">In Memory {stats ? `· ${stats.fileCount}` : ''}</span>
-              <span className="text-[10px] text-slate-500">{stats?.pinnedCount ?? 0} pinned</span>
+              <span className="text-2xs font-black uppercase tracking-widest text-slate-500">In Memory {stats ? `· ${stats.fileCount}` : ''}</span>
+              <span className="text-micro text-slate-500">{stats?.pinnedCount ?? 0} pinned</span>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5 space-y-1">
               {files.length ? files.map(f => (
                 <div key={f.path} data-feature-id="context-memory-item" className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-lg border ${f.pinned ? 'border-accent-200 bg-accent-50/40' : 'border-slate-200 bg-slate-50/60'}`}>
                   <FileCode size={12} className="text-slate-400 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-semibold text-slate-800 truncate" title={f.path}>{f.path}</div>
+                    <div className="text-2xs font-semibold text-slate-800 truncate" title={f.path}>{f.path}</div>
                     <div className="text-[9px] text-slate-500">{fmt(f.tokens)} tok · used {f.useCount}× · {f.addedBy || 'agent'}</div>
                   </div>
                   <Tooltip label={f.pinned ? 'Unpin (allow auto-evict)' : 'Pin (never auto-evict)'}><button onClick={() => togglePin(f)} className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md ${f.pinned ? 'text-accent-600' : 'text-slate-500 hover:text-accent-600'}`}>
@@ -265,7 +265,7 @@ function ContextMemory({ activeId }: { activeId: string }) {
                   </button></Tooltip>
                   <Tooltip label="Remove from context"><button onClick={() => remove(f.path)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600"><X size={12} /></button></Tooltip>
                 </div>
-              )) : <p className="p-4 text-center text-[11px] text-slate-500">Nothing in context. Add files from the explorer, or agents will populate it as they search.</p>}
+              )) : <p className="p-4 text-center text-2xs text-slate-500">Nothing in context. Add files from the explorer, or agents will populate it as they search.</p>}
             </div>
             {/* Model tier for this budget */}
             <div className="flex items-center gap-2 px-3 py-2 border-t border-slate-200">
@@ -275,7 +275,7 @@ function ContextMemory({ activeId }: { activeId: string }) {
                 <option value="sonnet">Sonnet — 1M, balanced</option>
                 <option value="opus">Opus — 1M, deepest</option>
               </select>
-              <button onClick={applyToAgents} className="shrink-0 text-[10px] font-bold text-white bg-slate-900 hover:bg-slate-800 px-2.5 py-1.5 rounded-md">Apply all</button>
+              <button onClick={applyToAgents} className="shrink-0 text-micro font-bold text-white bg-slate-900 hover:bg-slate-800 px-2.5 py-1.5 rounded-md">Apply all</button>
             </div>
           </div>
 
@@ -283,19 +283,19 @@ function ContextMemory({ activeId }: { activeId: string }) {
           <div className="border border-slate-200 rounded-xl bg-white">
             <button onClick={() => setOpsOpen(o => !o)} className="flex items-center gap-2 w-full px-3 py-2 text-left">
               <Clock size={13} className="text-slate-400" />
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-500 flex-1">Memory Log</span>
+              <span className="text-2xs font-black uppercase tracking-widest text-slate-500 flex-1">Memory Log</span>
               <ChevronRight size={14} className={`text-slate-400 transition-transform ${opsOpen ? 'rotate-90' : ''}`} />
             </button>
             {opsOpen && (
               <div className="max-h-64 overflow-y-auto custom-scrollbar px-2 pb-2 space-y-1">
                 {ops.length ? ops.map(o => (
-                  <div key={o.id} className="flex items-center gap-1.5 text-[10px]">
+                  <div key={o.id} className="flex items-center gap-1.5 text-micro">
                     <span className={`shrink-0 px-1.5 py-0.5 rounded border font-bold uppercase ${OP_STYLE[o.op] || 'text-slate-600 bg-slate-50 border-slate-200'}`}>{o.op}</span>
                     <span className="flex-1 min-w-0 truncate font-mono text-slate-600" title={o.reason || ''}>{o.path || o.reason}</span>
                     {o.durationMs != null && <span className="shrink-0 text-slate-500 tabular-nums">{o.durationMs}ms</span>}
                     <span className="shrink-0 text-slate-300">{o.actor}</span>
                   </div>
-                )) : <p className="p-3 text-center text-[11px] text-slate-500">No memory operations yet.</p>}
+                )) : <p className="p-3 text-center text-2xs text-slate-500">No memory operations yet.</p>}
               </div>
             )}
           </div>

@@ -63,7 +63,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
 
   const Meta = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div>
-      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{label}</p>
+      <p className="text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">{label}</p>
       {children}
     </div>
   );
@@ -81,17 +81,17 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
         <div className="flex items-start justify-between gap-3 px-4 py-3.5 border-b border-slate-200 bg-slate-50 pt-[max(0.875rem,env(safe-area-inset-top))]">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: col?.color ?? '#64748b' }}>
+              <span className="text-micro font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: col?.color ?? '#64748b' }}>
                 {col?.label ?? task.status}
               </span>
-              <span className="text-[10px] font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono">{task.id}</span>
+              <span className="text-micro font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono">{task.id}</span>
               {isPaused && (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded-full border border-amber-300">
+                <span className="flex items-center gap-1 text-micro font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded-full border border-amber-300">
                   <Pause size={9} fill="currentColor" /> Paused
                 </span>
               )}
               {isStopping && (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-rose-700 px-1.5 py-0.5 bg-rose-50 rounded-full border border-rose-300 animate-pulse">
+                <span className="flex items-center gap-1 text-micro font-bold text-rose-700 px-1.5 py-0.5 bg-rose-50 rounded-full border border-rose-300 animate-pulse">
                   <Square size={9} fill="currentColor" /> Stopping…
                 </span>
               )}
@@ -110,7 +110,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
         <div className="flex-1 overflow-y-auto custom-scrollbar [-webkit-overflow-scrolling:touch] p-4 space-y-5">
           {/* Pipeline — where this task stands */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Pipeline</p>
+            <p className="text-micro font-bold uppercase tracking-widest text-slate-500 mb-2">Pipeline</p>
             <div className="flex items-center">
               {STAGES.map((s, i) => (
                 <React.Fragment key={s.key}>
@@ -118,7 +118,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                     onClick={() => onOpenLogs?.(task.claimedBy || undefined)}
                     className="flex flex-col items-center gap-1 shrink-0 group focus:outline-none"
                   >
-                    <div className={`relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-transform group-hover:scale-110 ${i < stageIdx ? 'bg-emerald-500 text-white' : i === stageIdx ? 'bg-accent-600 text-white ring-4 ring-accent-100' : 'bg-slate-200 text-slate-500'}`}>
+                    <div className={`relative w-6 h-6 rounded-full flex items-center justify-center text-micro font-bold transition-transform group-hover:scale-110 ${i < stageIdx ? 'bg-emerald-500 text-white' : i === stageIdx ? 'bg-accent-600 text-white ring-4 ring-accent-100' : 'bg-slate-200 text-slate-500'}`}>
                       {i === stageIdx && task.status === 'WORKING' && <span className="absolute -inset-1 rounded-full ring-2 ring-accent-400 animate-ping" />}
                       <span className="relative">{i < stageIdx ? <CheckCircle2 size={13} /> : i + 1}</span>
                     </div>
@@ -138,7 +138,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           {task.summary && (
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
               <button onClick={() => setShowPlan(v => !v)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition-colors">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-600">Summary · what the agent did &amp; how to verify</span>
+                <span className="text-2xs font-bold uppercase tracking-widest text-slate-600">Summary · what the agent did &amp; how to verify</span>
                 <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showPlan ? 'rotate-180' : ''}`} />
               </button>
               {showPlan
@@ -150,7 +150,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           {task.description && (
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
               <button onClick={() => setShowDesc(v => !v)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition-colors">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-600">Description</span>
+                <span className="text-2xs font-bold uppercase tracking-widest text-slate-600">Description</span>
                 <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showDesc ? 'rotate-180' : ''}`} />
               </button>
               {showDesc
@@ -208,7 +208,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
             <Meta label="Depends on">
               <div className="flex flex-wrap gap-1.5">
                 {task.dependsOn.map(d => (
-                  <span key={d} className="flex items-center gap-1 text-[11px] font-bold text-accent-700 px-2 py-1 bg-accent-50 rounded border border-accent-200"><LinkIcon size={10} />{d}</span>
+                  <span key={d} className="flex items-center gap-1 text-2xs font-bold text-accent-700 px-2 py-1 bg-accent-50 rounded border border-accent-200"><LinkIcon size={10} />{d}</span>
                 ))}
               </div>
             </Meta>
@@ -218,7 +218,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
             <Meta label="Files in scope">
               <div className="space-y-1">
                 {task.files.map(f => (
-                  <p key={f} className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-700"><FileText size={11} />{f}</p>
+                  <p key={f} className="flex items-center gap-1.5 text-2xs font-mono text-emerald-700"><FileText size={11} />{f}</p>
                 ))}
               </div>
             </Meta>
@@ -233,7 +233,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
             ) : (
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5 max-h-72 overflow-y-auto custom-scrollbar">
                 {logs.map(l => (
-                  <p key={l.id} className={`text-[11px] leading-relaxed font-mono ${typeColor[l.type] ?? 'text-slate-600'}`}>
+                  <p key={l.id} className={`text-2xs leading-relaxed font-mono ${typeColor[l.type] ?? 'text-slate-600'}`}>
                     <span className="text-slate-500">{l.timestamp.slice(11, 19)}</span> {l.message}
                   </p>
                 ))}

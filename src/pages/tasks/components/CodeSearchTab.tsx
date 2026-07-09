@@ -117,10 +117,10 @@ export default function CodeSearchTab() {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-bold text-slate-800 truncate">{h.name}</span>
           <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${typeColor[h.type] || typeColor.const}`}>{h.type}</span>
-          <span className="text-[10px] font-mono text-slate-500">{(h.score * 100).toFixed(0)}%</span>
+          <span className="text-micro font-mono text-slate-500">{(h.score * 100).toFixed(0)}%</span>
         </div>
-        <div className="text-[11px] text-slate-500 font-mono break-all">{h.path}:{h.line}</div>
-        {h.signature && <div className="mt-1 text-[11px] text-slate-600 font-mono break-all line-clamp-2">{h.signature}</div>}
+        <div className="text-2xs text-slate-500 font-mono break-all">{h.path}:{h.line}</div>
+        {h.signature && <div className="mt-1 text-2xs text-slate-600 font-mono break-all line-clamp-2">{h.signature}</div>}
       </div>
     </div>
   );
@@ -184,7 +184,7 @@ export default function CodeSearchTab() {
       </div>
 
       {mode === 'ask' && (
-        <p className="text-[11px] text-slate-500">
+        <p className="text-2xs text-slate-500">
           Ask mode runs a Claude agent grounded in the retrieved code (RAG). First call can take ~10–120s.
         </p>
       )}
@@ -196,14 +196,14 @@ export default function CodeSearchTab() {
             <BookOpen size={15} className="text-accent-500 shrink-0" />
             <span className="text-xs font-bold text-slate-700">Project context brief</span>
             {brief?.generatedAt
-              ? <span className="text-[10px] text-slate-500">· {new Date(brief.generatedAt).toLocaleString()}</span>
-              : <span className="text-[10px] text-slate-500">· not generated yet</span>}
+              ? <span className="text-micro text-slate-500">· {new Date(brief.generatedAt).toLocaleString()}</span>
+              : <span className="text-micro text-slate-500">· not generated yet</span>}
             <ChevronDown size={14} className={`ml-auto text-slate-400 transition-transform ${briefOpen ? 'rotate-180' : ''}`} />
           </button>
           <Tooltip label="Regenerate the brief via Claude (~15–120s)"><button
             onClick={rebuildBrief}
             disabled={briefBusy}
-            className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-60 transition-colors shrink-0"
+            className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-slate-200 bg-slate-50 text-2xs font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-60 transition-colors shrink-0"
           >
             <RefreshCw size={12} className={briefBusy ? 'animate-spin' : ''} /> {briefBusy ? 'Generating…' : 'Rebuild'}
           </button></Tooltip>
@@ -227,14 +227,14 @@ export default function CodeSearchTab() {
       {answer != null && (
         <div className="space-y-3">
           <div className="p-4 rounded-xl border border-accent-200 bg-accent-50/50">
-            <div className="flex items-center gap-1.5 mb-2 text-[10px] font-black uppercase tracking-wider text-accent-500">
+            <div className="flex items-center gap-1.5 mb-2 text-micro font-black uppercase tracking-wider text-accent-500">
               <Sparkles size={12} /> Answer
             </div>
             <div className="text-sm text-slate-800 space-y-1.5">{renderAnswer(answer)}</div>
           </div>
           {sources.length > 0 && (
             <div className="space-y-2">
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Sources ({sources.length})</div>
+              <div className="text-micro font-black uppercase tracking-wider text-slate-500">Sources ({sources.length})</div>
               {sources.map((h, i) => <HitRow key={i} h={h} />)}
             </div>
           )}
@@ -247,7 +247,7 @@ export default function CodeSearchTab() {
           ? <div className="p-8 text-center text-xs text-slate-500">No matches. Try rephrasing, or rebuild the index if this project was just cloned.</div>
           : (
             <div className="space-y-2">
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">{hits.length} results</div>
+              <div className="text-micro font-black uppercase tracking-wider text-slate-500">{hits.length} results</div>
               {hits.map((h, i) => <HitRow key={i} h={h} />)}
             </div>
           )

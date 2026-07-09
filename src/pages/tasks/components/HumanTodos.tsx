@@ -232,15 +232,15 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                       <div className="min-w-0 flex-1">
                       <h3 className="text-base font-bold text-slate-900 leading-snug break-words">{task.title}</h3>
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span className="text-[11px] font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono uppercase">{task.id}</span>
-                        <span className="flex items-center gap-1 text-[11px] font-bold text-accent-700 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200">
+                        <span className="text-2xs font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono uppercase">{task.id}</span>
+                        <span className="flex items-center gap-1 text-2xs font-bold text-accent-700 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200">
                           <GitBranch size={10} /> task/{task.id}
                         </span>
                         {task.claimedBy && (
-                          <span className="text-[11px] font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200">by {task.claimedBy}</span>
+                          <span className="text-2xs font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200">by {task.claimedBy}</span>
                         )}
                         {(task.attempts || 0) > 1 && (
-                          <span className="text-[11px] font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200">{task.attempts} attempts</span>
+                          <span className="text-2xs font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200">{task.attempts} attempts</span>
                         )}
                       </div>
                       </div>
@@ -256,20 +256,20 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                           <div className="space-y-2.5">
                             {p.what && (
                               <div className="bg-accent-50 border border-accent-200 rounded-lg p-3.5">
-                                <p className="text-[11px] font-bold uppercase tracking-wide text-accent-700 mb-1.5">What the agent did</p>
+                                <p className="text-2xs font-bold uppercase tracking-wide text-accent-700 mb-1.5">What the agent did</p>
                                 <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap break-words">{p.what}</p>
                               </div>
                             )}
                             {p.watch && p.watch.toLowerCase() !== 'nothing' && (
                               <div className="bg-rose-50 border border-rose-200 rounded-lg p-3.5">
-                                <p className="text-[11px] font-bold uppercase tracking-wide text-rose-700 mb-1.5">Watch out</p>
+                                <p className="text-2xs font-bold uppercase tracking-wide text-rose-700 mb-1.5">Watch out</p>
                                 <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap break-words">{p.watch}</p>
                               </div>
                             )}
                           </div>
                         ) : (
                           <div className="bg-accent-50 border border-accent-200 rounded-lg p-3.5">
-                            <p className="text-[11px] font-bold uppercase tracking-wide text-accent-700 mb-2">Agent summary</p>
+                            <p className="text-2xs font-bold uppercase tracking-wide text-accent-700 mb-2">Agent summary</p>
                             <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap break-words">{task.summary}</p>
                           </div>
                         );
@@ -287,14 +287,14 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                     {/* Context */}
                     {task.description && (
                       <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5">
-                        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600 mb-1.5">Context</p>
+                        <p className="text-2xs font-bold uppercase tracking-wide text-slate-600 mb-1.5">Context</p>
                         <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap break-words">{task.description}</p>
                       </div>
                     )}
 
                     {/* STEPS TO VERIFY — numbered, tickable, the reviewer's script */}
                     <div className="bg-amber-50/60 border-2 border-amber-300 rounded-lg p-3.5">
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-amber-800 mb-2.5">
+                      <p className="text-2xs font-bold uppercase tracking-wide text-amber-800 mb-2.5">
                         ✓ Steps to verify — do these in order, tick as you go
                       </p>
                       {verifySteps(task).length > 0 ? (
@@ -303,7 +303,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                             <li key={i} className="flex items-start gap-3 text-sm text-slate-900 leading-relaxed">
                               <label className="flex items-center gap-2 shrink-0 cursor-pointer">
                                 <input type="checkbox" className="w-[18px] h-[18px] accent-emerald-600" />
-                                <span className="w-6 h-6 flex items-center justify-center text-[11px] font-black bg-amber-200/70 text-amber-900 rounded-full">{i + 1}</span>
+                                <span className="w-6 h-6 flex items-center justify-center text-2xs font-black bg-amber-200/70 text-amber-900 rounded-full">{i + 1}</span>
                               </label>
                               <span className="pt-0.5 min-w-0 break-words">{step}</span>
                             </li>
@@ -312,7 +312,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                       ) : (
                         <p className="flex items-center gap-1.5 text-sm text-rose-600"><AlertCircle size={14} /> No verify steps on this task — Reject and ask the agent to provide them.</p>
                       )}
-                      <p className="text-[11px] text-slate-600 mt-3">All steps pass → Approve. Any step fails → Reject and say which step number failed and what you saw instead.</p>
+                      <p className="text-2xs text-slate-600 mt-3">All steps pass → Approve. Any step fails → Reject and say which step number failed and what you saw instead.</p>
                     </div>
 
     {/* Referenced spec points only — never the whole document */}
@@ -332,7 +332,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                               const points = extractRelevant(specs[spec]!, task.dod);
                               return points.length > 0 ? points.map(p => (
                                 <div key={p.label} className="bg-white border border-slate-200 rounded-lg p-3">
-                                  <p className="text-[11px] font-black uppercase tracking-wide text-accent-700 mb-1">{p.label}</p>
+                                  <p className="text-2xs font-black uppercase tracking-wide text-accent-700 mb-1">{p.label}</p>
                                   <pre className="text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap break-words font-sans">{p.text}</pre>
                                 </div>
                               )) : (
@@ -355,7 +355,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                                  className="flex items-center justify-center gap-2 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-slate-900 text-white rounded-lg active:bg-slate-950 sm:hover:bg-slate-800 transition-colors">
                                 <ExternalLink size={16} /> Open Preview ↗
                               </a>
-                              <p className="text-[11px] text-center text-slate-500 font-mono break-all">{pv.url}{pv.apiPort ? ` · api :${pv.apiPort}` : ''}</p>
+                              <p className="text-2xs text-center text-slate-500 font-mono break-all">{pv.url}{pv.apiPort ? ` · api :${pv.apiPort}` : ''}</p>
                             </div>
                           );
                         }
@@ -374,9 +374,9 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                                 <AlertCircle size={15} /> Preview failed — retry {pv.error ? `(${pv.error})` : ''}
                               </button>
                               {pv.logTail && (
-                                <pre className="text-[10px] leading-snug text-rose-800 bg-rose-50/60 border border-rose-200 rounded-lg p-2 max-h-40 overflow-auto whitespace-pre-wrap break-words">{pv.logTail}</pre>
+                                <pre className="text-micro leading-snug text-rose-800 bg-rose-50/60 border border-rose-200 rounded-lg p-2 max-h-40 overflow-auto whitespace-pre-wrap break-words">{pv.logTail}</pre>
                               )}
-                              {pv.logName && <p className="text-[10px] text-slate-500">Full build log: open <span className="font-mono">{pv.logName}</span> in the Logs tab.</p>}
+                              {pv.logName && <p className="text-micro text-slate-500">Full build log: open <span className="font-mono">{pv.logName}</span> in the Logs tab.</p>}
                             </div>
                           );
                         }

@@ -58,7 +58,7 @@ function OrchestratorToggle() {
       data-feature-id="orchestrator-toggle"
     >
       <span className={`w-2 h-2 rounded-full shrink-0 ${state.dot}`} />
-      <span className={`hidden sm:inline text-[11px] font-black uppercase tracking-wide ${state.text}`}>{state.label}</span>
+      <span className={`hidden sm:inline text-2xs font-black uppercase tracking-wide ${state.text}`}>{state.label}</span>
       <Tooltip label={willPause ? 'Pause orchestrator' : 'Start orchestrator'}><button
         onClick={toggle}
         disabled={busy}
@@ -98,7 +98,7 @@ export function TasksHeader({ onRefresh, onOpenSettings, onAddTask, onOpenTodos,
             <ClipboardCheck size={16} />
             <span className="hidden lg:inline">Your Review</span>
             {todoCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 flex items-center justify-center text-[10px] font-black bg-amber-500 text-white rounded-full">
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 flex items-center justify-center text-micro font-black bg-amber-500 text-white rounded-full">
                 {todoCount}
               </span>
             )}

@@ -100,7 +100,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
         {/* Basic Info */}
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase text-slate-600 tracking-wide">Title</label>
+            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Title</label>
             <input
               autoFocus
               required
@@ -113,7 +113,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase text-slate-600 tracking-wide">Description</label>
+            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Description</label>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
@@ -124,7 +124,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[10px] font-bold uppercase text-amber-700 tracking-tight">
+            <label className="text-micro font-bold uppercase text-amber-700 tracking-tight">
               Definition of Done — required *
             </label>
             <textarea
@@ -142,17 +142,17 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               placeholder={"One verifiable criterion per line — written so a HUMAN can verify without opening other docs. Include the exact command and expected result, e.g.\n- `pnpm test` passes with 0 failures\n- Drawing a marquee inside an L-shape's hole selects nothing\n- No console errors on page load"}
             />
             {dodError ? (
-              <p className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-600">
+              <p className="flex items-center gap-1.5 text-2xs font-semibold text-rose-600">
                 <AlertCircle size={12} /> Definition of Done is mandatory — every task must have one.
               </p>
             ) : (
-              <p className="text-[10px] text-slate-500">Agents must satisfy every item; you'll verify these at review. Tasks without a DoD are never dispatched. Avoid spec references like "AC1"/"Step 4" — spell them out.</p>
+              <p className="text-micro text-slate-500">Agents must satisfy every item; you'll verify these at review. Tasks without a DoD are never dispatched. Avoid spec references like "AC1"/"Step 4" — spell them out.</p>
             )}
           </div>
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-[11px] font-bold uppercase text-slate-600 tracking-wide">Project</label>
+          <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Project</label>
           <div className="relative">
             <select
               value={project}
@@ -167,12 +167,12 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
             </select>
             <ChevronDown className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" size={14} />
           </div>
-          {editingTask && <p className="text-[10px] text-slate-500">A task can't be moved between projects here.</p>}
+          {editingTask && <p className="text-micro text-slate-500">A task can't be moved between projects here.</p>}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase text-slate-600 tracking-wide">Status</label>
+            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Status</label>
             <div className="relative">
               <select
                 value={status}
@@ -188,7 +188,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase text-slate-600 tracking-wide">Priority</label>
+            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Priority</label>
             <div className="relative">
               <select
                 value={priority}
@@ -207,10 +207,10 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
 
         {/* Advanced Metadata */}
         <div className="pt-4 border-t border-slate-200 space-y-4">
-          <h3 className="text-[10px] font-black uppercase text-accent-600 tracking-widest">Advanced</h3>
+          <h3 className="text-micro font-black uppercase text-accent-600 tracking-widest">Advanced</h3>
 
           <div className="space-y-1.5">
-            <label className="flex items-center gap-2 text-[11px] font-bold uppercase text-slate-600 tracking-wide">
+            <label className="flex items-center gap-2 text-2xs font-bold uppercase text-slate-600 tracking-wide">
               <Link size={10} /> Depends On
             </label>
             <input
@@ -223,7 +223,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="flex items-center gap-2 text-[11px] font-bold uppercase text-slate-600 tracking-wide">
+            <label className="flex items-center gap-2 text-2xs font-bold uppercase text-slate-600 tracking-wide">
               <FileText size={10} /> Associated Files
             </label>
             <input
@@ -236,7 +236,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold uppercase text-slate-600 tracking-wide">Parent Task ID</label>
+            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Parent Task ID</label>
             <input
               type="text"
               value={parentId}

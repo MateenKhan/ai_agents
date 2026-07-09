@@ -79,7 +79,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
     >
       {/* Visible tabs — toggle closeable tabs back on after they've been hidden. */}
       <div className="mb-6">
-        <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2.5">Visible Tabs</h3>
+        <h3 className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-2.5">Visible Tabs</h3>
         <div className="flex flex-col gap-1.5">
           {closeableTabs.map(t => {
             const Icon = t.icon;
@@ -93,7 +93,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
                 <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                   <Icon size={15} className="text-slate-500" /> {t.label}
                 </span>
-                <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                <span className="flex items-center gap-2 text-2xs font-bold uppercase tracking-wide text-slate-500">
                   {hidden ? <><EyeOff size={13} /> Hidden</> : <><Eye size={13} className="text-accent-500" /> Shown</>}
                   <input
                     type="checkbox"
@@ -106,12 +106,12 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
             );
           })}
         </div>
-        <p className="text-[10px] text-slate-500 mt-2">The Board tab is always visible. Hidden tabs can be re-enabled here anytime.</p>
+        <p className="text-micro text-slate-500 mt-2">The Board tab is always visible. Hidden tabs can be re-enabled here anytime.</p>
       </div>
 
       {/* Agent defaults — the global fallback every project inherits (each project can override). */}
       <div className="mb-6">
-        <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2.5">Agent Defaults</h3>
+        <h3 className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-2.5">Agent Defaults</h3>
         <label className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50">
           <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
             <Cpu size={15} className="text-slate-500" /> Max concurrent agents
@@ -125,13 +125,13 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
             className="w-24 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500"
           />
         </label>
-        <p className="text-[10px] text-slate-500 mt-2">Default cap on how many agents run at once <span className="font-semibold">per project</span> — <span className="font-mono">0 = unlimited</span> (still bounded by CPU/RAM). A project can override this in its editor.</p>
+        <p className="text-micro text-slate-500 mt-2">Default cap on how many agents run at once <span className="font-semibold">per project</span> — <span className="font-mono">0 = unlimited</span> (still bounded by CPU/RAM). A project can override this in its editor.</p>
       </div>
 
       {/* Agent safety — the single most dangerous setting in the product. It used to be a
           silent env-var default with no UI at all. Surfaced so the user OWNS it. */}
       <div className="mb-6">
-        <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2.5">Agent Safety</h3>
+        <h3 className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-2.5">Agent Safety</h3>
         <label
           data-feature-id="settings-skip-perms"
           className={`flex items-start justify-between gap-3 px-3 py-3 rounded-lg border cursor-pointer transition-colors ${
@@ -143,9 +143,9 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
             <span className="min-w-0">
               <span className="block text-sm font-semibold text-slate-900">
                 Skip permission prompts
-                {skipPerms && <span className="ml-2 align-middle text-[10px] font-black uppercase tracking-wider text-rose-700">Dangerous</span>}
+                {skipPerms && <span className="ml-2 align-middle text-micro font-black uppercase tracking-wider text-rose-700">Dangerous</span>}
               </span>
-              <span className="block text-[11px] text-slate-600 mt-1 leading-relaxed">
+              <span className="block text-2xs text-slate-600 mt-1 leading-relaxed">
                 Agents edit, delete and commit files without asking. Required for unattended runs —
                 turn it off and an agent will stop at its first file write instead.
               </span>
@@ -158,7 +158,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
             className="w-5 h-5 shrink-0 mt-0.5 accent-rose-600"
           />
         </label>
-        <p className="text-[10px] text-slate-500 mt-2">
+        <p className="text-micro text-slate-500 mt-2">
           Passes <span className="font-mono">--dangerously-skip-permissions</span> to each agent. Setting the
           <span className="font-mono"> CLAUDE_FLAGS</span> environment variable overrides this entirely.
         </p>
