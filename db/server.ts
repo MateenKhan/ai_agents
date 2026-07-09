@@ -7,6 +7,8 @@ import { spawnSync, spawn } from 'child_process';
 import { embedQuery } from './embedder.js';
 import { getDb, getDbFor, resetDb, resetDbFor } from './db.js';
 import { fromBuffer, cosine } from './embedder.js';
+// Shared code index (Postgres + pgvector) — only used when getBackendConfig().kind==='postgres'.
+import { codeIndexIsPostgres, pgSemanticSearch } from './indexPg.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync } from 'fs';
 import { join, dirname, resolve, isAbsolute } from 'path';
 
@@ -57,6 +59,11 @@ function keywordSearch(query: string, topK: number, projectId: string = 'default
 }
 
 async function semanticSearch(query: string, topK: number, projectId: string = 'default') {
+  // Shared-index path: when the datastore is Postgres, the daemon's /search runs the
+  // cosine ANN query against the ONE pgvector index (all machines share it) rather than
+  // this machine's local SQLite file. SQLite default (below) is unchanged.
+  if (codeIndexIsPostgres()) return pgSemanticSearch(query, topK, projectId);
+
   const vec = await embedQuery(query);
   if (!vec) return keywordSearch(query, topK, projectId);
 

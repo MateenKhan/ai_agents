@@ -3,6 +3,7 @@ import { join } from 'path';
 import { getDb, initSchema } from './db.js';
 import { parseFile, parseCssFile, resolveImportPath } from './parser.js';
 import { embed, toBuffer } from './embedder.js';
+import { codeIndexIsPostgres, buildFullPg, buildIncrementalPg } from './indexPg.js';
 import type { DatabaseSync } from 'node:sqlite';
 
 // Which repo to index. Defaults to the host repo (cwd), but the db-server sets
@@ -13,6 +14,14 @@ const GLOB = process.env.CODE_INDEX_GLOB || '**/*.{ts,tsx,js,jsx,mjs,cjs,css}';
 const EXCLUDE_DIRS = ['node_modules', 'dist', '.git', '.worktrees', 'build', '.next', 'coverage', 'out', '.cache'];
 
 export async function buildFull() {
+  // Shared-index path: when the datastore is Postgres, ALL machines write to ONE
+  // pgvector index instead of a per-machine SQLite file (Design §3, Phase 4). The
+  // SQLite default below is untouched.
+  if (codeIndexIsPostgres()) {
+    await buildFullPg();
+    await refreshBriefBestEffort();
+    return;
+  }
   const db = getDb();
   initSchema(db);
   db.exec('DELETE FROM edges; DELETE FROM nodes; DELETE FROM files;');
@@ -36,6 +45,7 @@ async function refreshBriefBestEffort() {
 }
 
 export async function buildIncremental() {
+  if (codeIndexIsPostgres()) { await buildIncrementalPg(); return; }
   const db = getDb();
   initSchema(db);
   await indexFiles(db, false);

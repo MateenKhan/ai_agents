@@ -56,7 +56,7 @@ switch (cmd) {
   case 'blast': {
     const file = args[0];
     if (!file) { console.error('Usage: pnpm run db:blast -- "filepath"'); process.exit(1); }
-    const radius = blastRadius(file, 3);
+    const radius = await blastRadius(file, 3);
     console.log(`\nBlast radius for: ${file}`);
     console.log(`${radius.length} files affected:\n`);
     radius.forEach(f => console.log(' ', f));
@@ -66,14 +66,14 @@ switch (cmd) {
   case 'callers': {
     const file = args[0];
     if (!file) { console.error('Usage: pnpm run db:callers -- "filepath"'); process.exit(1); }
-    callers(file).forEach(f => console.log(f));
+    (await callers(file)).forEach(f => console.log(f));
     break;
   }
 
   case 'deps': {
     const file = args[0];
     if (!file) { console.error('Usage: pnpm run db:deps -- "filepath"'); process.exit(1); }
-    dependencies(file).forEach(f => console.log(f));
+    (await dependencies(file)).forEach(f => console.log(f));
     break;
   }
 

@@ -1,5 +1,8 @@
 import { getDb, getDbFor, initSchema } from './db.js';
 import { embedQuery, fromBuffer, cosine } from './embedder.js';
+import {
+  codeIndexIsPostgres, pgSemanticSearch, pgBlastRadius, pgCallers, pgDependencies,
+} from './indexPg.js';
 
 type FileRow = { id: number; path: string }
 type NodeRow = { id: number; name: string; type: string; start_line: number; signature: string; path: string; embedding: Buffer | null }
@@ -8,6 +11,11 @@ type NodeRow = { id: number; name: string; type: string; start_line: number; sig
 const cast = <T>(v: unknown): T => v as T;
 
 export async function semanticSearch(queryText: string, topK = 10, projectId: string = 'default') {
+  // Shared-index path: when the datastore is Postgres, query the ONE pgvector index
+  // (cosine ANN in SQL) instead of loading a per-machine SQLite file's embeddings and
+  // scoring in JS. SQLite default (below) is unchanged.
+  if (codeIndexIsPostgres()) return pgSemanticSearch(queryText, topK, projectId);
+
   const db  = getDbFor(projectId);
   const vec = await embedQuery(queryText);
 
@@ -45,7 +53,8 @@ export async function semanticSearch(queryText: string, topK = 10, projectId: st
   return scored.map(r => ({ score: +r.score.toFixed(4), name: r.name, type: r.type, path: r.path, line: r.start_line, signature: r.signature }));
 }
 
-export function blastRadius(filePath: string, hops = 3): string[] {
+export async function blastRadius(filePath: string, hops = 3, projectId: string = 'default'): Promise<string[]> {
+  if (codeIndexIsPostgres()) return pgBlastRadius(filePath, hops, projectId);
   const db    = getDb();
   const start = cast<FileRow | undefined>(db.prepare('SELECT id FROM files WHERE path LIKE ?').get(`%${filePath}%`));
   if (!start) { return []; }
@@ -71,7 +80,8 @@ export function blastRadius(filePath: string, hops = 3): string[] {
   return paths.map(p => p.path);
 }
 
-export function callers(filePath: string): string[] {
+export async function callers(filePath: string, projectId: string = 'default'): Promise<string[]> {
+  if (codeIndexIsPostgres()) return pgCallers(filePath, projectId);
   const db  = getDb();
   const row = cast<FileRow | undefined>(db.prepare('SELECT id FROM files WHERE path LIKE ?').get(`%${filePath}%`));
   if (!row) { return []; }
@@ -81,7 +91,8 @@ export function callers(filePath: string): string[] {
   return rows.map(r => r.path);
 }
 
-export function dependencies(filePath: string): string[] {
+export async function dependencies(filePath: string, projectId: string = 'default'): Promise<string[]> {
+  if (codeIndexIsPostgres()) return pgDependencies(filePath, projectId);
   const db  = getDb();
   const row = cast<FileRow | undefined>(db.prepare('SELECT id FROM files WHERE path LIKE ?').get(`%${filePath}%`));
   if (!row) { return []; }
