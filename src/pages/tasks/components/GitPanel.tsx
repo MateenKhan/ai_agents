@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Tooltip } from './Tooltip';
 import { motion } from 'framer-motion';
 import {
   GitBranch, Github, Gitlab, KeyRound, X, Eye, EyeOff, RefreshCw, FileDiff,
@@ -834,10 +835,10 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2 min-w-0">
             <GitBranch className="w-5 h-5 text-accent-600 shrink-0" /> Git Control
           </h2>
-          <button onClick={onClose} aria-label="Close (Esc)" title="Close (Esc)" className="flex flex-col items-center justify-center gap-0.5 p-2 min-h-control-lg min-w-[44px] hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-900 shrink-0">
+          <Tooltip label="Close (Esc)"><button onClick={onClose} aria-label="Close (Esc)" className="flex flex-col items-center justify-center gap-0.5 p-2 min-h-control-lg min-w-[44px] hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-900 shrink-0">
             <X size={20} />
             <span className="text-[9px] font-semibold uppercase tracking-wider leading-none text-slate-500">esc</span>
-          </button>
+          </button></Tooltip>
         </div>
 
         {/* Tab bar (scrollable on mobile) */}
@@ -1002,9 +1003,9 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 </div>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <button onClick={deleteRepo} disabled={deletingRepo || cloning || !cloneDir.trim()} className={`${btnGhost} text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100`} title="Delete the target directory (removes the cloned repo)">
+                <Tooltip label="Delete the target directory (removes the cloned repo)"><button onClick={deleteRepo} disabled={deletingRepo || cloning || !cloneDir.trim()} className={`${btnGhost} text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100`}>
                   {deletingRepo ? <span className="w-3 h-3 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" /> : <Trash2 size={15} />} Delete repo
-                </button>
+                </button></Tooltip>
                 <button onClick={doClone} disabled={cloning || !cloneUrl.trim()} className={btnPrimary}>{cloning && <span className="w-3 h-3 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />}<DownloadCloud size={15} /> Clone</button>
               </div>
 
@@ -1052,12 +1053,12 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                   <div className="flex gap-2">
                     <input value={(runCfg as any)[key]} onChange={e => setRunCfg(c => ({ ...c, [key]: e.target.value }))}
                       placeholder={ph} className={`${inputCls} font-mono text-xs sm:text-sm`} />
-                    <button onClick={() => startRun(key)} disabled={!(runCfg as any)[key]?.trim() || (runRunning && activeRun?.which === key)}
-                      className={`${btnPrimary} shrink-0`} title={`Run ${label.toLowerCase()}`}>
+                    <Tooltip label={`Run ${label.toLowerCase()}`}><button onClick={() => startRun(key)} disabled={!(runCfg as any)[key]?.trim() || (runRunning && activeRun?.which === key)}
+                      className={`${btnPrimary} shrink-0`}>
                       {runRunning && activeRun?.which === key
                         ? <span className="w-3 h-3 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />
                         : <Play size={14} />}
-                    </button>
+                    </button></Tooltip>
                   </div>
                 </div>
               ))}
@@ -1135,12 +1136,11 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         {t.source !== 'github-app' && (
                           <button onClick={() => { editToken(t); setAddTokOpen(true); }} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Edit"><Pencil size={15} /></button>
                         )}
-                        <button
+                        <Tooltip label={t.source === 'github-app' ? 'Disconnect the GitHub App' : 'Delete token'}><button
                           onClick={() => t.source === 'github-app' ? deleteGithubApp(t.id.replace(/^app:/, '')) : deleteToken(t.id)}
                           className={iconBtnDanger}
                           aria-label={t.source === 'github-app' ? 'Disconnect app' : 'Delete'}
-                          title={t.source === 'github-app' ? 'Disconnect the GitHub App' : 'Delete token'}
-                        ><Trash2 size={15} /></button>
+                        ><Trash2 size={15} /></button></Tooltip>
                       </div>
                     ))}
                     {/* connected GitHub apps (usable + manageable) */}
@@ -1167,7 +1167,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                               <>
                                 <span className="text-sm font-bold text-slate-800 truncate">{app.name}</span>
                                 <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${badge}`}>{app.state}</span>
-                                <button onClick={() => startRename(app.id, app.name || '')} className="ml-auto p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Rename app" title="Rename / label this app"><Pencil size={15} /></button>
+                                <Tooltip label="Rename / label this app"><button onClick={() => startRename(app.id, app.name || '')} className="ml-auto p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Rename app"><Pencil size={15} /></button></Tooltip>
                                 <button onClick={() => deleteGithubApp(app.id)} className={iconBtnDanger} aria-label="Delete app"><Trash2 size={15} /></button>
                               </>
                             )}

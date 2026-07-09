@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { RefreshCw, Settings, Plus, ClipboardCheck, GitBranch, Play, Pause } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { API_BASE, withProject } from '../../../apiBase';
@@ -58,15 +59,14 @@ function OrchestratorToggle() {
     >
       <span className={`w-2 h-2 rounded-full shrink-0 ${state.dot}`} />
       <span className={`hidden sm:inline text-[11px] font-black uppercase tracking-wide ${state.text}`}>{state.label}</span>
-      <button
+      <Tooltip label={willPause ? 'Pause orchestrator' : 'Start orchestrator'}><button
         onClick={toggle}
         disabled={busy}
         aria-label={willPause ? 'Pause orchestrator' : 'Start orchestrator'}
-        title={willPause ? 'Pause orchestrator' : 'Start orchestrator'}
         className={`flex items-center justify-center min-w-[36px] min-h-control rounded-md transition-colors ${state.text} active:bg-white/70 sm:hover:bg-white/70 ${busy ? 'opacity-60 animate-pulse' : ''}`}
       >
         {willPause ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
-      </button>
+      </button></Tooltip>
     </div>
   );
 }
@@ -88,13 +88,12 @@ export function TasksHeader({ onRefresh, onOpenSettings, onAddTask, onOpenTodos,
         <div className="flex items-center gap-2 shrink-0">
           <OrchestratorToggle />
 
-          <button
+          <Tooltip label="Your Review — merged tasks awaiting your approval"><button
             onClick={onOpenTodos}
             data-feature-id="tasks-open-todos"
             className={`relative flex items-center gap-2 px-3 min-h-control-lg rounded-lg text-xs font-black transition-all active:scale-95 ${todoCount > 0
               ? 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
               : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
-            title="Your Review — merged tasks awaiting your approval"
           >
             <ClipboardCheck size={16} />
             <span className="hidden lg:inline">Your Review</span>
@@ -103,43 +102,39 @@ export function TasksHeader({ onRefresh, onOpenSettings, onAddTask, onOpenTodos,
                 {todoCount}
               </span>
             )}
-          </button>
+          </button></Tooltip>
 
           {onOpenGit && (
-            <button
+            <Tooltip label="Git"><button
               onClick={onOpenGit}
               className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-all"
-              title="Git"
             >
               <GitBranch size={16} />
-            </button>
+            </button></Tooltip>
           )}
 
-          <button
+          <Tooltip label="Refresh Board"><button
             onClick={onRefresh}
             className={`p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-all ${isRefreshing ? 'animate-spin text-accent-600' : ''}`}
-            title="Refresh Board"
           >
             <RefreshCw size={16} />
-          </button>
+          </button></Tooltip>
 
-          <button
+          <Tooltip label="Settings"><button
             onClick={onOpenSettings}
             data-feature-id="tasks-open-settings"
             className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 transition-all"
-            title="Settings"
           >
             <Settings size={16} />
-          </button>
+          </button></Tooltip>
 
-          <button
+          <Tooltip label="New Task"><button
             onClick={onAddTask}
             className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-black shadow-lg shadow-slate-900/15 transition-all hover:scale-105 active:scale-95"
-            title="New Task"
           >
             <Plus size={16} strokeWidth={3} />
             <span className="hidden lg:inline">New Task</span>
-          </button>
+          </button></Tooltip>
         </div>
       </div>
     </div>

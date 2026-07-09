@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, AlertTriangle, Info, X, Copy, Check, ChevronDown } from 'lucide-react';
 
@@ -105,9 +106,9 @@ function ToastRow({ t, onDismiss }: { t: Toast; onDismiss: (id: number) => void 
                 <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-slate-800">
                   <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} /> Details
                 </button>
-                <button onClick={copy} data-feature-id="toast-copy" title="Copy message + stack trace" className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-accent-700">
+                <Tooltip label="Copy message + stack trace"><button onClick={copy} data-feature-id="toast-copy" className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-accent-700">
                   {copied ? <><Check size={12} className="text-emerald-600" /> Copied</> : <><Copy size={12} /> Copy</>}
-                </button>
+                </button></Tooltip>
               </div>
             )}
           </div>

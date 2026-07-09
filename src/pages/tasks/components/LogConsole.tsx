@@ -230,34 +230,31 @@ export function LogConsole({
           </select>
         )}
         {liveControl && (
-          <button
+          <Tooltip label={liveOn ? 'Live tail on' : 'Paused'}><button
             onClick={() => setLive(!liveOn)}
             data-feature-id="logs-live-toggle"
             className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${liveOn ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-white text-slate-600 border-slate-300'}`}
-            title={liveOn ? 'Live tail on' : 'Paused'}
           >
             {liveOn ? <><Pause size={14} /> Live</> : <><Play size={14} /> Paused</>}
-          </button>
+          </button></Tooltip>
         )}
         {tailControl && (
-          <button
+          <Tooltip label={autoScroll ? 'Auto-scroll ON — following the tail' : 'Auto-scroll OFF'}><button
             onClick={toggleTail}
             data-feature-id="logs-tail-toggle"
             className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${autoScroll ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
-            title={autoScroll ? 'Auto-scroll ON — following the tail' : 'Auto-scroll OFF'}
           >
             <ArrowDownToLine size={14} /> Tail
-          </button>
+          </button></Tooltip>
         )}
         {timeToggle && (
-          <button
+          <Tooltip label={showTime ? 'Per-line date + time shown' : 'Per-line date + time hidden'}><button
             onClick={() => setShowTime(v => !v)}
             data-feature-id="logs-time-toggle"
             className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${showTime ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
-            title={showTime ? 'Per-line date + time shown' : 'Per-line date + time hidden'}
           >
             <Clock size={14} /> Date/Time
-          </button>
+          </button></Tooltip>
         )}
         {sizeControls && (
           <div className="flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden" title="Font size">

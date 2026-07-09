@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { Settings, RotateCcw, Eye, EyeOff, Cpu, ShieldAlert } from 'lucide-react';
 import type { Column } from '../types';
 import { DEFAULT_COLUMNS } from '../boardConfig';
@@ -57,13 +58,12 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
       featureId="settings-modal"
       footer={
         <div className="flex items-center justify-between w-full">
-          <button
+          <Tooltip label="Reset to default lanes"><button
             onClick={() => setCols(DEFAULT_COLUMNS)}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-900 transition-all"
-            title="Reset to default lanes"
           >
             <RotateCcw size={14} /> Reset
-          </button>
+          </button></Tooltip>
           <div className="flex items-center gap-3">
             <button onClick={onClose} className="px-6 py-2 text-sm font-bold text-slate-600 hover:text-slate-900 transition-all">Cancel</button>
             <button

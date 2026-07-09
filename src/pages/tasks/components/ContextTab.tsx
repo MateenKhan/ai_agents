@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { Tooltip } from './Tooltip';
 import {
   RefreshCw, Pin, PinOff, X, Plus, FileCode, Folder, FolderOpen, ChevronRight,
   BrainCircuit, Search, PanelLeftClose, PanelLeftOpen, Cpu, AlertTriangle, Trash2, Clock, FolderGit2,
@@ -136,16 +137,15 @@ export default function ContextTab({ activeId }: { activeId: string }) {
     return (
       <div key={n.path} className="group flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-slate-100" style={{ paddingLeft: 8 + depth * 12 }}>
         <FileCode size={13} className="text-slate-400 shrink-0" />
-        <button onClick={() => openPreview(n.path)} className="flex-1 min-w-0 text-left text-xs text-slate-700 truncate hover:text-accent-700" title={n.path}>{n.name}</button>
-        <button
+        <Tooltip label={n.path}><button onClick={() => openPreview(n.path)} className="flex-1 min-w-0 text-left text-xs text-slate-700 truncate hover:text-accent-700">{n.name}</button></Tooltip>
+        <Tooltip label={added ? 'Already in context' : 'Add to context'}><button
           onClick={() => addToContext(n.path)}
           disabled={added}
           data-feature-id="context-add-file"
-          title={added ? 'Already in context' : 'Add to context'}
           className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-colors ${added ? 'text-emerald-500' : 'text-slate-500 hover:text-accent-600 hover:bg-accent-50 sm:opacity-0 sm:group-hover:opacity-100'}`}
         >
           {added ? <Pin size={12} /> : <Plus size={13} />}
-        </button>
+        </button></Tooltip>
       </div>
     );
   };
@@ -173,9 +173,9 @@ export default function ContextTab({ activeId }: { activeId: string }) {
         <button onClick={refresh} data-feature-id="context-refresh" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
           <RefreshCw size={13} className={busy ? 'animate-spin text-accent-600' : ''} /> Refresh
         </button>
-        <button onClick={sweep} data-feature-id="context-sweep" title="Garbage-collect: age out stale + evict over budget" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100">
+        <Tooltip label="Garbage-collect: age out stale + evict over budget"><button onClick={sweep} data-feature-id="context-sweep" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100">
           <Trash2 size={13} /> Sweep
-        </button>
+        </button></Tooltip>
 
         {/* Budget selector */}
         <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
@@ -226,9 +226,9 @@ export default function ContextTab({ activeId }: { activeId: string }) {
         {/* ── Center: preview (minimizable) ── */}
         <div className={`border border-slate-200 rounded-xl bg-white flex flex-col ${previewOpen ? 'max-h-[calc(100dvh-260px)]' : ''}`}>
           <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200">
-            <button onClick={() => setPreviewOpen(o => !o)} data-feature-id="context-preview-toggle" className="text-slate-500 hover:text-slate-900" title={previewOpen ? 'Minimize' : 'Expand'}>
+            <Tooltip label={previewOpen ? 'Minimize' : 'Expand'}><button onClick={() => setPreviewOpen(o => !o)} data-feature-id="context-preview-toggle" className="text-slate-500 hover:text-slate-900">
               {previewOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-            </button>
+            </button></Tooltip>
             <FileCode size={13} className="text-slate-400 shrink-0" />
             <span className="flex-1 min-w-0 text-xs font-mono text-slate-600 truncate">{preview?.path || 'Select a file to preview'}</span>
             {preview && <span className="text-[10px] font-bold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200 shrink-0">{fmt(preview.tokens)} tok</span>}
@@ -262,10 +262,10 @@ export default function ContextTab({ activeId }: { activeId: string }) {
                     <div className="text-[11px] font-semibold text-slate-800 truncate" title={f.path}>{f.path}</div>
                     <div className="text-[9px] text-slate-500">{fmt(f.tokens)} tok · used {f.useCount}× · {f.addedBy || 'agent'}</div>
                   </div>
-                  <button onClick={() => togglePin(f)} title={f.pinned ? 'Unpin (allow auto-evict)' : 'Pin (never auto-evict)'} className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md ${f.pinned ? 'text-accent-600' : 'text-slate-500 hover:text-accent-600'}`}>
+                  <Tooltip label={f.pinned ? 'Unpin (allow auto-evict)' : 'Pin (never auto-evict)'}><button onClick={() => togglePin(f)} className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md ${f.pinned ? 'text-accent-600' : 'text-slate-500 hover:text-accent-600'}`}>
                     {f.pinned ? <Pin size={12} /> : <PinOff size={12} />}
-                  </button>
-                  <button onClick={() => remove(f.path)} title="Remove from context" className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600"><X size={12} /></button>
+                  </button></Tooltip>
+                  <Tooltip label="Remove from context"><button onClick={() => remove(f.path)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600"><X size={12} /></button></Tooltip>
                 </div>
               )) : <p className="p-4 text-center text-[11px] text-slate-500">Nothing in context. Add files from the explorer, or agents will populate it as they search.</p>}
             </div>

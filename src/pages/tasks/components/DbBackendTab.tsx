@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { Database, HardDrive, Server, Eye, EyeOff, RefreshCw, Save, Plug, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 import { API_BASE } from '../../../apiBase';
 import { btnPrimary, btnGhost, inputCls } from '../ui';
@@ -90,9 +91,9 @@ export default function DbBackendTab() {
             ) : 'Unavailable (db-server unreachable)'}
           </div>
         </div>
-        <button onClick={load} disabled={loading} className={`${btnGhost} ml-auto shrink-0`} title="Refresh">
+        <Tooltip label="Refresh"><button onClick={load} disabled={loading} className={`${btnGhost} ml-auto shrink-0`}>
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-        </button>
+        </button></Tooltip>
       </div>
 
       {/* Backend picker */}
@@ -132,11 +133,10 @@ export default function DbBackendTab() {
                 autoComplete="off" spellCheck={false}
                 className={`${inputCls} font-mono text-xs sm:text-sm pr-11`}
               />
-              <button type="button" onClick={() => setShowUrl(s => !s)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-500 sm:hover:text-slate-700"
-                title={showUrl ? 'Hide' : 'Show'} aria-label={showUrl ? 'Hide URL' : 'Show URL'}>
+              <Tooltip label={showUrl ? 'Hide' : 'Show'}><button type="button" onClick={() => setShowUrl(s => !s)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-500 sm:hover:text-slate-700" aria-label={showUrl ? 'Hide URL' : 'Show URL'}>
                 {showUrl ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
+              </button></Tooltip>
             </div>
             <p className="text-[11px] text-slate-500 mt-1">Stored encrypted on the server. The saved value is never shown back — the password is masked.</p>
           </div>

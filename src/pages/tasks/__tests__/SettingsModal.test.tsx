@@ -58,7 +58,7 @@ describe('SettingsModal', () => {
 
   it('disables Save when there are no lanes', () => {
     render(<SettingsModal isOpen onClose={() => {}} columns={[custom('Only')]} onSave={() => {}} {...tabProps} />);
-    fireEvent.click(screen.getByTitle('Remove lane'));
+    fireEvent.click(screen.getByLabelText('Remove lane'));
     expect((screen.getByText('Save Changes') as HTMLButtonElement).disabled).toBe(true);
   });
 

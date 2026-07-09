@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Tooltip } from './Tooltip';
 import { iconBtnDanger } from '../ui';
 import { Play, Pause, Square, RotateCcw, Edit2, Trash2, Link, FileText, User, ArrowRightLeft, Loader2, Clock, AlertCircle } from 'lucide-react';
 import type { Task, Column, TaskControlAction } from '../types';
@@ -158,14 +159,13 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           )}
 
           {task.claimedBy && (agentAlive ? (
-            <button
+            <Tooltip label="Agent working — click for live logs"><button
               onClick={(e) => { e.stopPropagation(); onOpenLogs?.(task.claimedBy || undefined); }}
-              title="Agent working — click for live logs"
               className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-300 hover:bg-emerald-100 transition-colors"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               {task.claimedBy}
-            </button>
+            </button></Tooltip>
           ) : (
             <span className="flex items-center gap-1 text-[10px] font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200">
               <User size={9} /> {task.claimedBy}
@@ -173,13 +173,12 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           ))}
 
           {agentAlive && (
-            <button
+            <Tooltip label={`${stageLabel} — click for live logs`}><button
               onClick={(e) => { e.stopPropagation(); onOpenLogs?.(task.claimedBy || undefined); }}
-              title={`${stageLabel} — click for live logs`}
               className="flex items-center gap-1 text-[10px] font-bold text-accent-700 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-300 hover:bg-accent-100 transition-colors"
             >
               <Loader2 size={10} className="animate-spin" /> {stageLabel}
-            </button>
+            </button></Tooltip>
           )}
 
           {agentAlive && etc && (
@@ -195,79 +194,72 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
         {/* Action footer — always visible, 44px touch targets */}
         <div className="flex items-center gap-2 pt-2 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
           {isAvailable && (
-            <button
+            <Tooltip label="Launch"><button
               onClick={() => onTrigger(task.id)}
               disabled={isTriggering}
               data-feature-id="task-card-trigger"
               className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-300 active:bg-cyan-600 active:text-white sm:hover:bg-cyan-600 sm:hover:text-white transition-all ${isTriggering ? 'animate-pulse' : ''}`}
-              title="Launch"
             >
               <Play size={15} fill="currentColor" />
-            </button>
+            </button></Tooltip>
           )}
 
           {/* Lifecycle controls — pause/resume/stop/re-run, shown per state */}
           {onControl && isFailed && !isPaused && (
-            <button
+            <Tooltip label="Re-run — re-queue this task"><button
               onClick={() => onControl(task.id, 'start')}
               disabled={isControlling}
               data-feature-id="task-card-rerun"
               className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-accent-50 text-accent-700 border border-accent-300 active:bg-slate-900 active:text-white sm:hover:bg-slate-900 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
-              title="Re-run — re-queue this task"
             >
               <RotateCcw size={15} />
-            </button>
+            </button></Tooltip>
           )}
           {onControl && isPaused && (
-            <button
+            <Tooltip label="Resume task"><button
               onClick={() => onControl(task.id, 'resume')}
               disabled={isControlling}
               data-feature-id="task-card-resume"
               className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 active:bg-emerald-600 active:text-white sm:hover:bg-emerald-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
-              title="Resume task"
             >
               <Play size={15} fill="currentColor" />
-            </button>
+            </button></Tooltip>
           )}
           {onControl && isWorking && !isPaused && !isStopping && (
-            <button
+            <Tooltip label="Pause task"><button
               onClick={() => onControl(task.id, 'pause')}
               disabled={isControlling}
               data-feature-id="task-card-pause"
               className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-amber-50 text-amber-700 border border-amber-300 active:bg-amber-600 active:text-white sm:hover:bg-amber-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
-              title="Pause task"
             >
               <Pause size={15} fill="currentColor" />
-            </button>
+            </button></Tooltip>
           )}
           {onControl && isWorking && !isStopping && (
-            <button
+            <Tooltip label="Stop — kill the running agent"><button
               onClick={() => onControl(task.id, 'stop')}
               disabled={isControlling}
               data-feature-id="task-card-stop"
               className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-rose-50 text-rose-600 border border-rose-300 active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
-              title="Stop — kill the running agent"
             >
               <Square size={15} fill="currentColor" />
-            </button>
+            </button></Tooltip>
           )}
 
-          <button
+          <Tooltip label="Edit"><button
             onClick={() => onEdit(task)}
             data-feature-id="task-card-edit"
             className="flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-slate-50 text-slate-600 border border-slate-300 active:bg-slate-200 sm:hover:bg-slate-100 sm:hover:text-slate-900 transition-colors"
-            title="Edit"
           >
             <Edit2 size={15} />
-          </button>
-          <button
+          </button></Tooltip>
+          <Tooltip label="Delete"><button
             onClick={() => onDelete(task.id)}
             data-feature-id="task-card-delete"
             className={iconBtnDanger}
-            title="Delete"
           >
             <Trash2 size={15} />
-          </button>
+          </button></Tooltip>
 
           {/* Move-to-lane — native select = native iOS picker */}
           <div className="relative flex-1 min-w-0">

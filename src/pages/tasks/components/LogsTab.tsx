@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { Terminal } from 'lucide-react';
 import { LogConsole } from './LogConsole';
 import { useConfirm } from './ConfirmProvider';
@@ -91,7 +92,7 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
   ) : (
     <div className="flex items-center gap-2 flex-wrap">
       {files.map(f => (
-        <button
+        <Tooltip label={f.busy ? `working: ${f.now}` : `idle · ${f.sizeKB} KB · updated ${new Date(f.modified).toLocaleTimeString()}`}><button
           key={f.name}
           onClick={() => setActive(f.name)}
           data-feature-id="logs-agent-chip"
@@ -100,7 +101,6 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
             : f.kind === 'system'
               ? 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
               : `bg-white text-slate-700 border-slate-300 hover:bg-slate-50 ${!f.busy && active !== f.name ? 'opacity-50' : ''}`}`}
-          title={f.busy ? `working: ${f.now}` : `idle · ${f.sizeKB} KB · updated ${new Date(f.modified).toLocaleTimeString()}`}
         >
           {f.kind === 'system'
             ? <Terminal size={12} />
@@ -115,7 +115,7 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
             : f.busy && f.now
               ? <span className="text-[10px] font-sans font-semibold text-accent-500 normal-case">{f.name} · {f.now.split(' · ')[1]}</span>
               : <span className="text-[10px] opacity-60 normal-case">idle</span>}
-        </button>
+        </button></Tooltip>
       ))}
     </div>
   );

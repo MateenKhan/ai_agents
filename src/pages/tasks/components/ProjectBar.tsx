@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { Plus, Pencil, Trash2, FolderGit2, Columns, ChevronDown, ChevronRight, RotateCcw, GitBranch, FolderSync } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { useProjects, type Project } from '../projectContext';
@@ -261,14 +262,13 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
               <div className="p-3 border-t border-slate-200 space-y-3">
                 <BoardColumnsEditor columns={boardCols} onChange={updateBoardCols} />
                 <div className="flex justify-end">
-                  <button
+                  <Tooltip label="Reset to default lanes"><button
                     type="button"
                     onClick={() => updateBoardCols(DEFAULT_COLUMNS)}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-slate-500 hover:text-slate-900 transition-all"
-                    title="Reset to default lanes"
                   >
                     <RotateCcw size={13} /> Reset lanes
-                  </button>
+                  </button></Tooltip>
                 </div>
                 <p className="text-[10px] text-slate-500">Board changes save automatically for this project.</p>
               </div>
@@ -344,14 +344,13 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
 
           {/* Git — top-right. A project IS a git repo, so its Git panel lives on the project bar. */}
           {onOpenGit && (
-            <button
+            <Tooltip label="Git — repos, branches & tokens"><button
               onClick={onOpenGit}
               data-feature-id="tasks-open-git"
-              title="Git — repos, branches & tokens"
               className="shrink-0 flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg text-slate-500 sm:hover:bg-slate-100 sm:hover:text-slate-900 transition-colors"
             >
               <GitBranch size={17} />
-            </button>
+            </button></Tooltip>
           )}
         </div>
 
@@ -364,13 +363,12 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
                 const isFirst = i === 0;
                 const isLast = i === projects.length - 1;
                 return (
-                  <button
+                  <Tooltip label={p.name}><button
                     key={p.id}
                     onClick={() => setActiveId(p.id)}
                     onTouchStart={() => startPress(p)}
                     onTouchEnd={cancelPress}
                     onTouchMove={cancelPress}
-                    title={p.name}
                     data-feature-id={`project-tab-${p.id}`}
                     className={`relative flex items-center gap-1.5 px-4 min-h-[42px] text-sm font-bold whitespace-nowrap transition-colors ${isFirst ? 'rounded-l-xl' : 'border-l border-slate-200'} ${isLast ? 'rounded-r-xl' : ''} ${active
                       ? 'text-accent-700 bg-gradient-to-b from-white to-accent-50/70'
@@ -410,19 +408,18 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
                         <Pencil size={13} />
                       </span>
                     )}
-                  </button>
+                  </button></Tooltip>
                 );
               })}
             </div>
-            <button
+            <Tooltip label="New project"><button
               onClick={() => setCreateOpen(true)}
               aria-label="New project"
-              title="New project"
               data-feature-id="project-add"
               className="shrink-0 min-h-[42px] min-w-[42px] flex items-center justify-center rounded-xl text-slate-500 bg-slate-50 border border-slate-300 border-dashed active:bg-slate-100 sm:hover:bg-white sm:hover:text-accent-600 transition-colors"
             >
               <Plus size={18} strokeWidth={3} />
-            </button>
+            </button></Tooltip>
           </div>
         )}
       </div>

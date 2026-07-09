@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { Database, Search, Trash2, Edit2, Plus, ChevronLeft, ChevronRight, X, Save, AlertTriangle, ArrowUp, ArrowDown, PencilLine } from 'lucide-react';
 import { API_BASE as API } from '../../../apiBase';
 import { Modal } from './Modal';
@@ -283,11 +284,11 @@ export default function DbTab() {
                   </td>
                 ))}
                 <td className="px-3 py-2 text-right whitespace-nowrap align-top">
-                  <button onClick={() => setEditing({ ...r })} className="p-1.5 text-slate-500 hover:text-accent-600 transition-colors" title="Edit"><Edit2 size={14} /></button>
+                  <Tooltip label="Edit"><button onClick={() => setEditing({ ...r })} className="p-1.5 text-slate-500 hover:text-accent-600 transition-colors"><Edit2 size={14} /></button></Tooltip>
                   {confirmDel === r._rowid ? (
-                    <button onClick={() => del(r._rowid)} disabled={busy} className={btnDangerSm} title="Confirm delete">Delete</button>
+                    <Tooltip label="Confirm delete"><button onClick={() => del(r._rowid)} disabled={busy} className={btnDangerSm}>Delete</button></Tooltip>
                   ) : (
-                    <button onClick={() => setConfirmDel(r._rowid)} className={iconBtnDanger} title="Delete"><Trash2 size={14} /></button>
+                    <Tooltip label="Delete"><button onClick={() => setConfirmDel(r._rowid)} className={iconBtnDanger}><Trash2 size={14} /></button></Tooltip>
                   )}
                 </td>
               </tr>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Tooltip } from './Tooltip';
 import { Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import type { Column } from '../types';
 import { BUILTIN_COLUMNS, makeColumnId } from '../boardConfig';
@@ -54,8 +55,8 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
           {columns.map((lane, i) => (
             <div key={lane.id} className="flex items-center gap-3 p-3 rounded-xl border bg-slate-50 border-slate-200">
               <div className="flex flex-col gap-0.5 shrink-0">
-                <button onClick={() => move(lane.id, -1)} disabled={i === 0} className="text-slate-400 hover:text-slate-700 disabled:opacity-20" title="Move up"><ArrowUp size={14} /></button>
-                <button onClick={() => move(lane.id, 1)} disabled={i === columns.length - 1} className="text-slate-400 hover:text-slate-700 disabled:opacity-20" title="Move down"><ArrowDown size={14} /></button>
+                <Tooltip label="Move up"><button onClick={() => move(lane.id, -1)} disabled={i === 0} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowUp size={14} /></button></Tooltip>
+                <Tooltip label="Move down"><button onClick={() => move(lane.id, 1)} disabled={i === columns.length - 1} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowDown size={14} /></button></Tooltip>
               </div>
 
               <input
@@ -63,7 +64,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
                 value={lane.color}
                 onChange={e => patch(lane.id, { color: e.target.value })}
                 className="w-8 h-8 rounded-lg border border-slate-300 bg-white cursor-pointer shrink-0 p-0.5"
-                title="Lane color"
+                title="Lane color" aria-label="Lane color"
               />
 
               <input
@@ -77,13 +78,12 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
                 {lane.builtin ? lane.id : 'custom'}
               </span>
 
-              <button
+              <Tooltip label="Remove lane"><button
                 onClick={() => remove(lane.id)}
                 className="p-1.5 rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors shrink-0"
-                title="Remove lane"
               >
                 <Trash2 size={15} />
-              </button>
+              </button></Tooltip>
             </div>
           ))}
           {columns.length === 0 && (

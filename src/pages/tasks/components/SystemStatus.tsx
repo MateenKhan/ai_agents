@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DownloadCloud, Database, Bot, CheckCircle2, AlertTriangle, Activity, WifiOff, ChevronUp, ChevronDown, X, Trash2, ScrollText } from 'lucide-react';
@@ -191,21 +192,19 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
             {/* Events feed header — jump to full logs + clear the DB-backed feed */}
             <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-700/70">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Recent events</span>
-              <button
+              <Tooltip label="Open the Logs tab"><button
                 onClick={() => { setOpen(false); navigate('/tasks/logs'); }}
                 className="ml-auto flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-slate-100 transition-colors"
-                title="Open the Logs tab"
               >
                 <ScrollText size={12} /> Logs
-              </button>
+              </button></Tooltip>
               {events.length > 0 && (
-                <button
+                <Tooltip label="Delete all events from the feed (logs.db)"><button
                   onClick={clearEvents}
                   className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-rose-300 transition-colors"
-                  title="Delete all events from the feed (logs.db)"
                 >
                   <Trash2 size={12} /> Clear
-                </button>
+                </button></Tooltip>
               )}
             </div>
 
@@ -226,14 +225,13 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
                         <span className="text-[9px] text-slate-500">{relTime(e.ts)}</span>
                       </div>
                       {e.id != null && (
-                        <button
+                        <Tooltip label="Delete this event"><button
                           onClick={() => deleteEvent(e.id!)}
                           className="shrink-0 -mr-1 p-1 rounded text-slate-600 hover:text-rose-300 hover:bg-slate-800 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
                           aria-label="Delete event"
-                          title="Delete this event"
                         >
                           <X size={12} />
-                        </button>
+                        </button></Tooltip>
                       )}
                     </li>
                   ))}

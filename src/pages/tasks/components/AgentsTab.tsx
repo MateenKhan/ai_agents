@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { Bot, Save, Plus, Trash2, RotateCcw, Power, Cpu, GitBranch, X, ArrowRight, UserCheck, FileText, ShieldCheck, Activity, Zap, Stethoscope, Workflow as WorkflowIcon, ChevronDown, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Modal } from './Modal';
@@ -202,15 +203,14 @@ export default function AgentsTab() {
           {flow.map((a) => (
             <React.Fragment key={a.role}>
               <ArrowRight size={16} className="text-slate-400 shrink-0" />
-              <button
+              <Tooltip label={`${a.label} · ${a.model} · click to edit`}><button
                 onClick={() => setEditing(a)}
                 data-feature-id="agents-workflow-node"
                 className="flex items-center gap-1.5 px-3 py-2 bg-accent-50 border-2 border-accent-200 rounded-lg text-xs font-bold text-accent-800 hover:bg-accent-100 hover:border-accent-400 transition-colors"
-                title={`${a.label} · ${a.model} · click to edit`}
               >
                 <Bot size={13} className="text-accent-600" /> {a.label}
                 <span className="text-[9px] font-mono text-accent-500 bg-white px-1 rounded">{a.model}</span>
-              </button>
+              </button></Tooltip>
             </React.Fragment>
           ))}
           <ArrowRight size={16} className="text-slate-400 shrink-0" />
@@ -219,12 +219,11 @@ export default function AgentsTab() {
           {(agents ?? []).find(a => a.role === 'architect') && (
             <>
               <ArrowRight size={16} className="text-slate-400 shrink-0" />
-              <button onClick={() => setEditing((agents ?? []).find(a => a.role === 'architect')!)}
+              <Tooltip label="The same Architect merges the approved branch — click to edit its merge prompt"><button onClick={() => setEditing((agents ?? []).find(a => a.role === 'architect')!)}
                 data-feature-id="agents-workflow-merge"
-                className="flex items-center gap-1.5 px-3 py-2 bg-accent-50 border-2 border-dashed border-accent-300 rounded-lg text-xs font-bold text-accent-800 hover:bg-accent-100 transition-colors"
-                title="The same Architect merges the approved branch — click to edit its merge prompt">
+                className="flex items-center gap-1.5 px-3 py-2 bg-accent-50 border-2 border-dashed border-accent-300 rounded-lg text-xs font-bold text-accent-800 hover:bg-accent-100 transition-colors">
                 <GitBranch size={13} className="text-accent-600" /> Architect merges
-              </button>
+              </button></Tooltip>
             </>
           )}
     </div>
@@ -379,9 +378,9 @@ export default function AgentsTab() {
                   <p className="text-[11px] font-mono text-slate-500">{a.role}</p>
                 </div>
                 <div className="ml-auto flex items-center gap-1.5">
-                  <button onClick={() => toggle(a)} className={`p-2 rounded-lg border transition-colors ${a.enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`} title={a.enabled ? 'Enabled' : 'Disabled'}><Power size={14} /></button>
-                  <button onClick={() => setEditing(a)} className="p-2 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100" title="Edit"><Save size={14} /></button>
-                  {!a.isSystem && <button onClick={() => del(a.role)} className={iconBtnDanger} title="Delete"><Trash2 size={14} /></button>}
+                  <Tooltip label={a.enabled ? 'Enabled' : 'Disabled'}><button onClick={() => toggle(a)} className={`p-2 rounded-lg border transition-colors ${a.enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}><Power size={14} /></button></Tooltip>
+                  <Tooltip label="Edit"><button onClick={() => setEditing(a)} className="p-2 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"><Save size={14} /></button></Tooltip>
+                  {!a.isSystem && <Tooltip label="Delete"><button onClick={() => del(a.role)} className={iconBtnDanger}><Trash2 size={14} /></button></Tooltip>}
                 </div>
               </div>
               <div className="flex items-center gap-3 text-xs">

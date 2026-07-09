@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Tooltip } from './Tooltip';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -49,15 +50,14 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, footer
               {subtitle && <p className="text-xs text-slate-500 mt-0.5 truncate">{subtitle}</p>}
             </div>
           </div>
-          <button
+          <Tooltip label="Close (Esc)"><button
             onClick={onClose}
             className="flex flex-col items-center justify-center gap-0.5 min-w-[44px] min-h-control-lg -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors shrink-0"
-            title="Close (Esc)"
             aria-label="Close (Esc)"
           >
             <X size={18} />
             <span className="text-[9px] font-semibold uppercase tracking-wider leading-none text-slate-500">esc</span>
-          </button>
+          </button></Tooltip>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6">

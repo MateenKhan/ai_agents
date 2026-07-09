@@ -46,40 +46,40 @@ describe('BoardColumnsEditor', () => {
 
   it('changing a color swatch updates the lane color', () => {
     render(<Harness initial={DEFAULT_COLUMNS} />);
-    const colorInput = screen.getAllByTitle('Lane color')[0] as HTMLInputElement;
+    const colorInput = screen.getAllByLabelText('Lane color')[0] as HTMLInputElement;
     fireEvent.change(colorInput, { target: { value: '#000000' } });
     expect(colorInput.value).toBe('#000000');
   });
 
   it('Move up reorders a lane before its predecessor', () => {
     render(<Harness initial={DEFAULT_COLUMNS} />);
-    fireEvent.click(screen.getAllByTitle('Move up')[1]); // Available up
+    fireEvent.click(screen.getAllByLabelText('Move up')[1]); // Available up
     expect(labels()).toBe('Available|Todo|In Progress|Done');
   });
 
   it('Move down reorders a lane after its successor', () => {
     render(<Harness initial={DEFAULT_COLUMNS} />);
-    fireEvent.click(screen.getAllByTitle('Move down')[0]); // Todo down
+    fireEvent.click(screen.getAllByLabelText('Move down')[0]); // Todo down
     expect(labels()).toBe('Available|Todo|In Progress|Done');
   });
 
   it('first lane cannot move up; last cannot move down', () => {
     render(<Harness initial={DEFAULT_COLUMNS} />);
-    expect((screen.getAllByTitle('Move up')[0] as HTMLButtonElement).disabled).toBe(true);
-    const downs = screen.getAllByTitle('Move down');
+    expect((screen.getAllByLabelText('Move up')[0] as HTMLButtonElement).disabled).toBe(true);
+    const downs = screen.getAllByLabelText('Move down');
     expect((downs[downs.length - 1] as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('Remove deletes a lane', () => {
     render(<Harness initial={DEFAULT_COLUMNS} />);
-    fireEvent.click(screen.getAllByTitle('Remove lane')[0]); // remove Todo
+    fireEvent.click(screen.getAllByLabelText('Remove lane')[0]); // remove Todo
     expect(labels()).toBe('Available|In Progress|Done');
     expect(screen.getByText('Swimlanes (3)')).toBeTruthy();
   });
 
   it('shows the empty-state message when all lanes are removed', () => {
     render(<Harness initial={[DEFAULT_COLUMNS[0]]} />);
-    fireEvent.click(screen.getByTitle('Remove lane'));
+    fireEvent.click(screen.getByLabelText('Remove lane'));
     expect(screen.getByText('Add at least one lane.')).toBeTruthy();
   });
 

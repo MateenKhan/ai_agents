@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import {
   X, Edit2, Trash2, Play, Pause, Square, GitBranch, Link as LinkIcon, FileText,
   User, RotateCcw, AlertCircle, CheckCircle2, ChevronDown
@@ -113,9 +114,8 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
             <div className="flex items-center">
               {STAGES.map((s, i) => (
                 <React.Fragment key={s.key}>
-                  <button
+                  <Tooltip label="Open this agent's logs"><button
                     onClick={() => onOpenLogs?.(task.claimedBy || undefined)}
-                    title="Open this agent's logs"
                     className="flex flex-col items-center gap-1 shrink-0 group focus:outline-none"
                   >
                     <div className={`relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-transform group-hover:scale-110 ${i < stageIdx ? 'bg-emerald-500 text-white' : i === stageIdx ? 'bg-accent-600 text-white ring-4 ring-accent-100' : 'bg-slate-200 text-slate-500'}`}>
@@ -123,7 +123,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                       <span className="relative">{i < stageIdx ? <CheckCircle2 size={13} /> : i + 1}</span>
                     </div>
                     <span className={`text-[9px] font-semibold group-hover:underline ${i === stageIdx ? 'text-accent-700' : i < stageIdx ? 'text-emerald-600' : 'text-slate-500'}`}>{s.label}</span>
-                  </button>
+                  </button></Tooltip>
                   {i < STAGES.length - 1 && <div className={`flex-1 h-0.5 mx-1 ${i < stageIdx ? 'bg-emerald-400' : 'bg-slate-200'}`} />}
                 </React.Fragment>
               ))}
@@ -275,15 +275,14 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
               </button>
             )}
             {isWorking && !isStopping && (
-              <button
+              <Tooltip label="Stop — kill the running agent"><button
                 onClick={() => onControl(task.id, 'stop')}
                 disabled={isControlling}
                 data-feature-id="task-detail-stop"
                 className={`flex items-center justify-center gap-1.5 min-w-[48px] min-h-[48px] px-3 text-xs font-bold uppercase tracking-wide text-rose-600 bg-rose-50 border border-rose-300 rounded-xl active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
-                title="Stop — kill the running agent"
               >
                 <Square size={14} fill="currentColor" />
-              </button>
+              </button></Tooltip>
             )}
           </div>
         )}
@@ -304,13 +303,12 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           >
             <Edit2 size={14} /> Edit
           </button>
-          <button
+          <Tooltip label="Delete"><button
             onClick={() => { onDelete(task.id); onClose(); }}
             className="flex items-center justify-center min-w-[48px] min-h-[48px] text-rose-600 bg-rose-50 border border-rose-300 rounded-xl active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors"
-            title="Delete"
           >
             <Trash2 size={15} />
-          </button>
+          </button></Tooltip>
         </div>
     </SlideOver>
   );

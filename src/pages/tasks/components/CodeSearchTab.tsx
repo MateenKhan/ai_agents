@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Tooltip } from './Tooltip';
 import { Search, Sparkles, Loader2, FileCode2, CornerDownLeft, AlertTriangle, BookOpen, RefreshCw, ChevronDown } from 'lucide-react';
 import { API_BASE, withProject } from '../../../apiBase';
 import { useProjects } from '../projectContext';
@@ -199,14 +200,13 @@ export default function CodeSearchTab() {
               : <span className="text-[10px] text-slate-500">· not generated yet</span>}
             <ChevronDown size={14} className={`ml-auto text-slate-400 transition-transform ${briefOpen ? 'rotate-180' : ''}`} />
           </button>
-          <button
+          <Tooltip label="Regenerate the brief via Claude (~15–120s)"><button
             onClick={rebuildBrief}
             disabled={briefBusy}
             className="flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-60 transition-colors shrink-0"
-            title="Regenerate the brief via Claude (~15–120s)"
           >
             <RefreshCw size={12} className={briefBusy ? 'animate-spin' : ''} /> {briefBusy ? 'Generating…' : 'Rebuild'}
-          </button>
+          </button></Tooltip>
         </div>
         {briefOpen && (
           <div className="px-4 pb-3 pt-1 border-t border-slate-100 text-sm text-slate-800 space-y-1.5">

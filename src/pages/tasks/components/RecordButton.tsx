@@ -184,11 +184,10 @@ export function RecordButton() {
                 <label className="eyebrow text-slate-500">Resolution</label>
                 <div className="mt-1 grid grid-cols-4 gap-1">
                   {tiers.map(t => (
-                    <button
+                    <Tooltip label={t.supported ? `${t.width}×${t.height}` : `This display is too small for ${t.label} — capturing above the source only upscales.`}><button
                       key={t.id}
                       disabled={!t.supported}
                       onClick={() => setTier(t.id)}
-                      title={t.supported ? `${t.width}×${t.height}` : `This display is too small for ${t.label} — capturing above the source only upscales.`}
                       className={`min-h-[32px] rounded-md border text-[11px] font-bold transition-colors ${!t.supported
                         ? 'border-slate-200 bg-slate-50 text-slate-300 cursor-not-allowed'
                         : tier === t.id
@@ -196,7 +195,7 @@ export function RecordButton() {
                           : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
                     >
                       {t.label}
-                    </button>
+                    </button></Tooltip>
                   ))}
                 </div>
               </div>
