@@ -173,6 +173,10 @@ const PROJECTS: Col[] = [
   { name: 'branch', type: 'text' },
   { name: 'cloneUrl', type: 'text' },
   { name: 'maxConcurrency', type: 'int' },
+  // ── project readiness gate (additive) ── flags stored 0/1 on SQLite today.
+  { name: 'runConfigConfirmed', type: 'bool' },
+  { name: 'previewVerifiedAt', type: 'ts' },
+  { name: 'readinessBypass', type: 'bool' },
 ];
 
 const AGENTS: Col[] = [
@@ -241,6 +245,9 @@ const ADDITIVE: Array<[string, Col]> = [
   ['projects', { name: 'branch', type: 'text' }],
   ['projects', { name: 'cloneUrl', type: 'text' }],
   ['projects', { name: 'maxConcurrency', type: 'int' }],
+  ['projects', { name: 'runConfigConfirmed', type: 'bool' }],
+  ['projects', { name: 'previewVerifiedAt', type: 'ts' }],
+  ['projects', { name: 'readinessBypass', type: 'bool' }],
   ['agents', { name: 'rescuePromptTemplate', type: 'text' }],
 ];
 

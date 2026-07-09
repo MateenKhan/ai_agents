@@ -17,5 +17,6 @@ export * from '../agentic/db/tasks';
 // Agent run logs + index-usage audit (in logs.db).
 export * from '../agentic/db/logs';
 
-// Names the old module used; map them onto the agentic equivalents.
-export { initSchema as initTasksSchema, migrate as runMigrations } from '../agentic/db/tasks';
+// Names the old module used; both now map to the single async boot init
+// (portable migrations + legacy dod→scenario + at-rest secret re-encryption).
+export { initTasksSchema, initTasksSchema as runMigrations } from '../agentic/db/tasks';

@@ -7,6 +7,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { getConfig } from '../runtime-context';
 import { openDb } from './connection';
+import type { Store } from './store';
+import { getStore, ensureMigrated } from './getStore';
 
 export interface AgentLog {
   id?: number;
@@ -16,92 +18,81 @@ export interface AgentLog {
   timestamp: string;
 }
 
-let ready = false;
-
-function db(): DatabaseSync {
-  const conn = openDb(getConfig().paths.logsDbPath);
-  if (!ready) {
-    conn.exec(`CREATE TABLE IF NOT EXISTS agent_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      taskId TEXT NOT NULL,
-      message TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'info',
-      timestamp TEXT NOT NULL
-    )`);
-    conn.exec(`CREATE INDEX IF NOT EXISTS idx_agent_logs_task ON agent_logs(taskId)`);
-    conn.exec(`CREATE TABLE IF NOT EXISTS agent_db_usage (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      agentName TEXT NOT NULL,
-      taskId TEXT,
-      query TEXT,
-      timestamp TEXT NOT NULL
-    )`);
-    conn.exec(`CREATE INDEX IF NOT EXISTS idx_db_usage_agent ON agent_db_usage(agentName)`);
-    conn.exec(`CREATE INDEX IF NOT EXISTS idx_db_usage_task ON agent_db_usage(taskId)`);
-    ready = true;
-  }
-  return conn;
+/** The active logs-group Store, with schema guaranteed. */
+async function store(): Promise<Store> {
+  await ensureMigrated('logs');
+  return getStore('logs');
 }
 
-/** Raw logs.db connection (for the DB-browser endpoints). */
-export function getLogsDb() { return db(); }
+/** Raw logs.db connection (for the SQLite-only DB-browser endpoints). Schema is ensured
+ *  at boot via ensureMigrated('logs'); this just hands back the shared WAL handle. */
+export function getLogsDb(): DatabaseSync { return openDb(getConfig().paths.logsDbPath); }
 
-export function addAgentLog(taskId: string, message: string, type: AgentLog['type'] = 'info'): void {
-  db().prepare(`INSERT INTO agent_logs (taskId, message, type, timestamp) VALUES (?,?,?,?)`)
-    .run(taskId, message, type, new Date().toISOString());
+export async function addAgentLog(taskId: string, message: string, type: AgentLog['type'] = 'info'): Promise<void> {
+  const s = await store();
+  await s.run(`INSERT INTO agent_logs (taskId, message, type, timestamp) VALUES (?,?,?,?)`,
+    [taskId, message, type, new Date().toISOString()]);
 }
 
-export function getAgentLogs(taskId: string, limit = 200): AgentLog[] {
-  const rows = db().prepare(`SELECT * FROM agent_logs WHERE taskId = ? ORDER BY id DESC LIMIT ?`)
-    .all(taskId, limit) as unknown as AgentLog[];
+export async function getAgentLogs(taskId: string, limit = 200): Promise<AgentLog[]> {
+  const s = await store();
+  const rows = await s.all(`SELECT * FROM agent_logs WHERE taskId = ? ORDER BY id DESC LIMIT ?`,
+    [taskId, limit]) as unknown as AgentLog[];
   return rows.reverse();
 }
 
 /** The most recent log rows across ALL tasks, newest-first — for the orchestrator/system
  *  event feed in /system-status. Shape matches the event contract: { ts, taskId, msg, type }. */
-export function getRecentLogs(limit = 15): Array<{ id: number; ts: string; taskId: string; msg: string; type: string }> {
-  const rows = db().prepare(`SELECT id, taskId, message, type, timestamp FROM agent_logs ORDER BY id DESC LIMIT ?`)
-    .all(limit) as any[];
+export async function getRecentLogs(limit = 15): Promise<Array<{ id: number; ts: string; taskId: string; msg: string; type: string }>> {
+  const s = await store();
+  const rows = await s.all(`SELECT id, taskId, message, type, timestamp FROM agent_logs ORDER BY id DESC LIMIT ?`,
+    [limit]) as any[];
   return rows.map(r => ({ id: r.id, ts: r.timestamp, taskId: r.taskId, msg: r.message, type: r.type }));
 }
 
 /** Delete one event row by id — for the status-widget "dismiss" action. Returns rows removed. */
-export function deleteAgentLog(id: number): number {
-  const info = db().prepare(`DELETE FROM agent_logs WHERE id = ?`).run(id);
-  return Number(info.changes ?? 0);
+export async function deleteAgentLog(id: number): Promise<number> {
+  const s = await store();
+  const before = (await s.get(`SELECT COUNT(*) c FROM agent_logs WHERE id = ?`, [id]) as any)?.c ?? 0;
+  await s.run(`DELETE FROM agent_logs WHERE id = ?`, [id]);
+  return Number(before);
 }
 
 /** Clear the whole event feed (all agent_logs rows). Returns rows removed. */
-export function clearAgentLogs(): number {
-  const n = (db().prepare(`SELECT COUNT(*) c FROM agent_logs`).get() as any)?.c ?? 0;
-  db().prepare(`DELETE FROM agent_logs`).run();
+export async function clearAgentLogs(): Promise<number> {
+  const s = await store();
+  const n = (await s.get(`SELECT COUNT(*) c FROM agent_logs`) as any)?.c ?? 0;
+  await s.run(`DELETE FROM agent_logs`);
   return n;
 }
 
 /** Purge a task's log history after human approval — one compact line remains. */
-export function purgeTaskLogs(taskId: string): number {
-  const conn = db();
-  const n = (conn.prepare(`SELECT COUNT(*) c FROM agent_logs WHERE taskId = ?`).get(taskId) as any)?.c ?? 0;
-  conn.prepare(`DELETE FROM agent_logs WHERE taskId = ?`).run(taskId);
-  conn.prepare(`INSERT INTO agent_logs (taskId, message, type, timestamp) VALUES (?,?,?,?)`)
-    .run(taskId, `Approved by human — work accepted, ${n} history rows purged`, 'success', new Date().toISOString());
+export async function purgeTaskLogs(taskId: string): Promise<number> {
+  const s = await store();
+  const n = (await s.get(`SELECT COUNT(*) c FROM agent_logs WHERE taskId = ?`, [taskId]) as any)?.c ?? 0;
+  await s.run(`DELETE FROM agent_logs WHERE taskId = ?`, [taskId]);
+  await s.run(`INSERT INTO agent_logs (taskId, message, type, timestamp) VALUES (?,?,?,?)`,
+    [taskId, `Approved by human — work accepted, ${n} history rows purged`, 'success', new Date().toISOString()]);
   return n;
 }
 
-export function recordDbUsage(agentName: string, taskId: string | null, query: string): void {
-  db().prepare(`INSERT INTO agent_db_usage (agentName, taskId, query, timestamp) VALUES (?,?,?,?)`)
-    .run(agentName, taskId, query.slice(0, 200), new Date().toISOString());
+export async function recordDbUsage(agentName: string, taskId: string | null, query: string): Promise<void> {
+  const s = await store();
+  await s.run(`INSERT INTO agent_db_usage (agentName, taskId, query, timestamp) VALUES (?,?,?,?)`,
+    [agentName, taskId, query.slice(0, 200), new Date().toISOString()]);
 }
 
-export function getDbUsageCount(agentName: string, taskId: string): number {
-  const r = db().prepare(`SELECT COUNT(*) c FROM agent_db_usage WHERE agentName=? AND taskId=?`)
-    .get(agentName, taskId) as any;
+export async function getDbUsageCount(agentName: string, taskId: string): Promise<number> {
+  const s = await store();
+  const r = await s.get(`SELECT COUNT(*) c FROM agent_db_usage WHERE agentName=? AND taskId=?`,
+    [agentName, taskId]) as any;
   return r?.c ?? 0;
 }
 
-export function getDbUsageSummary(): Array<{ agentName: string; searches: number; tasks: number }> {
-  return db().prepare(`
+export async function getDbUsageSummary(): Promise<Array<{ agentName: string; searches: number; tasks: number }>> {
+  const s = await store();
+  return await s.all(`
     SELECT agentName, COUNT(*) as searches, COUNT(DISTINCT taskId) as tasks
     FROM agent_db_usage GROUP BY agentName ORDER BY searches DESC
-  `).all() as any[];
+  `) as any[];
 }
