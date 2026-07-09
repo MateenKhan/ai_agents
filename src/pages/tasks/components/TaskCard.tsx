@@ -178,7 +178,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           {agentAlive && etc && (
             <span
               title="Estimated time to complete — counts down; caps at 30 min"
-              className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${etc.overdue ? 'text-rose-700 bg-rose-50 border-rose-300 animate-pulse' : 'text-violet-700 bg-violet-50 border-violet-300'}`}
+              className={`flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded border ${etc.overdue ? 'text-rose-700 bg-rose-50 border-rose-300 animate-pulse' : 'text-ai-700 bg-ai-50 border-ai-300'}`}
             >
               <Clock size={9} /> {etc.overdue ? `+${etc.text}` : etc.text}
             </span>
@@ -205,7 +205,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onClick={() => onControl(task.id, 'start')}
               disabled={isControlling}
               data-feature-id="task-card-rerun"
-              className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-accent-50 text-accent-700 border border-accent-300 active:bg-accent-600 active:text-white sm:hover:bg-accent-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
+              className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-accent-50 text-accent-700 border border-accent-300 active:bg-slate-900 active:text-white sm:hover:bg-slate-900 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
               title="Re-run — re-queue this task"
             >
               <RotateCcw size={15} />

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Database, Search, Trash2, Edit2, Plus, ChevronLeft, ChevronRight, X, Save, AlertTriangle, ArrowUp, ArrowDown, PencilLine } from 'lucide-react';
 import { API_BASE as API } from '../../../apiBase';
 import { Modal } from './Modal';
+import { btnDangerSm } from '../ui';
 
 /**
  * DB Browser tab — clean paginated view over the allowlisted SQLite tables
@@ -180,7 +181,7 @@ export default function DbTab() {
           <button
             onClick={() => setEditing({})}
             data-feature-id="db-add-row"
-            className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-accent-600 text-white rounded-lg hover:bg-accent-500 transition-colors"
+            className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
           >
             <Plus size={14} /> Row
           </button>
@@ -209,7 +210,7 @@ export default function DbTab() {
                 className="px-3 min-h-control text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-900 w-44"
               />
               <button onClick={bulkUpdate} disabled={busy || !bulkEdit.col}
-                className="px-3 min-h-control text-xs font-bold bg-accent-600 text-white rounded-lg disabled:opacity-40 hover:bg-accent-500">
+                className="px-3 min-h-control text-xs font-bold bg-slate-900 text-white rounded-lg disabled:opacity-40 hover:bg-slate-800">
                 Apply to {selected.size}
               </button>
               <button onClick={() => setBulkEdit(null)} className="px-2 min-h-control text-xs font-bold text-slate-600 hover:text-slate-900">Cancel</button>
@@ -284,7 +285,7 @@ export default function DbTab() {
                 <td className="px-3 py-2 text-right whitespace-nowrap align-top">
                   <button onClick={() => setEditing({ ...r })} className="p-1.5 text-slate-500 hover:text-accent-600 transition-colors" title="Edit"><Edit2 size={14} /></button>
                   {confirmDel === r._rowid ? (
-                    <button onClick={() => del(r._rowid)} disabled={busy} className="px-2 py-1 text-[10px] font-black text-white bg-rose-600 rounded" title="Confirm delete">SURE?</button>
+                    <button onClick={() => del(r._rowid)} disabled={busy} className={btnDangerSm} title="Confirm delete">SURE?</button>
                   ) : (
                     <button onClick={() => setConfirmDel(r._rowid)} className="p-1.5 text-slate-500 hover:text-rose-600 transition-colors" title="Delete"><Trash2 size={14} /></button>
                   )}
@@ -326,7 +327,7 @@ export default function DbTab() {
           footer={
             <div className="flex justify-end gap-2 w-full">
               <button onClick={() => setEditing(null)} className="px-4 min-h-[42px] text-xs font-bold text-slate-600 rounded-lg hover:bg-slate-100">Cancel</button>
-              <button onClick={save} disabled={busy} className="flex items-center gap-1.5 px-5 min-h-[42px] text-xs font-bold bg-accent-600 text-white rounded-lg hover:bg-accent-500 disabled:opacity-50">
+              <button onClick={save} disabled={busy} className="flex items-center gap-1.5 px-5 min-h-[42px] text-xs font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50">
                 <Save size={14} /> {editing._rowid === undefined ? 'Insert' : 'Update'}
               </button>
             </div>

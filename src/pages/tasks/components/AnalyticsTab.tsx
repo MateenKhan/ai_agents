@@ -249,7 +249,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
 
       {/* Most-used context files — which files agents pull into memory most, and how many
           distinct agents touched each. Sourced from the context op-log. */}
-      <Section icon={<FileCode size={14} className="text-violet-600" />} title="Most-used context files">
+      <Section icon={<FileCode size={14} className="text-ai-600" />} title="Most-used context files">
         {fileUsage === null ? (
           <p className="text-xs text-slate-400">Loading…</p>
         ) : fileUsage.length === 0 ? (
@@ -261,7 +261,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
                 {f.inContext ? <Pin size={11} className="text-accent-500 shrink-0" /> : <FileCode size={11} className="text-slate-400 shrink-0" />}
                 <span className="flex-1 min-w-0 truncate font-mono text-slate-700" title={f.path}>{f.path}</span>
                 {f.tokens != null && <span className="shrink-0 text-slate-400 tabular-nums">{f.tokens >= 1000 ? `${Math.round(f.tokens / 1000)}K` : f.tokens} tok</span>}
-                <span className="shrink-0 text-violet-700 font-bold tabular-nums">{f.uses}×</span>
+                <span className="shrink-0 text-ai-700 font-bold tabular-nums">{f.uses}×</span>
                 <span className="shrink-0 text-slate-500 tabular-nums" title="distinct agents that used this file">{f.agents} agent{f.agents === 1 ? '' : 's'}</span>
               </div>
             ))}

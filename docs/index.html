@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Piranha — throw a task in, watch the swarm</title>
-<meta name="description" content="A swarm of AI agents that strips your backlog to the bone — they plan, build, and QA in isolated git worktrees, and nothing lands in main without your click. Free, self-hosted, MIT.">
+<meta name="description" content="A swarm of AI agents that chews through your backlog — each works in its own sandbox, learns as it goes, and nothing ships without your click. Free, self-hosted, MIT. Runs on your Claude subscription.">
 <meta name="theme-color" content="#0A0E14">
 <meta property="og:title" content="Piranha — throw a task in, watch the swarm">
 <meta property="og:description" content="A swarm of AI agents. Plan → build → QA in isolated worktrees, nothing merges without your click. Free & open source (MIT). Runs on your Claude subscription.">
@@ -213,6 +213,7 @@
     <span class="spacer"></span>
     <a class="lnk" href="#features">Features</a>
     <a class="lnk" href="#compare">Compare</a>
+    <a class="lnk" href="#next">Next</a>
     <a class="lnk" href="#install">Install</a>
     <a class="btn btn-ghost btn-sm" href="https://github.com/MateenKhan/piranha" aria-label="Star Piranha on GitHub">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12a11.5 11.5 0 0 0 7.9 10.9c.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7 0-.7 0-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.9 18.3 5.2 18.3 5.2c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5Z"/></svg>
@@ -293,8 +294,8 @@
         </div>
         <div class="card lead reveal">
           <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9zM4 9H2M4 15H2M22 9h-2M22 15h-2M9 4V2M15 4V2M9 22v-2M15 22v-2"/></svg></div>
-          <h3>Local embeddings</h3>
-          <p class="mech">An on-device semantic index powers agent search — <b>no source ever uploaded.</b></p>
+          <h3>Agents read less. Runs cost less.</h3>
+          <p class="mech">On-device RAG — embeddings, retrieval, a shared context cache and a cached project brief — so agents fetch the exact code they need instead of burning tokens re-reading your repo. <b>No source ever uploaded.</b></p>
         </div>
         <div class="card lead reveal">
           <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3a4 4 0 0 0-4 4v1a3 3 0 0 0 0 6v1a4 4 0 0 0 4 4M9 3a3 3 0 0 1 3 3v13a3 3 0 0 1-3 1M15 3a4 4 0 0 1 4 4v1a3 3 0 0 1 0 6v1a4 4 0 0 1-4 4M15 3a3 3 0 0 0-3 3"/></svg></div>
@@ -344,10 +345,9 @@
           <p class="mech">The architect maps callers, dependents &amp; covering tests before a line changes — edits stay scoped.</p>
         </div>
         <div class="card reveal">
-          <span class="tag">roadmap</span>
-          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="7" ry="2.6"/><path d="M5 5v14c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V5M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></svg></div>
-          <h3>Optional Postgres</h3>
-          <p class="mech"><b>Point the swarm at a shared DB</b> for team-wide, multi-node state — connection string encrypted at rest.</p>
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="8" height="7" rx="1.5"/><rect x="14" y="3" width="8" height="7" rx="1.5"/><rect x="8" y="14" width="8" height="7" rx="1.5"/><path d="M6 10v2h12v-2M12 12v2"/></svg></div>
+          <h3>Scale across machines</h3>
+          <p class="mech"><b>Run the swarm on many boxes.</b> Atomic task claim, a DB merge-lock, worker heartbeats — and a dead machine&rsquo;s tasks get reclaimed automatically.</p>
         </div>
       </div>
 
@@ -387,6 +387,7 @@
             <tr><td class="feat">Local / private embeddings</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="partial">partial</span></td><td><span class="partial">repo map</span></td></tr>
             <tr><td class="feat">Self-learning memory</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="no">&mdash;</span></td><td><span class="no">&mdash;</span></td></tr>
             <tr><td class="feat">Runs unattended</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="no">&mdash;</span></td><td><span class="no">&mdash;</span></td></tr>
+            <tr><td class="feat">Scales across machines</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="no">&mdash;</span></td><td><span class="no">&mdash;</span></td></tr>
             <tr><td class="feat">Self-hosted</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="yes">&#10003;</span></td><td><span class="yes">&#10003;</span></td></tr>
             <tr><td class="feat">Open source (MIT)</td><td class="us"><span class="yes">&#10003;</span></td><td><span class="partial">MIT</span></td><td><span class="partial">Apache-2.0</span></td></tr>
           </tbody>
@@ -407,6 +408,37 @@
         <div class="stepcard reveal"><span class="n">02</span><h3>Swarm</h3><p>Agents fan out into isolated worktrees — plan, build, QA in parallel.</p><svg class="arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
         <div class="stepcard reveal"><span class="n">03</span><h3>Review</h3><p>QA passes → the task parks in review. You preview the branch.</p><svg class="arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
         <div class="stepcard reveal"><span class="n">04</span><h3>Merge</h3><p>You click approve. The orchestrator merges — the only thing that can.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SHIPPING NEXT -->
+  <section id="next">
+    <div class="rail">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Shipping next</span>
+        <h2>On the slab.</h2>
+        <p>Written down before it&rsquo;s done — so you always know what&rsquo;s real and what isn&rsquo;t.</p>
+      </div>
+      <div class="grid-rest">
+        <div class="card reveal">
+          <span class="tag">beta</span>
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="7" ry="2.6"/><path d="M5 5v14c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V5M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></svg></div>
+          <h3>Postgres + pgvector</h3>
+          <p class="mech">A shared team datastore and code index. Backend seam is in; connection string encrypted at rest. Not yet verified against a live cluster.</p>
+        </div>
+        <div class="card reveal">
+          <span class="tag">planned</span>
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 12 6-3.5v11L15 16"/><circle cx="7" cy="12" r="2"/></svg></div>
+          <h3>Screen recording</h3>
+          <p class="mech">Watch a replay of exactly what each agent did — every click, every check — attached to the task for review.</p>
+        </div>
+        <div class="card reveal">
+          <span class="tag">planned</span>
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-4 3v-3H4z"/><path d="M8 10h8"/></svg></div>
+          <h3>Phone notifications</h3>
+          <p class="mech">Get pinged when a task lands in review — approve the merge from your pocket.</p>
+        </div>
       </div>
     </div>
   </section>

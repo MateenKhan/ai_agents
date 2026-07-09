@@ -16,27 +16,59 @@
 
 /* ── Shared UI primitives ── ONE source of truth for buttons/inputs/labels. Components
    reference these via the constants in `src/pages/tasks/ui.ts`, so a restyle is one edit
-   here instead of copy-pasted class strings across a dozen files. */
+   here instead of copy-pasted class strings across a dozen files.
+
+   ┌─ DANGER HIERARCHY (3 tiers) ─────────────────────────────────────────────────┐
+   │ This system is deliberately dangerous: agents edit code, merge to main, and   │
+   │ run with --dangerously-skip-permissions. Red only *warns* when it is RESERVED.│
+   │                                                                              │
+   │  1. IDENTITY   accent red — logo, active tab, links, focus accents.          │
+   │                Ambient "serious tool". Never on a routine action button.      │
+   │  2. ROUTINE    .btn-primary — neutral ink. New Task / Save / Apply / Ask.     │
+   │                Confident, calm. These are NOT the danger.                     │
+   │  3. DESTRUCTIVE .btn-danger — saturated rose + ring + icon + confirm.         │
+   │                Delete / Stop / Reject / skip-perms. Must OUT-SHOUT tier 2.    │
+   │                                                                              │
+   │ Tiers 2 and 3 differ by FILL, RING, WEIGHT and ICON — never hue alone, so     │
+   │ colour-vision-deficient users still see the difference (WCAG 1.4.1).          │
+   └──────────────────────────────────────────────────────────────────────────────┘ */
 @layer components {
   .btn {
     @apply min-h-control px-4 text-sm font-bold rounded-xl transition-colors
            disabled:opacity-50 inline-flex items-center justify-center gap-2;
   }
+  /* Tier 2 — routine primary. Neutral ink: confident, never alarming. */
   .btn-primary {
-    @apply min-h-control-lg px-5 text-sm font-bold text-white bg-accent-600 rounded-xl
-           active:bg-accent-700 sm:hover:bg-accent-500 transition-colors
-           shadow-lg shadow-accent-600/20 disabled:opacity-50
+    @apply min-h-control-lg px-5 text-sm font-bold text-white bg-slate-900 rounded-xl
+           active:bg-slate-950 sm:hover:bg-slate-800 transition-colors
+           shadow-lg shadow-slate-900/15 disabled:opacity-50
            inline-flex items-center justify-center gap-2;
+  }
+  /* Tier 3 — destructive. Out-shouts tier 2 via saturated fill + ring + bolder text.
+     Always pair with a warning icon and a confirm step at the call site. */
+  .btn-danger {
+    @apply min-h-control-lg px-5 text-sm font-black text-white bg-rose-600 rounded-xl
+           ring-2 ring-rose-300 ring-offset-1
+           active:bg-rose-800 sm:hover:bg-rose-500 transition-colors
+           shadow-lg shadow-rose-600/30 disabled:opacity-50
+           inline-flex items-center justify-center gap-2;
+  }
+  /* Compact destructive (dense rows / toolbars). */
+  .btn-danger-sm {
+    @apply min-h-control px-3 text-xs font-black text-white bg-rose-600 rounded-lg
+           ring-1 ring-rose-300 active:bg-rose-800 sm:hover:bg-rose-500
+           transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-1.5;
   }
   .btn-ghost {
     @apply min-h-control-lg px-4 text-sm font-bold text-slate-700 bg-white border border-slate-300 rounded-xl
            active:bg-slate-100 sm:hover:bg-slate-50 transition-colors disabled:opacity-50
            inline-flex items-center justify-center gap-2;
   }
-  /* Compact PRIMARY button (small inline CTAs — Add / Apply / Custom in dense rows). */
+  /* Compact PRIMARY button (small inline CTAs — Add / Apply / Custom in dense rows).
+     Tier 2 → ink, same as .btn-primary. Never accent red: routine ≠ danger. */
   .btn-primary-sm {
-    @apply min-h-control px-3 text-xs font-bold text-white bg-accent-600 rounded-lg
-           active:bg-accent-700 sm:hover:bg-accent-500 transition-colors disabled:opacity-50
+    @apply min-h-control px-3 text-xs font-bold text-white bg-slate-900 rounded-lg
+           active:bg-slate-950 sm:hover:bg-slate-800 transition-colors disabled:opacity-50
            inline-flex items-center justify-center gap-1.5;
   }
   /* Compact secondary button (toolbars, dense rows). */
@@ -54,7 +86,7 @@
   /* Text field. Selects and textareas share this look; `.input-select` adds room for the caret. */
   .input {
     @apply w-full min-h-control-lg rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800
-           placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent-300
+           placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400
            disabled:bg-slate-50;
   }
   .input-select { @apply input pr-9 bg-white cursor-pointer; }
@@ -62,7 +94,7 @@
   /* Compact field variants for toolbars/dense rows (match .btn-sm's height + border). */
   .input-sm {
     @apply min-h-control rounded-lg border border-slate-300 bg-white px-2.5 text-xs text-slate-800
-           placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent-300 disabled:bg-slate-50;
+           placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400 disabled:bg-slate-50;
   }
   .input-select-sm { @apply input-sm pr-8 font-semibold cursor-pointer; }
   /* The app's ubiquitous tiny uppercase section label. */

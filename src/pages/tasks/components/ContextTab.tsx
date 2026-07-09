@@ -42,7 +42,7 @@ const OP_STYLE: Record<string, string> = {
   pin: 'text-accent-700 bg-accent-50 border-accent-200',
   unpin: 'text-slate-600 bg-slate-50 border-slate-200',
   sweep: 'text-amber-700 bg-amber-50 border-amber-200',
-  refresh: 'text-violet-700 bg-violet-50 border-violet-200',
+  refresh: 'text-ai-700 bg-ai-50 border-ai-200',
 };
 
 export default function ContextTab({ activeId }: { activeId: string }) {
@@ -231,9 +231,9 @@ export default function ContextTab({ activeId }: { activeId: string }) {
             </button>
             <FileCode size={13} className="text-slate-400 shrink-0" />
             <span className="flex-1 min-w-0 text-xs font-mono text-slate-600 truncate">{preview?.path || 'Select a file to preview'}</span>
-            {preview && <span className="text-[10px] font-bold text-violet-700 px-1.5 py-0.5 bg-violet-50 rounded border border-violet-200 shrink-0">{fmt(preview.tokens)} tok</span>}
+            {preview && <span className="text-[10px] font-bold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200 shrink-0">{fmt(preview.tokens)} tok</span>}
             {preview && !inContext.has(preview.path) && (
-              <button onClick={() => addToContext(preview.path)} className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-white bg-accent-600 hover:bg-accent-500 px-2 py-1 rounded-md"><Plus size={11} /> Add</button>
+              <button onClick={() => addToContext(preview.path)} className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-white bg-slate-900 hover:bg-slate-800 px-2 py-1 rounded-md"><Plus size={11} /> Add</button>
             )}
           </div>
           {previewOpen && (
@@ -277,7 +277,7 @@ export default function ContextTab({ activeId }: { activeId: string }) {
                 <option value="sonnet">Sonnet — 1M, balanced</option>
                 <option value="opus">Opus — 1M, deepest</option>
               </select>
-              <button onClick={applyToAgents} className="shrink-0 text-[10px] font-bold text-white bg-accent-600 hover:bg-accent-500 px-2.5 py-1.5 rounded-md">Apply all</button>
+              <button onClick={applyToAgents} className="shrink-0 text-[10px] font-bold text-white bg-slate-900 hover:bg-slate-800 px-2.5 py-1.5 rounded-md">Apply all</button>
             </div>
           </div>
 

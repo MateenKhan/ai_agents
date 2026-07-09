@@ -846,7 +846,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
             const Icon = t.icon;
             return (
               <button key={t.id} onClick={() => { setTab(t.id); if (t.id === 'worktrees') loadWorktrees(); if (t.id === 'index') loadIndex(); if (t.id === 'tokens') loadGithubApps(); }}
-                className={`shrink-0 min-h-[40px] px-3 text-xs font-bold uppercase tracking-wider rounded-t-lg flex items-center gap-1.5 transition-colors ${tab === t.id ? 'bg-accent-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                className={`shrink-0 min-h-control px-3 text-xs font-bold uppercase tracking-wider rounded-t-lg flex items-center gap-1.5 transition-colors ${tab === t.id ? 'bg-accent-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
                 <Icon size={14} /> {t.label}
               </button>
             );
@@ -1431,10 +1431,10 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                   const open = openCommit === c.hash;
                   return (
                     <div key={c.hash}>
-                      <button onClick={() => openCommitDetail(c.hash)} className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${open ? 'ring-2 ring-accent-300 ' : ''}${c.merge ? 'bg-violet-50 border-violet-200' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                      <button onClick={() => openCommitDetail(c.hash)} className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${open ? 'ring-2 ring-accent-300 ' : ''}${c.merge ? 'bg-ai-50 border-ai-200' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono text-[11px] text-accent-600 font-bold">{c.shortHash}</span>
-                          {c.merge && <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-violet-100 border border-violet-200 text-violet-700">merge</span>}
+                          {c.merge && <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-ai-100 border border-ai-200 text-ai-700">merge</span>}
                           <span className="text-sm text-slate-800 break-words min-w-0 flex-1">{c.subject}</span>
                         </div>
                         <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-2 flex-wrap">

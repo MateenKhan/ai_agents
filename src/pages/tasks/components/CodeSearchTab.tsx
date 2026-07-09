@@ -15,7 +15,7 @@ interface Hit { score: number; name: string; type: string; path: string; line: n
 
 const typeColor: Record<string, string> = {
   function: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-  class: 'text-violet-600 bg-violet-50 border-violet-200',
+  class: 'text-ai-600 bg-ai-50 border-ai-200',
   method: 'text-sky-600 bg-sky-50 border-sky-200',
   interface: 'text-amber-600 bg-amber-50 border-amber-200',
   type: 'text-amber-600 bg-amber-50 border-amber-200',
@@ -175,7 +175,7 @@ export default function CodeSearchTab() {
           onClick={run}
           disabled={loading || !q.trim()}
           data-feature-id="code-search-run"
-          className="flex items-center justify-center gap-2 px-4 h-11 rounded-lg bg-accent-600 text-white text-sm font-black shadow-lg shadow-accent-600/20 hover:bg-accent-500 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
+          className="flex items-center justify-center gap-2 px-4 h-11 rounded-lg bg-slate-900 text-white text-sm font-black shadow-lg shadow-slate-900/15 hover:bg-slate-800 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <CornerDownLeft size={16} />}
           {loading ? (mode === 'ask' ? 'Thinking…' : 'Searching…') : (mode === 'ask' ? 'Ask' : 'Search')}

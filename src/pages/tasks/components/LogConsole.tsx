@@ -86,8 +86,8 @@ function parseLine(msg: string): Parsed {
     .replace(/^(?:[←-➿⬀-⯿️‍⃣\u{1F000}-\u{1FAFF}]+\s*)+/u, '');
   if (/^──/.test(s)) return { type: 'divider', tag: '', color: 'text-slate-500', text: s.replace(/─+/g, '').trim(), noise: false, time, date };
   if (/error|failed|fatal|❌|🚨/i.test(s)) return { type: 'line', tag: '!', color: 'text-rose-400', text: s, noise: false, time, date };
-  if (s.startsWith('$')) return { type: 'line', tag: '$', color: 'text-violet-400', text: s.replace(/^\$:?\s*/, ''), noise: false, time, date };
-  if (s.startsWith('·') || s.startsWith('—')) return { type: 'msg', tag: 'ai', color: 'text-accent-300', text: s.replace(/^[·—]\s*/, ''), noise: false, time, date };
+  if (s.startsWith('$')) return { type: 'line', tag: '$', color: 'text-ai-400', text: s.replace(/^\$:?\s*/, ''), noise: false, time, date };
+  if (s.startsWith('·') || s.startsWith('—')) return { type: 'msg', tag: 'ai', color: 'text-ai-300', text: s.replace(/^[·—]\s*/, ''), noise: false, time, date };
   const m = s.match(/^(\w+):\s*(.*)/);
   if (m && PREFIX[m[1].toLowerCase()]) { const p = PREFIX[m[1].toLowerCase()]; return { type: 'line', tag: p.tag, color: p.color, text: m[2], noise: !!p.noise, time, date }; }
   return { type: 'line', tag: '', color: 'text-slate-300', text: s, noise: false, time, date };

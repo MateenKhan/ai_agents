@@ -134,7 +134,7 @@ export function TasksHeader({ onRefresh, onOpenSettings, onAddTask, onOpenTodos,
 
           <button
             onClick={onAddTask}
-            className="flex items-center gap-2 px-3 py-2 bg-accent-600 hover:bg-accent-500 text-white rounded-lg text-xs font-black shadow-lg shadow-accent-600/20 transition-all hover:scale-105 active:scale-95"
+            className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-black shadow-lg shadow-slate-900/15 transition-all hover:scale-105 active:scale-95"
             title="New Task"
           >
             <Plus size={16} strokeWidth={3} />

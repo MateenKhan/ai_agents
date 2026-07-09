@@ -269,7 +269,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                 onClick={() => onControl(task.id, 'start')}
                 disabled={isControlling}
                 data-feature-id="task-detail-rerun"
-                className={`flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-accent-600 text-white rounded-xl active:bg-accent-700 sm:hover:bg-accent-500 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
+                className={`flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl active:bg-slate-950 sm:hover:bg-slate-800 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
               >
                 <RotateCcw size={14} /> Re-run
               </button>
@@ -300,7 +300,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           )}
           <button
             onClick={() => { onEdit(task); onClose(); }}
-            className="flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-accent-600 text-white rounded-xl active:bg-accent-700 sm:hover:bg-accent-500 transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl active:bg-slate-950 sm:hover:bg-slate-800 transition-colors"
           >
             <Edit2 size={14} /> Edit
           </button>

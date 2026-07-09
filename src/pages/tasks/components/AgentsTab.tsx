@@ -29,7 +29,7 @@ function SkillChip({ name }: { name: string }) {
   return (
     <span
       title={SKILL_DESCRIPTIONS[name] || 'superpowers skill'}
-      className="inline-flex items-center gap-1 text-[10px] font-bold text-violet-700 px-1.5 py-0.5 bg-violet-50 rounded border border-violet-200"
+      className="inline-flex items-center gap-1 text-[10px] font-bold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200"
     >
       <Sparkles size={9} /> {name}
     </span>
@@ -476,15 +476,15 @@ export default function AgentsTab() {
               </div>
 
               {/* Superpowers — auto-injected ahead of the prompt above by the orchestrator */}
-              <div className="rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+              <div className="rounded-lg border border-ai-200 bg-ai-50/50 p-3">
                 <div className="flex items-center gap-1.5 mb-1.5">
-                  <Sparkles size={13} className="text-violet-600" />
-                  <span className="text-[10px] font-black uppercase tracking-wider text-violet-700">Superpowers skills</span>
+                  <Sparkles size={13} className="text-ai-600" />
+                  <span className="text-[10px] font-black uppercase tracking-wider text-ai-700">Superpowers skills</span>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {skillsForRole(editing.role || 'custom').map(s => <SkillChip key={s} name={s} />)}
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2">Auto-prepended to this prompt at dispatch, telling the agent which <a href="https://github.com/obra/superpowers" target="_blank" rel="noreferrer" className="text-violet-700 underline">superpowers</a> skills to lead with. Requires superpowers installed in the agent runtime.</p>
+                <p className="text-[10px] text-slate-500 mt-2">Auto-prepended to this prompt at dispatch, telling the agent which <a href="https://github.com/obra/superpowers" target="_blank" rel="noreferrer" className="text-ai-700 underline">superpowers</a> skills to lead with. Requires superpowers installed in the agent runtime.</p>
               </div>
               {editing.role === 'architect' && (
                 <div>

@@ -44,7 +44,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
           <button
             onClick={addCustom}
             data-feature-id="board-editor-add-column"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide bg-accent-600 text-white rounded-lg hover:bg-accent-500 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
           >
             <Plus size={14} /> Add Lane
           </button>

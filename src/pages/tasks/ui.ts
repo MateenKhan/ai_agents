@@ -6,9 +6,20 @@
 //   className={`${inputCls} font-mono`}
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── DANGER HIERARCHY (see the spec block in src/index.css) ──
+//   1 IDENTITY   accent red — logo / active tab / links. Never a routine action button.
+//   2 ROUTINE    btnPrimary (ink) — New Task / Save / Apply / Ask.
+//   3 DESTRUCTIVE btnDanger (rose + ring + bold) — Delete / Stop / Reject / skip-perms.
+// Tier 3 MUST out-shout tier 2, and must pair with a warning icon + a confirm step.
+
+/** Tier 2 — routine primary. Neutral ink. NOT red: routine actions are not the danger. */
 export const btnPrimary = 'btn-primary';
 export const btnGhost = 'btn-ghost';
-/** Compact PRIMARY button for small inline CTAs (Add/Apply/Custom). */
+/** Tier 3 — destructive. Use for anything irreversible: delete, stop, reject, skip-perms. */
+export const btnDanger = 'btn-danger';
+/** Tier 3, compact — destructive action in a dense row/toolbar. */
+export const btnDangerSm = 'btn-danger-sm';
+/** Compact PRIMARY button for small inline CTAs (Add/Apply/Custom). Tier 2 → ink. */
 export const btnPrimarySm = 'btn-primary-sm';
 /** Compact secondary button for toolbars/dense rows. */
 export const btnSm = 'btn-sm';

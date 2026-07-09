@@ -73,7 +73,7 @@ export const ChatIntake: React.FC<Props> = ({ isOpen, onClose, onCreated }) => {
           <button
             onClick={submit}
             disabled={busy || !message.trim()}
-            className="px-4 py-2 text-xs font-bold rounded-lg bg-accent-600 text-white disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-900 text-white disabled:opacity-50 flex items-center gap-2"
           >
             {busy && <span className="w-3 h-3 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />}
             {busy ? 'Breaking it down…' : 'Create tasks'}

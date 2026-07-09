@@ -8,7 +8,7 @@ import { loadColumns, saveColumns, DEFAULT_COLUMNS } from '../boardConfig';
 import { BoardColumnsEditor } from './BoardColumnsEditor';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
-import { btnPrimary, btnGhost, inputCls } from '../ui';
+import { btnPrimary, btnGhost, btnDanger, inputCls } from '../ui';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
@@ -175,7 +175,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
                   Permanently deletes {project.repoPath ? <>the repo folder <span className="font-mono text-[10px]">({project.repoPath.split(/[\\/]/).pop()})</span>, </> : ''}all its tasks, and the code index (embeddings). Cannot be undone.
                 </p>
                 <div className="flex items-center gap-2">
-                  <button onClick={remove} disabled={busy} className="min-h-control-lg px-4 text-sm font-bold text-white bg-rose-600 rounded-xl active:bg-rose-700 sm:hover:bg-rose-500 flex items-center gap-2"><Trash2 size={15} /> Delete everything</button>
+                  <button onClick={remove} disabled={busy} className={btnDanger}><Trash2 size={15} /> Delete everything</button>
                   <button onClick={() => setConfirmDelete(false)} className="text-xs font-bold text-slate-500 hover:text-slate-800">Cancel</button>
                 </div>
               </div>

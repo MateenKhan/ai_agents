@@ -29,7 +29,7 @@ interface Status {
 function look(kind: string) {
   switch (kind) {
     case 'cloning': return { Icon: DownloadCloud, ring: 'text-sky-300', busy: true };
-    case 'indexing': return { Icon: Database, ring: 'text-violet-300', busy: true };
+    case 'indexing': return { Icon: Database, ring: 'text-ai-300', busy: true };
     case 'agents': return { Icon: Bot, ring: 'text-emerald-300', busy: true };
     case 'idle': return { Icon: CheckCircle2, ring: 'text-slate-400', busy: false };
     default: return { Icon: Activity, ring: 'text-accent-300', busy: true };

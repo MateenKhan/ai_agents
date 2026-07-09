@@ -46,7 +46,7 @@ export function PromptModal({ isOpen, onClose, prompt, taskTitle, copied, onCopy
             className={`absolute top-4 right-4 flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg ${
               copied
               ? 'bg-emerald-500 text-white'
-              : 'bg-accent-600 hover:bg-accent-500 text-white group-hover:scale-105'
+              : 'bg-slate-900 hover:bg-slate-800 text-white group-hover:scale-105'
             }`}
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}

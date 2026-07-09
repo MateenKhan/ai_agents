@@ -297,7 +297,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                           return (
                             <div className="space-y-1.5">
                               <a href={pv.url} target="_blank" rel="noreferrer" data-feature-id="human-todo-open-preview"
-                                 className="flex items-center justify-center gap-2 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-violet-600 text-white rounded-lg active:bg-violet-700 sm:hover:bg-violet-500 transition-colors">
+                                 className="flex items-center justify-center gap-2 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-slate-900 text-white rounded-lg active:bg-slate-950 sm:hover:bg-slate-800 transition-colors">
                                 <ExternalLink size={16} /> Open Preview ↗
                               </a>
                               <p className="text-[11px] text-center text-slate-500 font-mono break-all">{pv.url}{pv.apiPort ? ` · api :${pv.apiPort}` : ''}</p>
@@ -306,7 +306,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                         }
                         if (pv?.status === 'building') {
                           return (
-                            <button disabled className="w-full flex items-center justify-center gap-2 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-violet-100 text-violet-700 border border-violet-300 rounded-lg">
+                            <button disabled className="w-full flex items-center justify-center gap-2 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-ai-100 text-ai-700 border border-ai-300 rounded-lg">
                               <Loader2 size={16} className="animate-spin" /> Building preview…
                             </button>
                           );
@@ -327,7 +327,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                         }
                         return (
                           <button onClick={() => buildPreview(task.id)} data-feature-id="human-todo-build-preview"
-                             className="w-full flex items-center justify-center gap-2 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-violet-50 text-violet-700 border border-violet-300 rounded-lg active:bg-violet-100 sm:hover:bg-violet-100 transition-colors">
+                             className="w-full flex items-center justify-center gap-2 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-ai-50 text-ai-700 border border-ai-300 rounded-lg active:bg-ai-100 sm:hover:bg-ai-100 transition-colors">
                             <Eye size={16} /> Build Preview
                           </button>
                         );

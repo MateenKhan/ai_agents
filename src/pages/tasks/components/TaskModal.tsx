@@ -88,7 +88,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </button>
           <button
             onClick={() => handleSubmit()}
-            className="flex items-center gap-2 px-6 min-h-[48px] bg-accent-600 active:bg-accent-700 sm:hover:bg-accent-500 text-white text-sm font-bold rounded-xl shadow-lg shadow-accent-500/20 transition-all active:scale-95"
+            className="flex items-center gap-2 px-6 min-h-[48px] bg-slate-900 active:bg-slate-950 sm:hover:bg-slate-800 text-white text-sm font-bold rounded-xl shadow-lg shadow-accent-500/20 transition-all active:scale-95"
           >
             <Save size={16} />
             {editingTask ? 'Update Task' : 'Save Task'}

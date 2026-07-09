@@ -61,7 +61,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
             <button
               onClick={handleSave}
               disabled={cols.length === 0}
-              className="px-6 py-2 bg-accent-600 text-white rounded-xl text-sm font-bold hover:bg-accent-500 transition-all disabled:bg-accent-600/50 disabled:cursor-not-allowed"
+              className="px-6 py-2 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-all disabled:bg-slate-900/50 disabled:cursor-not-allowed"
             >
               Save Changes
             </button>

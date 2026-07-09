@@ -11,9 +11,12 @@ export default {
           50: '#fff1ee', 100: '#ffe0d9', 200: '#ffc2b3', 300: '#ff9a83', 400: '#ff6a4d',
           500: '#ff3b1d', 600: '#e62e12', 700: '#bf2410', 800: '#991f13', 900: '#7e1d15', 950: '#450a05',
         },
-        brand: {
-          50: '#fff1ee', 100: '#ffe0d9', 200: '#ffc2b3', 300: '#ff9a83', 400: '#ff6a4d',
-          500: '#ff3b1d', 600: '#e62e12', 700: '#bf2410', 800: '#991f13', 900: '#7e1d15', 950: '#450a05',
+        // Semantic category hue for AI/agent surfaces: skills, merge commits, the review
+        // role, schedule badges. Deliberately NOT the brand accent — it marks "this is the
+        // machine's doing", never an action's danger level.
+        ai: {
+          50: '#f5f3ff', 100: '#ede9fe', 200: '#ddd6fe', 300: '#c4b5fd', 400: '#a78bfa',
+          500: '#8b5cf6', 600: '#7c3aed', 700: '#6d28d9', 800: '#5b21b6', 900: '#4c1d95', 950: '#2e1065',
         },
         // Dark "terminal" surfaces — were scattered as raw hex (#0d1117 / #080e1d / …). Tokenized
         // so every console/log/monitor shares ONE source of truth.
