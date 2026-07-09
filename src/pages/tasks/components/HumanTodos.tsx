@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, XCircle, GitBranch, ClipboardCheck, AlertCircle, BookOpen, ChevronDown, ExternalLink, Loader2, Eye } from 'lucide-react';
+import { X, CheckCircle2, XCircle, GitBranch, ClipboardCheck, AlertCircle, BookOpen, ChevronDown, ExternalLink, Loader2, Eye, Search } from 'lucide-react';
 import type { Task } from '../types';
 import { API_BASE } from '../../../apiBase';
 import { SlideOver } from './SlideOver';
@@ -23,6 +23,10 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
   const [updatedDod, setUpdatedDod] = useState('');
   const [specs, setSpecs] = useState<Record<string, string | null>>({}); // specName → content
   const [previews, setPreviews] = useState<Record<string, { status: string; url?: string; port?: number; apiPort?: number; error?: string; logTail?: string; logName?: string }>>({});
+  const [query, setQuery] = useState('');
+  // A single task opens automatically; a queue stays collapsed so it can be skimmed.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(tasks.length === 1 ? [tasks[0].id] : []));
+  const toggle = (id: string) => setExpanded(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const pollPreview = (taskId: string) => {
     fetch(`${API_BASE}/tasks/${taskId}/preview`)
@@ -139,6 +143,12 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
     return out;
   };
 
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? tasks.filter(t => [t.id, t.title, t.summary, t.description, t.claimedBy]
+        .some(v => (v || '').toLowerCase().includes(q)))
+    : tasks;
+
   return (
     <SlideOver
       onClose={onClose}
@@ -164,6 +174,25 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
           </button>
         </div>
 
+        {tasks.length > 0 && (
+          <div className="px-4 sm:px-6 py-2.5 border-b border-slate-200 bg-white flex items-center gap-2">
+            <Search size={15} className="text-slate-400 shrink-0" />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search title, id, agent, summary…"
+              data-feature-id="human-todo-search"
+              className="flex-1 min-w-0 text-sm bg-transparent focus:outline-none placeholder:text-slate-400"
+            />
+            {q && (
+              <>
+                <span className="text-xs text-slate-500 shrink-0">{shown.length}/{tasks.length}</span>
+                <button onClick={() => setQuery('')} aria-label="Clear search" className="text-slate-400 hover:text-slate-700 shrink-0"><X size={14} /></button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Body — two-column card grid on wide screens */}
         <div className="flex-1 overflow-y-auto custom-scrollbar [-webkit-overflow-scrolling:touch] p-3 sm:p-4 bg-slate-100 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {tasks.length === 0 ? (
@@ -171,16 +200,37 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
               <CheckCircle2 size={36} className="text-emerald-500" />
               <p className="text-base text-slate-600">Nothing to review. When an agent finishes a task, it lands here for your verification.</p>
             </div>
+          ) : shown.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-8">
+              <Search size={32} className="text-slate-400" />
+              <p className="text-base text-slate-600">No task matches “{query}”.</p>
+              <button onClick={() => setQuery('')} className="text-sm font-semibold text-slate-900 underline">Clear search</button>
+            </div>
           ) : (
             // Two columns only when there's something to put in the second one — a lone card
             // in a 2-col grid sits at half width with dead space beside it.
-            <div className={`grid grid-cols-1 gap-3 sm:gap-4 items-start ${tasks.length > 1 ? 'xl:grid-cols-2' : ''}`}>
-              {tasks.map(task => {
+            <div className={`grid grid-cols-1 gap-3 sm:gap-4 items-start ${shown.length > 1 ? 'xl:grid-cols-2' : ''}`}>
+              {shown.map(task => {
                 const spec = specName(task);
+                const open = expanded.has(task.id);
                 return (
-                  <div key={task.id} data-feature-id="human-todo-card" className="min-w-0 bg-white border-2 border-slate-200 rounded-xl p-4 sm:p-5 space-y-3.5 shadow-sm">
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900 leading-snug">{task.title}</h3>
+                  <div key={task.id} data-feature-id="human-todo-card" className="min-w-0 bg-white border-2 border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                    {/* Accordion trigger. Approve/Reject live INSIDE the body on purpose:
+                        approving merges to main, so it must not be reachable without opening
+                        the card and reading what the agent did. */}
+                    <button
+                      type="button"
+                      onClick={() => toggle(task.id)}
+                      aria-expanded={open}
+                      data-feature-id="human-todo-toggle"
+                      className="w-full text-left p-4 sm:p-5 flex items-start gap-3 sm:hover:bg-slate-50 transition-colors"
+                    >
+                      <ChevronDown
+                        size={18}
+                        className={`mt-0.5 shrink-0 text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                      <h3 className="text-base font-bold text-slate-900 leading-snug break-words">{task.title}</h3>
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
                         <span className="text-[11px] font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono uppercase">{task.id}</span>
                         <span className="flex items-center gap-1 text-[11px] font-bold text-accent-700 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200">
@@ -193,8 +243,11 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                           <span className="text-[11px] font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200">{task.attempts} attempts</span>
                         )}
                       </div>
-                    </div>
+                      </div>
+                    </button>
 
+                    {open && (
+                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-3.5">
                     {/* Reviewer summary — the main review aid */}
                     {task.summary ? (
                       (() => {
@@ -388,6 +441,8 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                           <XCircle size={16} /> Reject
                         </button>
                       </div>
+                    )}
+                    </div>
                     )}
                   </div>
                 );
