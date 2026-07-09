@@ -30,8 +30,15 @@ interface TaskBoardProps {
   columns?: Column[];
 }
 
-/** Animated "card lands here" slot shown in the hovered lane during a drag. */
-function DropIndicator() {
+/** Append an 8-digit alpha to a 6-digit hex. Custom lanes may carry any CSS colour
+ *  string, so anything that isn't `#rrggbb` passes through untouched. */
+const withAlpha = (color: string, alpha: string): string =>
+  /^#[0-9a-f]{6}$/i.test(color) ? `${color}${alpha}` : color;
+
+/** Animated "card lands here" slot shown in the hovered lane during a drag.
+ *  Wears the LANE's colour, not the brand accent — the drop target should tell you
+ *  which lane you're dropping into. */
+function DropIndicator({ color }: { color: string }) {
   return (
     <motion.div
       layout
@@ -41,7 +48,10 @@ function DropIndicator() {
       transition={{ type: 'spring', stiffness: 500, damping: 40, mass: 0.6 }}
       className="origin-top"
     >
-      <div className="flex items-center justify-center h-14 rounded-xl border-2 border-dashed border-accent-400 bg-accent-100/50 text-[10px] font-black uppercase tracking-widest text-accent-500">
+      <div
+        className="flex items-center justify-center h-14 rounded-xl border-2 border-dashed text-[10px] font-black uppercase tracking-widest"
+        style={{ borderColor: color, backgroundColor: withAlpha(color, '1a'), color }}
+      >
         Drop here
       </div>
     </motion.div>
@@ -113,14 +123,23 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
           <div
             key={col.id}
             data-feature-id={`tasks-lane-${col.id.toLowerCase()}`}
-            className={`flex flex-col max-h-full min-w-[86vw] max-w-[86vw] sm:min-w-[300px] sm:max-w-[320px] snap-center sm:snap-align-none rounded-2xl overflow-hidden shadow-sm transition-all duration-200 ${
-              isDropTarget
-                ? 'bg-accent-50/70 border-2 border-accent-500 ring-2 ring-accent-400/40 shadow-lg shadow-accent-500/10'
-                : 'bg-slate-50 border-2 border-slate-300 sm:hover:border-accent-400'
+            className={`flex flex-col max-h-full min-w-[86vw] max-w-[86vw] sm:min-w-[300px] sm:max-w-[320px] snap-center sm:snap-align-none rounded-2xl overflow-hidden shadow-sm transition-all duration-200 border-2 ${
+              isDropTarget ? 'shadow-lg' : 'bg-slate-50 sm:hover:border-[color:var(--lane)]'
             }`}
+            // Each lane is identified by its OWN colour: a tinted border at rest, and the
+            // full colour + ring when it's the active drop target. `--lane` also drives the
+            // hover border, which a static class cannot express for a runtime colour.
+            style={{
+              ['--lane' as string]: col.color,
+              borderColor: isDropTarget ? col.color : withAlpha(col.color, '59'),
+              ...(isDropTarget && {
+                backgroundColor: withAlpha(col.color, '14'),
+                boxShadow: `0 0 0 3px ${withAlpha(col.color, '40')}`,
+              }),
+            }}
           >
             {/* Column Header */}
-            <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b-2 border-slate-300 bg-white">
+            <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b-2 bg-white" style={{ borderBottomColor: withAlpha(col.color, '4d') }}>
               <div className="flex items-center gap-2 min-w-0">
                 <label className="flex items-center justify-center -m-1.5 p-1.5 min-w-[40px] min-h-[40px] cursor-pointer shrink-0">
                   <input
@@ -170,7 +189,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
                 <>
                   {colTasks.map((task, i) => (
                     <React.Fragment key={task.id}>
-                      {isDropTarget && drag?.index === i && <DropIndicator />}
+                      {isDropTarget && drag?.index === i && <DropIndicator color={col.color} />}
                       <motion.div
                         layout
                         data-card-wrapper
@@ -197,7 +216,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
                       </motion.div>
                     </React.Fragment>
                   ))}
-                  {isDropTarget && (drag?.index ?? colTasks.length) >= colTasks.length && <DropIndicator />}
+                  {isDropTarget && (drag?.index ?? colTasks.length) >= colTasks.length && <DropIndicator color={col.color} />}
                 </>
               )}
             </div>
