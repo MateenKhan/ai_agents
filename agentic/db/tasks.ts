@@ -5,11 +5,13 @@
 // Verbose run logs live in logs.db, not here, so this stays lean enough to commit.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import os from 'node:os';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Task, Scenario } from '../types';
 import { getConfig } from '../runtime-context';
 import { openDb } from './connection';
 import type { Store } from './store';
+import { upsert } from './store';
 import { getStore, ensureMigrated } from './getStore';
 // Secrets-at-rest: AES-256-GCM. encrypt() is a no-op on already-encrypted values;
 // decrypt() passes legacy plaintext straight through (enables lazy migration).
@@ -192,6 +194,107 @@ export async function bulkUpdatePriorities(updates: Array<{ id: string; priority
   await s.tx(async t => {
     for (const u of updates) await t.run(`UPDATE tasks SET priority=?, status=? WHERE id=?`, [u.priority, u.status, u.id]);
   });
+}
+
+// ── Phase 3 — multi-orchestrator safety ────────────────────────────────────────
+// Lets MANY orchestrator processes share ONE database without double-running a task
+// or double-merging a project. On the default single-machine SQLite path these are
+// behaviourally no-ops (the lone worker always wins its claim and its lock); the
+// atomicity matters only when several machines point at one Postgres.
+
+/** This orchestrator's stable identity across a run: env WORKER_ID, else host:pid.
+ *  `claimedBy` on a task is stored as `${WORKER_ID}:${agentName}` so a task can be
+ *  mapped back to the MACHINE that owns it (see listStaleWorkers + reclaim). */
+export const WORKER_ID: string = process.env.WORKER_ID || `${os.hostname()}:${process.pid}`;
+
+export interface WorkerRow { id: string; host?: string; pid?: number; startedAt?: string; lastBeatAt?: string }
+
+/** Register (or refresh) this worker's row. Called once at orchestrator startup; a
+ *  restart re-stamps startedAt with the new boot time. */
+export async function registerWorker(id: string = WORKER_ID): Promise<void> {
+  const s = await store();
+  const now = new Date().toISOString();
+  await upsert(s, 'workers', { id, host: os.hostname(), pid: process.pid, startedAt: now, lastBeatAt: now }, ['id']);
+}
+
+/** Heartbeat: bump lastBeatAt. Called every loop tick — cheap single-row UPDATE.
+ *  (A worker always registered itself at boot, so the row exists.) */
+export async function heartbeatWorker(id: string = WORKER_ID): Promise<void> {
+  const s = await store();
+  await s.run(`UPDATE workers SET lastBeatAt = ? WHERE id = ?`, [new Date().toISOString(), id]);
+}
+
+/** Workers whose last heartbeat is older than `olderThanMs` (or never beat) — i.e.
+ *  machines that likely died. ISO-8601 text compares chronologically on SQLite and
+ *  as TIMESTAMPTZ on Postgres. */
+export async function listStaleWorkers(olderThanMs: number): Promise<WorkerRow[]> {
+  const s = await store();
+  const cutoff = new Date(Date.now() - olderThanMs).toISOString();
+  return s.all<WorkerRow>(
+    `SELECT id, host, pid, startedAt, lastBeatAt FROM workers WHERE lastBeatAt IS NULL OR lastBeatAt < ?`,
+    [cutoff],
+  );
+}
+
+/**
+ * Atomically claim a pending task for `worker`. Returns true IFF THIS call won the
+ * task. Replaces the old "read pending → set claimedBy" race: the conditional UPDATE
+ * only mutates a row that is still unclaimed/unstarted, so at most one worker's UPDATE
+ * takes effect.
+ *   - Postgres: `UPDATE … WHERE id=? AND (claimedBy IS NULL OR started IS NULL) RETURNING id`
+ *     — the row lock serialises concurrent claimers; the loser's WHERE no longer matches
+ *     (claimedBy now set), so it gets no RETURNING row.
+ *   - SQLite: the same conditional UPDATE runs under the single writer lock, then we
+ *     re-read to confirm we hold it (the changes()==1 equivalent). For the lone
+ *     orchestrator this always succeeds.
+ */
+export async function claimTask(taskId: string, worker: string, leaseMs: number): Promise<boolean> {
+  const s = await store();
+  const now = new Date().toISOString();
+  const lease = new Date(Date.now() + leaseMs).toISOString();
+  const sql = `UPDATE tasks SET claimedBy = ?, started = ?, leaseExpiresAt = ? WHERE id = ? AND (claimedBy IS NULL OR started IS NULL)`;
+  if (s.dialect === 'postgres') {
+    const row = await s.get(`${sql} RETURNING id`, [worker, now, lease, taskId]);
+    return !!row;
+  }
+  await s.run(sql, [worker, now, lease, taskId]);
+  const row = await s.get<{ claimedBy: string | null }>(`SELECT claimedBy FROM tasks WHERE id = ?`, [taskId]);
+  return !!row && row.claimedBy === worker;
+}
+
+/**
+ * Acquire the named advisory lock for `holder` with a `ttlMs` lease. Returns true IFF
+ * granted. An UNEXPIRED lock (any holder) is never re-granted, so it also serialises
+ * two merges on the SAME machine (what the old in-memory mergeInFlight() did). A crashed
+ * holder's lock is taken over once its expiresAt passes.
+ *   - Postgres: INSERT … ON CONFLICT DO UPDATE … WHERE locks.expiresAt < now RETURNING —
+ *     one atomic statement; the row is returned only when we actually take the lock.
+ *   - SQLite: read-then-write under the single writer lock (no concurrency to race on a
+ *     single machine).
+ */
+export async function acquireLock(name: string, holder: string, ttlMs: number): Promise<boolean> {
+  const s = await store();
+  const nowIso = new Date().toISOString();
+  const expires = new Date(Date.now() + ttlMs).toISOString();
+  if (s.dialect === 'postgres') {
+    const row = await s.get(
+      `INSERT INTO locks (name, holder, expiresAt) VALUES (?, ?, ?)
+       ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, expiresAt = EXCLUDED.expiresAt
+       WHERE locks.expiresAt < ? RETURNING name`,
+      [name, holder, expires, nowIso],
+    );
+    return !!row;
+  }
+  const cur = await s.get<{ expiresAt: string | null }>(`SELECT expiresAt FROM locks WHERE name = ?`, [name]);
+  if (cur && cur.expiresAt && cur.expiresAt > nowIso) return false; // held & unexpired
+  await s.run(`INSERT OR REPLACE INTO locks (name, holder, expiresAt) VALUES (?, ?, ?)`, [name, holder, expires]);
+  return true;
+}
+
+/** Release a lock — only if `holder` still owns it (no-op otherwise). */
+export async function releaseLock(name: string, holder: string): Promise<void> {
+  const s = await store();
+  await s.run(`DELETE FROM locks WHERE name = ? AND holder = ?`, [name, holder]);
 }
 
 // ── board settings + heartbeat (orchestrator liveness) ─────────────────────────

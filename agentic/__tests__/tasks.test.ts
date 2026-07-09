@@ -17,6 +17,14 @@ import {
   setTokenAssignment,
   resolveAgentToken,
   deleteProject,
+  createTask,
+  getTask,
+  claimTask,
+  acquireLock,
+  releaseLock,
+  registerWorker,
+  heartbeatWorker,
+  listStaleWorkers,
   type GitToken,
 } from '../db/tasks';
 
@@ -124,5 +132,55 @@ describe('deleteProject', () => {
 
   it('refuses to delete the default project', async () => {
     await expect(deleteProject('default')).rejects.toThrow();
+  });
+});
+
+// ── Phase 3 — multi-orchestrator safety (SQLite-correctness of the primitives) ──
+describe('claimTask (atomic conditional claim)', () => {
+  it('the first claim wins; a second worker cannot re-claim the same task', async () => {
+    await createTask({ id: 'clm1', title: 'claimable', status: 'WORKING' });
+    expect(await claimTask('clm1', 'hostA:1:agent-1', 60_000)).toBe(true);   // won
+    expect(await claimTask('clm1', 'hostB:1:agent-1', 60_000)).toBe(false);  // lost — already claimed
+    expect((await getTask('clm1'))!.claimedBy).toBe('hostA:1:agent-1');
+  });
+
+  it('lets a lone worker claim an unclaimed task', async () => {
+    await createTask({ id: 'clm2', title: 'solo', status: 'WORKING' });
+    expect(await claimTask('clm2', 'hostA:1:agent-2', 60_000)).toBe(true);
+    const tk = await getTask('clm2');
+    expect(tk!.started).toBeTruthy();
+    expect(tk!.leaseExpiresAt).toBeTruthy();
+  });
+});
+
+describe('acquireLock / releaseLock (merge lock)', () => {
+  it('is exclusive while held and re-grantable after release', async () => {
+    expect(await acquireLock('merge:p1', 'hostA', 60_000)).toBe(true);
+    expect(await acquireLock('merge:p1', 'hostB', 60_000)).toBe(false); // held by A
+    await releaseLock('merge:p1', 'hostA');
+    expect(await acquireLock('merge:p1', 'hostB', 60_000)).toBe(true);  // now free
+    await releaseLock('merge:p1', 'hostB');
+  });
+
+  it('an expired lock can be taken over by another holder', async () => {
+    expect(await acquireLock('merge:p2', 'hostA', -1)).toBe(true);      // acquired already-expired
+    expect(await acquireLock('merge:p2', 'hostB', 60_000)).toBe(true);  // takes over the expired lock
+    await releaseLock('merge:p2', 'hostB');
+  });
+
+  it('releaseLock only frees the lock for its true holder', async () => {
+    expect(await acquireLock('merge:p3', 'hostA', 60_000)).toBe(true);
+    await releaseLock('merge:p3', 'hostB'); // wrong holder → no-op
+    expect(await acquireLock('merge:p3', 'hostC', 60_000)).toBe(false); // still held by A
+    await releaseLock('merge:p3', 'hostA');
+  });
+});
+
+describe('workers heartbeat + staleness', () => {
+  it('a freshly-registered/heartbeat worker is not stale; a wide window makes it stale', async () => {
+    await registerWorker('wkr-1');
+    await heartbeatWorker('wkr-1');
+    expect((await listStaleWorkers(60_000)).map(w => w.id)).not.toContain('wkr-1'); // beat < 60s ago
+    expect((await listStaleWorkers(-1)).map(w => w.id)).toContain('wkr-1');         // cutoff in the future
   });
 });

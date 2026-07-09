@@ -222,6 +222,28 @@ const MEMORY: Col[] = [
   { name: 'at', type: 'ts', notNull: true },
 ];
 
+// ── Phase 3 (multi-orchestrator safety) ──────────────────────────────────────
+// A row per live orchestrator process sharing this DB. `id` is WORKER_ID
+// (env WORKER_ID, else `${hostname}:${pid}`). `lastBeatAt` is bumped every loop
+// tick; a worker whose beat is older than ~2× the task lease is treated as a dead
+// MACHINE and its in-flight tasks are reclaimed by the watchdog.
+const WORKERS: Col[] = [
+  { name: 'id', type: 'text', pk: true },
+  { name: 'host', type: 'text' },
+  { name: 'pid', type: 'int' },
+  { name: 'startedAt', type: 'ts' },
+  { name: 'lastBeatAt', type: 'ts' },
+];
+
+// Cross-machine advisory locks. Today only `merge:<projectId>` is used — one machine
+// merges a given project at a time. `holder` is the WORKER_ID; `expiresAt` is a TTL so
+// a crashed holder's lock is reclaimable without a manual release.
+const LOCKS: Col[] = [
+  { name: 'name', type: 'text', pk: true },
+  { name: 'holder', type: 'text' },
+  { name: 'expiresAt', type: 'ts' },
+];
+
 // Additive ALTERs — historically added by migrate() to pre-existing tables. On a
 // fresh DB the columns are already present (in the CREATE TABLE above) so these are
 // caught + ignored; on an OLD SQLite DB run through this list they upgrade it.
@@ -272,6 +294,9 @@ export async function runMigrations(store: Store): Promise<void> {
   await store.exec(createTable(d, 'agent_logs', AGENT_LOGS));
   await store.exec(createTable(d, 'agent_db_usage', AGENT_DB_USAGE));
   await store.exec(createTable(d, 'memory', MEMORY));
+  // Phase 3 — multi-orchestrator coordination (workers heartbeat + advisory locks).
+  await store.exec(createTable(d, 'workers', WORKERS));
+  await store.exec(createTable(d, 'locks', LOCKS));
 
   // 2 — additive ALTERs (no-op on fresh DBs; upgrade old SQLite DBs) -----------
   for (const [table, col] of ADDITIVE) await tryStep(store, addColumn(d, table, col));

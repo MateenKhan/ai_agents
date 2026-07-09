@@ -56,7 +56,9 @@ import type { AgenticConfig, AgentConfig, AgentRole, Task, Stage, FailureKind, W
 import { setConfig, getConfig } from '../runtime-context';
 import {
   getAllTasks, getTask, updateTask, getBoardSettings, updateBoardSettings, beatHeartbeat, getTasksDb, getProject, listProjects, getAgentDefaults,
+  WORKER_ID, registerWorker, heartbeatWorker, listStaleWorkers, claimTask, acquireLock, releaseLock,
 } from '../db/tasks';
+import { isPostgres } from '../db/getStore';
 import { addAgentLog, getLogsDb } from '../db/logs';
 import { getAgents } from '../db/agents';
 import { renderPrompt } from './prompts';
@@ -316,13 +318,23 @@ function getAvailableAgent(): string | null {
   return null;
 }
 
-/** True if a merge is currently running. Only ONE merge may touch the shared repo root
- *  at a time — `git merge` mutates the working tree/index, so two concurrent merges in
- *  the same checkout corrupt each other. A second approved task waits its turn. */
-async function mergeInFlight(): Promise<boolean> {
-  for (const id of agentTaskMap.values()) {
-    if ((await getTask(id))?.stage === 'merge') return true;
-  }
+// ── Phase 3 — multi-orchestrator coordination ─────────────────────────────────
+// `claimedBy` is stamped `${WORKER_ID}:${agentName}` so a task maps back to the
+// MACHINE running it. The merge lock is a DB row (`merge:<projectId>`) held for the
+// duration of a merge — only ONE machine merges a given project at a time (a plain
+// in-memory flag couldn't coordinate across machines). git merge mutates the shared
+// working tree/index, so two concurrent merges in one checkout would corrupt each other.
+const workerAgentId = (name: string): string => `${WORKER_ID}:${name}`;
+const mergeLockName = (pid: string): string => `merge:${pid}`;
+/** Merge-lock TTL: long enough to outlast a real merge, capped so a crashed holder's
+ *  lock is reclaimable. Tracks the hard per-run cap (after which the agent is killed). */
+const mergeLockTtl = (): number => Math.max(5 * 60 * 1000, maxRunMs() || 0, leaseMs());
+
+/** True if `claimedBy` belongs to one of the given (stale) worker ids. `claimedBy` is
+ *  `${workerId}:${agent}`; match the worker prefix without parsing internal colons. */
+function claimedByStaleWorker(claimedBy: string | null | undefined, stale: Set<string>): boolean {
+  if (!claimedBy) return false;
+  for (const w of stale) if (claimedBy === w || claimedBy.startsWith(w + ':')) return true;
   return false;
 }
 
@@ -475,7 +487,7 @@ async function dispatch(task: Task, route: Routed, ac: AgentConfig, name: string
   catch (e: any) { await scheduleRetry(task.id, attempts, `prompt render failed: ${e?.message || e}`); return; }
 
   await updateTask(task.id, {
-    claimedBy: name, started: new Date().toISOString(), attempts,
+    claimedBy: workerAgentId(name), started: new Date().toISOString(), attempts,
     leaseExpiresAt: new Date(Date.now() + leaseMs()).toISOString(),
     nextRetryAt: null, lastError: null, model,
   });
@@ -486,7 +498,14 @@ async function dispatch(task: Task, route: Routed, ac: AgentConfig, name: string
     onExit: (r) => { handleAgentExit(name, task.id, route, r).catch(e => log(task.id, `exit handler error: ${e?.message || e}`, 'error')); },
   });
   if (ok) log(task.id, `🚀 ${route.role} (${model}) as ${name} — stage ${route.stage}, attempt ${attempts}/${maxAttempts()}`, 'success');
-  else { agentTaskMap.delete(name); await scheduleRetry(task.id, attempts, 'spawn failed'); }
+  else {
+    agentTaskMap.delete(name);
+    // Never spawned → the exit handler won't run; free the merge lock we took (if any).
+    if (route.role === 'architect' && route.stage === 'merge') {
+      try { await releaseLock(mergeLockName(projectOf(task)), WORKER_ID); } catch { /* TTL is the backstop */ }
+    }
+    await scheduleRetry(task.id, attempts, 'spawn failed');
+  }
 }
 
 async function dispatchPending(): Promise<void> {
@@ -541,9 +560,6 @@ async function dispatchPending(): Promise<void> {
       log(task.id, '🔀 already merged — approved & done', 'success');
       continue;
     }
-    // MERGE LOCK — serialize merges into the shared repo root. If one is already running,
-    // leave this approved task pending and pick it up on a later tick (order preserved).
-    if (route.role === 'architect' && route.stage === 'merge' && await mergeInFlight()) continue;
     // RESCUE BUDGET — enforced here so it covers BOTH triggers: the orchestrator's own
     // auto-escalation AND a dev/qa self-reporting it's blocked (PUT stage="rescue"). Cap the
     // number of architect re-plans so a task can't loop rescue→build→rescue forever.
@@ -561,8 +577,21 @@ async function dispatchPending(): Promise<void> {
     if (!ac || !ac.enabled) continue;
     const name = getAvailableAgent();
     if (!name) break;
+    const isMerge = route.role === 'architect' && route.stage === 'merge';
+    // MERGE LOCK (cross-machine) — take the DB lock BEFORE claiming so only ONE machine
+    // merges a given project at a time. Held until the merge agent exits (released in
+    // handleAgentExit / on spawn failure), with a TTL backstop if this process dies.
+    if (isMerge && !(await acquireLock(mergeLockName(pid), WORKER_ID, mergeLockTtl()))) continue;
+    // ATOMIC CLAIM — reserve the task for THIS worker before spawning. On multi-machine
+    // Postgres only one worker's conditional UPDATE wins; on single-machine SQLite the
+    // lone worker always wins. If we lost the race, another machine got it → skip.
+    if (!(await claimTask(task.id, workerAgentId(name), leaseMs()))) {
+      if (isMerge) { try { await releaseLock(mergeLockName(pid), WORKER_ID); } catch { /* ignore */ } }
+      log(task.id, '⏭ claimed by another worker — skipping', 'info');
+      continue;
+    }
     // Live status: name the work about to start (merge reads its target branch).
-    if (route.role === 'architect' && route.stage === 'merge') setStatus(`Merging "${task.title}" into ${await currentBranch(task.id)}`, true);
+    if (isMerge) setStatus(`Merging "${task.title}" into ${await currentBranch(task.id)}`, true);
     else setStatus(`Dispatching ${route.stage.toUpperCase()} for "${task.title}" → ${route.role}`, true);
     await dispatch(task, route, ac, name);
   }
@@ -575,6 +604,12 @@ function refreshIndex(): void {
 
 async function handleAgentExit(name: string, taskId: string, route: Routed, r: RunResult): Promise<void> {
   agentTaskMap.delete(name);
+  // Release the cross-machine merge lock on EVERY merge exit path (success, conflict,
+  // crash, kill) — this is the single choke point that guarantees the lock is freed.
+  if (route.role === 'architect' && route.stage === 'merge') {
+    const pid = (await getTask(taskId))?.projectId || 'default';
+    try { await releaseLock(mergeLockName(pid), WORKER_ID); } catch { /* TTL is the backstop */ }
+  }
   // plan + rescue both run the architect in a throwaway read-only worktree — drop it on exit.
   if (route.role === 'architect' && (route.stage === 'plan' || route.stage === 'rescue')) await removePlanWorktree(taskId);
 
@@ -694,6 +729,19 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
 // ── watchdog + stall ─────────────────────────────────────────────────────────
 async function watchdog(): Promise<void> {
   const now = Date.now();
+  // Cross-machine reclaim: build the set of STALE workers (machines that stopped
+  // heartbeating for > ~2× the lease). A dead machine's in-flight tasks return to the
+  // pool for another machine. This worker is beating, so it's never in the set — and we
+  // additionally guard on isTaskRunning() so a machine can never reclaim work it is itself
+  // actively running. Skipped entirely on single-machine SQLite (no other workers exist).
+  const staleWorkers = new Set<string>();
+  if (isPostgres()) {
+    try {
+      for (const w of await listStaleWorkers(leaseMs() * 2)) {
+        if (w.id && w.id !== WORKER_ID) staleWorkers.add(w.id);
+      }
+    } catch { /* workers table unavailable — skip cross-machine reclaim this tick */ }
+  }
   for (const task of await allTasks()) {
     // ── stop request (set by the server, a separate process) ── kill any live agent NOW
     // and park the task out of dispatch (AVAILABLE + control 'paused') until the user resumes.
@@ -708,6 +756,17 @@ async function watchdog(): Promise<void> {
       await updateTask(task.id, { status: 'AVAILABLE', control: 'paused', started: null, claimedBy: null, leaseExpiresAt: null });
       log(task.id, '⏹ stopped by user', 'warning');
       setStatus(`Stopped "${task.title}" by user request`, true);
+      continue;
+    }
+    // ── stale-machine reclaim ── a task owned by a dead MACHINE (its worker went stale)
+    // returns to the pool. Guard: never touch a task THIS process is actively running.
+    if (staleWorkers.size && task.status === 'WORKING' && task.started
+        && claimedByStaleWorker(task.claimedBy, staleWorkers) && !isTaskRunning(task.id)) {
+      await updateTask(task.id, {
+        started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
+        attempts: 0, lastError: 'reclaimed from a stale worker (its machine stopped heartbeating)',
+      });
+      log(task.id, `♻ reclaimed from stale worker ${task.claimedBy} — returning to the pool for another machine`, 'warning');
       continue;
     }
     if (task.status !== 'WORKING' || !task.started || !task.leaseExpiresAt) continue;
@@ -741,7 +800,10 @@ export async function startOrchestrator(config?: AgenticConfig): Promise<void> {
   if (config) setConfig(config);
   try { mkdirSync(getConfig().paths.logsDir, { recursive: true }); writeFileSync(sysLogFile(), `── ORCHESTRATOR START ${new Date().toISOString()} ──\n`); } catch { /* disk */ }
   await getAgents(); // triggers agent-table seed
-  log('__system__', `🚀 orchestrator started — up to ${MAX_AGENTS > 0 ? MAX_AGENTS : AGENT_POOL.length} agents, gated at ${CPU_HIGH_PCT}% CPU / ${MEM_HIGH_PCT}% RAM, lease ${Math.round(leaseMs() / 60000)}min, maxRun ${Math.round(maxRunMs() / 60000)}min, autoMerge ${t().autoMergeOnQaPass !== false}`, 'success');
+  // Register this worker in the shared DB (Phase 3). Its heartbeat (each loop tick) lets
+  // other machines detect it if it dies and reclaim its tasks. Best-effort — never block boot.
+  try { await registerWorker(); } catch (e: any) { log('__system__', `worker register failed: ${e?.message || e}`, 'warning'); }
+  log('__system__', `🚀 orchestrator started as worker ${WORKER_ID} — up to ${MAX_AGENTS > 0 ? MAX_AGENTS : AGENT_POOL.length} agents, gated at ${CPU_HIGH_PCT}% CPU / ${MEM_HIGH_PCT}% RAM, lease ${Math.round(leaseMs() / 60000)}min, maxRun ${Math.round(maxRunMs() / 60000)}min, autoMerge ${t().autoMergeOnQaPass !== false}`, 'success');
 
   // Host repo not git-init'd? The default project then runs WITHOUT worktree isolation
   // or merge. Say so once, clearly — projects pointing at a cloned git repo get the full
@@ -752,8 +814,13 @@ export async function startOrchestrator(config?: AgenticConfig): Promise<void> {
   // holding a `started` claim was orphaned when the previous process died (crash/restart).
   // Reset it (fresh attempts) so it re-dispatches cleanly instead of the watchdog
   // dead-lettering it 15 min later. This makes restarts safe for in-flight work.
+  //
+  // SINGLE-MACHINE ONLY: a blanket reset is safe when we are the only writer. Under
+  // multi-machine Postgres it would stomp tasks OTHER live machines are running, so we
+  // skip it — a restarting machine's old (now-stale) worker id is instead reclaimed by
+  // the watchdog's stale-worker path once its heartbeat lapses (~2× lease).
   try {
-    for (const task of await allTasks()) {
+    if (!isPostgres()) for (const task of await allTasks()) {
       if (task.status === 'WORKING' && task.started) {
         await updateTask(task.id, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0, lastError: 'reconciled on restart' });
         log(task.id, '↻ reconciled on restart — previous agent died with the old process; re-dispatching from its last committed state', 'warning');
@@ -777,6 +844,9 @@ async function loop(): Promise<void> {
       // lease reclaim still enforced) but stops handing out NEW work. STARTED resumes dispatch.
       const status = settings?.agentStatus;
       if (status === 'STARTED' || status === 'PAUSED') {
+        // Heartbeat this worker (Phase 3) so peers can tell we're alive; a lapsed beat is
+        // how another machine learns we died and reclaims our tasks. Best-effort.
+        try { await heartbeatWorker(); } catch { /* DB busy — next tick */ }
         await watchdog();
         if (n % 10 === 0) {
           const removed = pruneOrphans(new Set((await allTasks()).map(x => x.id)));
