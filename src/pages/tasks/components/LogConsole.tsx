@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Tooltip } from './Tooltip';
 import { RefreshCw, Pause, Play, Copy, Check, ArrowDownToLine, Clock } from 'lucide-react';
 
 /**
@@ -264,22 +265,20 @@ export function LogConsole({
           </div>
         )}
         {copyable && (
-          <button
+          <Tooltip label="Copy the visible log to clipboard"><button
             onClick={copy}
             className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
-            title="Copy the visible log to clipboard"
           >
             {copied ? <><Check size={13} className="text-emerald-600" /> Copied</> : <><Copy size={13} /> Copy</>}
-          </button>
+          </button></Tooltip>
         )}
         {onRefresh && (
-          <button
+          <Tooltip label="Refresh"><button
             onClick={onRefresh}
             className="flex items-center justify-center min-w-[34px] min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
-            title="Refresh"
           >
             <RefreshCw size={14} />
-          </button>
+          </button></Tooltip>
         )}
       </div>
     </div>

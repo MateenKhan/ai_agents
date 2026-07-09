@@ -1,9 +1,15 @@
-import React, { useState, useRef, useCallback, type ReactNode } from 'react';
+import React, { useState, useRef, useCallback, isValidElement, cloneElement, type ReactNode, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
  * Project-wide custom tooltip. Portal-rendered to <body> so it never clips inside
- * overflow-hidden/scroll containers. Shows on hover + keyboard focus. Label-only.
+ * overflow-hidden/scroll containers. Shows on hover + keyboard focus.
+ *
+ * ACCESSIBILITY: this replaces the native `title` attribute, which is also the
+ * accessible name for icon-only buttons. So when the wrapped element has no
+ * aria-label/aria-labelledby of its own, we inject the tooltip label as its
+ * aria-label — otherwise migrating `title=` -> <Tooltip> would silently strip the
+ * name that screen readers announce. An explicit aria-label on the child always wins.
  *
  * Usage: <Tooltip label="Refresh"><button …/></Tooltip>
  */
@@ -26,6 +32,14 @@ export function Tooltip({
   }, [side]);
   const hide = useCallback(() => setPos(null), []);
 
+  // Give the child an accessible name from `label` unless it already has one.
+  const labelled = (() => {
+    if (!isValidElement(children)) return children;
+    const p = (children as ReactElement).props as Record<string, unknown>;
+    if (p['aria-label'] || p['aria-labelledby']) return children;
+    return cloneElement(children as ReactElement, { 'aria-label': label } as Record<string, unknown>);
+  })();
+
   return (
     <span
       ref={ref}
@@ -35,7 +49,7 @@ export function Tooltip({
       onBlur={hide}
       className="inline-flex"
     >
-      {children}
+      {labelled}
       {pos && label && createPortal(
         <div
           style={{
