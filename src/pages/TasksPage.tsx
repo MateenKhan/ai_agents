@@ -328,11 +328,11 @@ const TasksPage: React.FC = () => {
               <div className="flex items-center gap-1">
                 <OrchestratorToggle />
                 <RecordButton />
-                <Tooltip label={`Human Review${reviewQueue.length ? ` — ${reviewQueue.length} awaiting` : ''}`}>
+                <Tooltip label={`Your Review${reviewQueue.length ? ` — ${reviewQueue.length} awaiting` : ''}`}>
                   <button
                     onClick={() => setTodosOpen(true)}
                     data-feature-id="tasks-open-todos"
-                    aria-label="Human Review"
+                    aria-label="Your Review"
                     className={`${iconBtn} relative ${reviewQueue.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-300 sm:hover:bg-amber-100' : ''}`}
                   >
                     <ClipboardCheck size={16} />

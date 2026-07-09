@@ -129,6 +129,12 @@ import { configureBackend } from '../agentic/db/getStore.ts';
 // Every project-scoped route reads ?project=<id> (default 'default'); body routes may
 // also carry projectId. When a git route omits its `repo`, we default it to the
 // project's repoPath (falling back to the host cwd).
+/** Agent log files live FLAT in LOGS_DIR. Names come from the URL, so allow only a plain
+ *  filename charset — no separators, no dots-dots. Anything else could escape via join(). */
+function safeLogName(name: string): string | null {
+  return /^[A-Za-z0-9_.-]+$/.test(name) && !name.includes('..') ? name : null;
+}
+
 function projectIdOf(req: IncomingMessage, body?: any): string {
   try { const p = new URL(req.url!, 'http://x').searchParams.get('project'); if (p) return p; } catch { /* bad url */ }
   if (body && body.projectId) return String(body.projectId);
@@ -735,6 +741,20 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   // --- Agent Logs API (File based) ---
+  // DELETE /agent-logs/<name> — truncate one agent's log file (the UI's "Clear").
+  // Logs are disposable: durable per-task history lives in logs.db, not these files.
+  if (req.method === 'DELETE' && req.url?.startsWith('/agent-logs/')) {
+    const raw = decodeURIComponent((req.url.split('/')[2] || '').split('?')[0]);
+    const name = safeLogName(raw);
+    if (!name) { res.statusCode = 400; res.end(JSON.stringify({ error: 'bad log name' })); return; }
+    try {
+      const p = join(LOGS_DIR, `${name}.log`);
+      if (existsSync(p)) writeFileSync(p, '');
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
   if (req.method === 'GET' && req.url?.startsWith('/agent-logs/')) {
     const agentName = decodeURIComponent((req.url.split('/')[2] || '').split('?')[0]);
     // Synthetic in-memory streams (not backed by .agent_logs files): the live clone
@@ -745,7 +765,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       res.end(JSON.stringify(buf.map((l, i) => ({ id: i, message: l, timestamp: new Date().toISOString() }))));
       return;
     }
-    const logPath = join(LOGS_DIR, `${agentName}.log`);
+    // SECURITY: agentName comes straight off the URL. Without this guard a request for
+    // `/agent-logs/..%2F..%2Fsecrets` would join() its way clean out of LOGS_DIR.
+    const safe = safeLogName(agentName);
+    if (!safe) { res.statusCode = 400; res.end(JSON.stringify({ error: 'bad log name' })); return; }
+    const logPath = join(LOGS_DIR, `${safe}.log`);
     try {
       if (!existsSync(logPath)) {
         res.end(JSON.stringify([]));
@@ -1155,8 +1179,18 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         if (req.method === 'POST') {
           const task = (await getAllTasks()).find(t => t.id === taskId);
           if (task) {
-            await updateTask(taskId, { status: 'WORKING', claimedBy: 'dev', started: new Date().toISOString() });
-            console.log(`[db-server] Task triggered: ${task.title}`);
+            // QUEUE it — never claim it here. The db-server has no resource gate, no agent
+            // pool and no worktrees, so it must not decide that work has started. Stamping
+            // `started`/`claimedBy` from here STRANDS the task: dispatchPending only picks up
+            // WORKING && !started, and the watchdog only reclaims rows that carry a
+            // leaseExpiresAt — so it would be neither dispatched nor reclaimed, forever.
+            // Hand it to the orchestrator, which queues it against CPU/RAM, the agent pool,
+            // the per-project cap and the readiness gate, then claims it atomically.
+            await updateTask(taskId, {
+              status: 'WORKING', started: null, claimedBy: null,
+              leaseExpiresAt: null, nextRetryAt: null,
+            });
+            console.log(`[db-server] Task queued for the orchestrator: ${task.title}`);
 
             // Build a rich agent prompt from the task
             const agentPrompt = [

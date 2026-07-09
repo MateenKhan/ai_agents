@@ -130,7 +130,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
             </div>
             <p className="text-xs text-slate-600 mt-2.5">
               {stageIdx >= 5 ? '✓ Done — merged and approved.'
-                : stageIdx === 4 ? 'Waiting on you — review it in My Todos, then approve or reject.'
+                : stageIdx === 4 ? 'Waiting on you — review it in Your Review, then approve or reject.'
                   : `Now: ${STAGES[stageIdx].who} is on ${STAGES[stageIdx].label}. Next: ${STAGES[stageIdx + 1].who} · ${STAGES[stageIdx + 1].label}.`}
             </p>
           </div>

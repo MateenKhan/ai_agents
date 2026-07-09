@@ -151,7 +151,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b-2 border-slate-200 bg-slate-50 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <div className="flex items-center gap-2.5">
             <ClipboardCheck size={20} className="text-amber-600" />
-            <h2 className="text-base font-bold uppercase tracking-widest text-slate-900">My Todos</h2>
+            <h2 className="text-base font-bold uppercase tracking-widest text-slate-900">Your Review</h2>
             <span className="text-xs font-black px-2.5 py-0.5 bg-amber-100 border border-amber-300 rounded-full text-amber-700">
               {tasks.length}
             </span>
@@ -172,11 +172,13 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
               <p className="text-base text-slate-600">Nothing to review. When an agent finishes a task, it lands here for your verification.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 items-start">
+            // Two columns only when there's something to put in the second one — a lone card
+            // in a 2-col grid sits at half width with dead space beside it.
+            <div className={`grid grid-cols-1 gap-3 sm:gap-4 items-start ${tasks.length > 1 ? 'xl:grid-cols-2' : ''}`}>
               {tasks.map(task => {
                 const spec = specName(task);
                 return (
-                  <div key={task.id} data-feature-id="human-todo-card" className="bg-white border-2 border-slate-200 rounded-xl p-4 sm:p-5 space-y-3.5 shadow-sm">
+                  <div key={task.id} data-feature-id="human-todo-card" className="min-w-0 bg-white border-2 border-slate-200 rounded-xl p-4 sm:p-5 space-y-3.5 shadow-sm">
                     <div>
                       <h3 className="text-base font-bold text-slate-900 leading-snug">{task.title}</h3>
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -202,20 +204,20 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                             {p.what && (
                               <div className="bg-accent-50 border border-accent-200 rounded-lg p-3.5">
                                 <p className="text-[11px] font-bold uppercase tracking-wide text-accent-700 mb-1.5">What the agent did</p>
-                                <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap">{p.what}</p>
+                                <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap break-words">{p.what}</p>
                               </div>
                             )}
                             {p.watch && p.watch.toLowerCase() !== 'nothing' && (
                               <div className="bg-rose-50 border border-rose-200 rounded-lg p-3.5">
                                 <p className="text-[11px] font-bold uppercase tracking-wide text-rose-700 mb-1.5">Watch out</p>
-                                <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap">{p.watch}</p>
+                                <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap break-words">{p.watch}</p>
                               </div>
                             )}
                           </div>
                         ) : (
                           <div className="bg-accent-50 border border-accent-200 rounded-lg p-3.5">
                             <p className="text-[11px] font-bold uppercase tracking-wide text-accent-700 mb-2">Agent summary</p>
-                            <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap">{task.summary}</p>
+                            <p className="text-sm text-slate-900 leading-relaxed whitespace-pre-wrap break-words">{task.summary}</p>
                           </div>
                         );
                       })()
@@ -233,7 +235,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                     {task.description && (
                       <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5">
                         <p className="text-[11px] font-bold uppercase tracking-wide text-slate-600 mb-1.5">Context</p>
-                        <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">{task.description}</p>
+                        <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap break-words">{task.description}</p>
                       </div>
                     )}
 
@@ -278,7 +280,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                               return points.length > 0 ? points.map(p => (
                                 <div key={p.label} className="bg-white border border-slate-200 rounded-lg p-3">
                                   <p className="text-[11px] font-black uppercase tracking-wide text-accent-700 mb-1">{p.label}</p>
-                                  <pre className="text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap font-sans">{p.text}</pre>
+                                  <pre className="text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap break-words font-sans">{p.text}</pre>
                                 </div>
                               )) : (
                                 <p className="text-xs text-slate-500">No referenced points found in the spec — the DoD may already be self-contained.</p>
@@ -319,7 +321,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                                 <AlertCircle size={15} /> Preview failed — retry {pv.error ? `(${pv.error})` : ''}
                               </button>
                               {pv.logTail && (
-                                <pre className="text-[10px] leading-snug text-rose-800 bg-rose-50/60 border border-rose-200 rounded-lg p-2 max-h-40 overflow-auto whitespace-pre-wrap">{pv.logTail}</pre>
+                                <pre className="text-[10px] leading-snug text-rose-800 bg-rose-50/60 border border-rose-200 rounded-lg p-2 max-h-40 overflow-auto whitespace-pre-wrap break-words">{pv.logTail}</pre>
                               )}
                               {pv.logName && <p className="text-[10px] text-slate-500">Full build log: open <span className="font-mono">{pv.logName}</span> in the Logs tab.</p>}
                             </div>

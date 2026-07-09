@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Terminal } from 'lucide-react';
 import { LogConsole } from './LogConsole';
+import { useConfirm } from './ConfirmProvider';
+import { useToast } from './Toast';
 
 /**
  * Logs tab — streams agent logs straight from .agent_logs/*.log files via the
@@ -16,6 +18,8 @@ interface LogLine { id: number; message: string }
 import { API_BASE as API, withProject } from '../../../apiBase';
 
 export default function LogsTab({ initialAgent }: { initialAgent?: string | null }) {
+  const confirm = useConfirm();
+  const toast = useToast();
   const [files, setFiles] = useState<LogFile[] | null>(null);
   const [active, setActive] = useState<string | null>(initialAgent ?? null);
   const [lines, setLines] = useState<string[]>([]);
@@ -39,25 +43,46 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
   };
   useEffect(loadFiles, []);
 
+  /** Fetch the active log's contents once. Also used by Refresh (which must refetch the
+   *  CONTENT, not just the file list) and after Clear. */
+  const fetchLines = React.useCallback(() => {
+    if (!active) return Promise.resolve();
+    return fetch(withProject(`${API}/agent-logs/${encodeURIComponent(active)}?tail=${tail}`))
+      .then(r => r.json())
+      .then(d => setLines(Array.isArray(d) ? (d as LogLine[]).map(l => l.message) : []))
+      .catch(() => { });
+  }, [active, tail]);
+
   // Poll the active file (only while live and tab visible). Re-runs when the history
   // length (tail) changes so the console can pull more or fewer lines from the server.
   useEffect(() => {
     if (!active) return;
     let stop = false;
-    const poll = () => {
-      fetch(withProject(`${API}/agent-logs/${encodeURIComponent(active)}?tail=${tail}`))
-        .then(r => r.json())
-        .then(d => {
-          if (stop) return;
-          const arr: LogLine[] = Array.isArray(d) ? d : [];
-          setLines(arr.map(l => l.message));
-        })
-        .catch(() => { });
-    };
+    const poll = () => { if (!stop) void fetchLines(); };
     poll();
     const iv = live ? setInterval(poll, 3000) : undefined;
     return () => { stop = true; if (iv) clearInterval(iv); };
-  }, [active, live, tail]);
+  }, [active, live, tail, fetchLines]);
+
+  /** Truncate the log server-side. Disposable by design: durable per-task history lives in
+   *  logs.db, so this only clears the tailed .log file. */
+  const clearLog = async () => {
+    if (!active) return;
+    const ok = await confirm({
+      title: 'Clear this log?',
+      message: `Empties ${active}.log. The durable per-task history in logs.db is untouched.`,
+      confirmLabel: 'Clear',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await fetch(withProject(`${API}/agent-logs/${encodeURIComponent(active)}`), { method: 'DELETE' });
+      setLines([]);
+      await fetchLines();
+      loadFiles();
+      toast.success('Log cleared', `${active}.log`);
+    } catch (e: any) { toast.error('Could not clear log', e?.message); }
+  };
 
   const chips = files === null ? (
     <span className="text-xs text-slate-500">Loading log files…</span>
@@ -113,7 +138,8 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
         liveControl
         tailControl
         copyable
-        onRefresh={loadFiles}
+        onRefresh={() => { void fetchLines(); loadFiles(); }}
+        onClear={active ? clearLog : undefined}
         empty={active ? 'Log is empty.' : 'Select an agent log above.'}
         footer={<>Source: .agent_logs/*.log files (last {tail} lines, tailed every 3s while Live) — SQLite is never touched by this tab.</>}
       />

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Tooltip } from './Tooltip';
-import { RefreshCw, Pause, Play, Copy, Check, ArrowDownToLine, Clock } from 'lucide-react';
+import { RefreshCw, Pause, Play, Copy, Check, ArrowDownToLine, Clock, Trash2 } from 'lucide-react';
 
 /**
  * LogConsole — the ONE log/terminal component used everywhere in the app.
@@ -41,6 +41,8 @@ export interface LogConsoleProps {
   tailControl?: boolean;
   copyable?: boolean;
   onRefresh?: () => void;
+  /** Truncate the underlying log. Destructive but reversible-by-time: agents rewrite it. */
+  onClear?: () => void;
 
   // ── live (controlled when onLiveChange given, else internal) ──
   onLiveChange?: (v: boolean) => void;
@@ -96,7 +98,7 @@ function parseLine(msg: string): Parsed {
 
 export function LogConsole({
   lines, text, title, live, footer, toolbarLeft,
-  searchable, timeToggle, sizeControls, historyControl, liveControl, tailControl, copyable, onRefresh,
+  searchable, timeToggle, sizeControls, historyControl, liveControl, tailControl, copyable, onRefresh, onClear,
   onLiveChange, historyOptions = [200, 400, 1000, 5000], defaultHistory = 400, onHistoryLengthChange,
   parsed = false, bare, fill, maxHeight = 'max-h-52', empty = '…', className = '',
 }: LogConsoleProps) {
@@ -195,7 +197,7 @@ export function LogConsole({
     </div>
   );
 
-  const hasToolbar = searchable || timeToggle || sizeControls || historyControl || liveControl || tailControl || copyable || onRefresh || toolbarLeft || title;
+  const hasToolbar = searchable || timeToggle || sizeControls || historyControl || liveControl || tailControl || copyable || onRefresh || onClear || toolbarLeft || title;
 
   const toolbar = hasToolbar && (
     <div className="flex items-center gap-2 flex-wrap">
@@ -234,7 +236,7 @@ export function LogConsole({
             className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${liveOn ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-white text-slate-600 border-slate-300'}`}
             title={liveOn ? 'Live tail on' : 'Paused'}
           >
-            {liveOn ? <><Pause size={12} /> Live</> : <><Play size={12} /> Paused</>}
+            {liveOn ? <><Pause size={14} /> Live</> : <><Play size={14} /> Paused</>}
           </button>
         )}
         {tailControl && (
@@ -244,7 +246,7 @@ export function LogConsole({
             className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${autoScroll ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
             title={autoScroll ? 'Auto-scroll ON — following the tail' : 'Auto-scroll OFF'}
           >
-            <ArrowDownToLine size={13} /> Tail
+            <ArrowDownToLine size={14} /> Tail
           </button>
         )}
         {timeToggle && (
@@ -254,7 +256,7 @@ export function LogConsole({
             className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${showTime ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
             title={showTime ? 'Per-line date + time shown' : 'Per-line date + time hidden'}
           >
-            <Clock size={13} /> Date/Time
+            <Clock size={14} /> Date/Time
           </button>
         )}
         {sizeControls && (
@@ -269,13 +271,23 @@ export function LogConsole({
             onClick={copy}
             className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
           >
-            {copied ? <><Check size={13} className="text-emerald-600" /> Copied</> : <><Copy size={13} /> Copy</>}
+            {copied ? <><Check size={14} className="text-emerald-600" /> Copied</> : <><Copy size={14} /> Copy</>}
+          </button></Tooltip>
+        )}
+        {onClear && (
+          <Tooltip label="Clear this log"><button
+            onClick={onClear}
+            data-feature-id="logs-clear"
+            className="flex items-center justify-center min-w-[34px] min-h-control text-rose-600 bg-white border border-slate-300 rounded-lg hover:bg-rose-50 hover:border-rose-300 active:scale-[0.97] transition-all"
+          >
+            <Trash2 size={14} />
           </button></Tooltip>
         )}
         {onRefresh && (
           <Tooltip label="Refresh"><button
             onClick={onRefresh}
-            className="flex items-center justify-center min-w-[34px] min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+            data-feature-id="logs-refresh"
+            className="flex items-center justify-center min-w-[34px] min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 active:scale-[0.97] transition-all"
           >
             <RefreshCw size={14} />
           </button></Tooltip>

@@ -94,10 +94,10 @@ export function TasksHeader({ onRefresh, onOpenSettings, onAddTask, onOpenTodos,
             className={`relative flex items-center gap-2 px-3 min-h-control-lg rounded-lg text-xs font-black transition-all active:scale-95 ${todoCount > 0
               ? 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
               : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
-            title="Human Review — merged tasks awaiting your approval"
+            title="Your Review — merged tasks awaiting your approval"
           >
             <ClipboardCheck size={16} />
-            <span className="hidden lg:inline">Human Review</span>
+            <span className="hidden lg:inline">Your Review</span>
             {todoCount > 0 && (
               <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 flex items-center justify-center text-[10px] font-black bg-amber-500 text-white rounded-full">
                 {todoCount}
