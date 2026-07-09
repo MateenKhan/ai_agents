@@ -87,7 +87,7 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
   const chips = files === null ? (
     <span className="text-xs text-slate-500">Loading log files…</span>
   ) : files.length === 0 ? (
-    <span className="text-xs text-slate-500">No agent log files yet — they appear in .agent_logs/ when headless agents run.</span>
+    <span className="text-xs text-slate-500">No agent logs yet. They show up here once an agent starts working.</span>
   ) : (
     <div className="flex items-center gap-2 flex-wrap">
       {files.map(f => (

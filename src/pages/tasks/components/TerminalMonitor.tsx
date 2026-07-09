@@ -103,9 +103,7 @@ export function TerminalMonitor({
                 Task ID: {taskId?.slice(-8) || 'N/A'}
               </span>
               <div className="flex items-center gap-3">
-                <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest">
-                  Buffers: Syncing
-                </span>
+
               </div>
             </div>
           </>

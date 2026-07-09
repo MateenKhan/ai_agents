@@ -91,7 +91,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
             className="flex items-center gap-2 px-6 min-h-[48px] bg-slate-900 active:bg-slate-950 sm:hover:bg-slate-800 text-white text-sm font-bold rounded-xl shadow-lg shadow-accent-500/20 transition-all active:scale-95"
           >
             <Save size={16} />
-            {editingTask ? 'Update Task' : 'Save Task'}
+            {editingTask ? 'Update task' : 'Create task'}
           </button>
         </div>
       }
@@ -108,7 +108,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
               value={title}
               onChange={e => setTitle(e.target.value)}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-accent-500 transition-colors"
-              placeholder="Task summary..."
+              placeholder="e.g. Add a dark-mode toggle to Settings"
             />
           </div>
 
@@ -207,7 +207,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
 
         {/* Advanced Metadata */}
         <div className="pt-4 border-t border-slate-200 space-y-4">
-          <h3 className="text-[10px] font-black uppercase text-accent-600 tracking-widest">Advanced Metadata</h3>
+          <h3 className="text-[10px] font-black uppercase text-accent-600 tracking-widest">Advanced</h3>
 
           <div className="space-y-1.5">
             <label className="flex items-center gap-2 text-[11px] font-bold uppercase text-slate-600 tracking-wide">

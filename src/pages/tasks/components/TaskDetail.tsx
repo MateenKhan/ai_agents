@@ -138,7 +138,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           {task.summary && (
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
               <button onClick={() => setShowPlan(v => !v)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition-colors">
-                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-600">Plan · what the agent did &amp; how to verify</span>
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-600">Summary · what the agent did &amp; how to verify</span>
                 <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showPlan ? 'rotate-180' : ''}`} />
               </button>
               {showPlan

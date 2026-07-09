@@ -16,7 +16,7 @@ export function PromptModal({ isOpen, onClose, prompt, taskTitle, copied, onCopy
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Agent Command Ready"
+      title="Task launched"
       subtitle={taskTitle}
       icon={<Sparkles className="w-5 h-5 text-accent-600" />}
       maxW="sm:max-w-2xl"
@@ -26,13 +26,14 @@ export function PromptModal({ isOpen, onClose, prompt, taskTitle, copied, onCopy
           onClick={onClose}
           className="mx-auto text-xs font-bold text-slate-500 hover:text-slate-800 uppercase tracking-widest transition-all"
         >
-          I've pasted the prompt, let's go!
+          Done
         </button>
       }
     >
       <div className="space-y-4">
         <p className="text-sm text-slate-600 leading-relaxed">
-          Copy this prompt into the <span className="text-accent-600 font-bold">Antigravity</span> chat (Ctrl+L) to begin execution. The agent will automatically update the task status when finished.
+          The swarm picked this up — nothing to paste. This is the prompt your agent received; it
+          updates the task status itself as it works.
         </p>
 
         <div className="relative group">
@@ -50,7 +51,7 @@ export function PromptModal({ isOpen, onClose, prompt, taskTitle, copied, onCopy
             }`}
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? 'Copied!' : 'Copy Prompt'}
+            {copied ? 'Copied' : 'Copy prompt'}
           </button>
         </div>
 
@@ -59,8 +60,8 @@ export function PromptModal({ isOpen, onClose, prompt, taskTitle, copied, onCopy
             <Terminal className="w-4 h-4 text-amber-600" />
           </div>
           <p className="text-[10px] text-slate-500 leading-tight">
-            <span className="text-amber-600 font-bold block mb-0.5">PRO TIP:</span>
-            You can monitor agent progress in real-time via the <span className="text-slate-700 font-semibold">Terminal Monitor</span> tab at the bottom.
+            <span className="text-amber-600 font-bold block mb-0.5">Tip</span>
+            Watch it work in the <span className="text-slate-700 font-semibold">Logs</span> tab.
           </p>
         </div>
       </div>

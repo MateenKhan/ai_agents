@@ -197,7 +197,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               disabled={isTriggering}
               data-feature-id="task-card-trigger"
               className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-300 active:bg-cyan-600 active:text-white sm:hover:bg-cyan-600 sm:hover:text-white transition-all ${isTriggering ? 'animate-pulse' : ''}`}
-              title="Launch Agent"
+              title="Launch"
             >
               <Play size={15} fill="currentColor" />
             </button>

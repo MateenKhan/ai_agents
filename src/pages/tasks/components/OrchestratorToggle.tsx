@@ -32,7 +32,7 @@ export function OrchestratorToggle() {
   const down = !up;
 
   const state = down
-    ? { dot: 'bg-rose-500', text: 'text-rose-700', bg: 'bg-rose-50 border-rose-300', label: 'Orchestrator down' }
+    ? { dot: 'bg-rose-500', text: 'text-rose-700', bg: 'bg-rose-50 border-rose-300', label: 'Swarm down' }
     : paused
       ? { dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50 border-amber-300', label: 'Paused' }
       : { dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-300', label: 'Running' };
@@ -51,7 +51,7 @@ export function OrchestratorToggle() {
   };
 
   return (
-    <Tooltip label={`Orchestrator: ${state.label} — ${willPause ? 'click to pause' : 'click to start'}`}>
+    <Tooltip label={`Swarm: ${state.label} — ${willPause ? 'click to pause' : 'click to start'}`}>
       <button
         onClick={toggle}
         disabled={busy}

@@ -60,7 +60,7 @@ describe('TaskBoard', () => {
   it('shows the empty state for lanes with no tasks', () => {
     const cols: Column[] = [{ id: 'TODO', label: 'Todo', color: '#000' }];
     render(<TaskBoard {...baseProps()} columns={cols} tasks={[]} />);
-    expect(screen.getByText('No tasks here')).toBeTruthy();
+    expect(screen.getByText('Empty lane. Drop a task in, or hit + to feed one.')).toBeTruthy();
   });
 
   it('the lane add button calls onAddTask with the lane id', () => {

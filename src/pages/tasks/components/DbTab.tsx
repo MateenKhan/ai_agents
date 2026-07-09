@@ -224,7 +224,7 @@ export default function DbTab() {
               {confirmBulkDel ? (
                 <button onClick={bulkDelete} disabled={busy} data-feature-id="db-bulk-delete-confirm"
                   className="px-3 min-h-control text-xs font-black bg-rose-600 text-white rounded-lg">
-                  DELETE {selected.size} ROWS — SURE?
+                  Delete {selected.size} rows
                 </button>
               ) : (
                 <button onClick={() => setConfirmBulkDel(true)} data-feature-id="db-bulk-delete"
@@ -285,7 +285,7 @@ export default function DbTab() {
                 <td className="px-3 py-2 text-right whitespace-nowrap align-top">
                   <button onClick={() => setEditing({ ...r })} className="p-1.5 text-slate-500 hover:text-accent-600 transition-colors" title="Edit"><Edit2 size={14} /></button>
                   {confirmDel === r._rowid ? (
-                    <button onClick={() => del(r._rowid)} disabled={busy} className={btnDangerSm} title="Confirm delete">SURE?</button>
+                    <button onClick={() => del(r._rowid)} disabled={busy} className={btnDangerSm} title="Confirm delete">Delete</button>
                   ) : (
                     <button onClick={() => setConfirmDel(r._rowid)} className="p-1.5 text-slate-500 hover:text-rose-600 transition-colors" title="Delete"><Trash2 size={14} /></button>
                   )}

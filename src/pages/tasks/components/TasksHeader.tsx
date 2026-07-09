@@ -32,7 +32,7 @@ function OrchestratorToggle() {
   const down = !up;
 
   const state = down
-    ? { dot: 'bg-rose-500', text: 'text-rose-700', bg: 'bg-rose-50 border-rose-300', label: 'Orchestrator down' }
+    ? { dot: 'bg-rose-500', text: 'text-rose-700', bg: 'bg-rose-50 border-rose-300', label: 'Swarm down' }
     : paused
       ? { dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50 border-amber-300', label: 'Paused' }
       : { dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-300', label: 'Running' };
@@ -53,7 +53,7 @@ function OrchestratorToggle() {
   return (
     <div
       className={`flex items-center gap-1.5 pl-2 pr-1 min-h-control-lg rounded-lg border ${state.bg}`}
-      title={`Orchestrator: ${state.label}`}
+      title={`Swarm: ${state.label}`}
       data-feature-id="orchestrator-toggle"
     >
       <span className={`w-2 h-2 rounded-full shrink-0 ${state.dot} ${up && !paused ? 'animate-pulse' : ''}`} />

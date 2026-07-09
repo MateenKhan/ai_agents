@@ -183,7 +183,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
             >
               {colTasks.length === 0 && !isDropTarget ? (
                 <div className="flex-1 flex items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-[11px] uppercase font-bold tracking-tight text-center">
-                  No tasks here
+                  Empty lane. Drop a task in, or hit + to feed one.
                 </div>
               ) : (
                 <>

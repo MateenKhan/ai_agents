@@ -112,7 +112,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
   if (!reachable) {
     return (
       <div className="fixed bottom-3 right-3 z-[80] flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-600 text-white shadow-lg text-xs font-bold max-w-[90vw]">
-        <WifiOff size={14} className="shrink-0" /> db-server offline
+        <WifiOff size={14} className="shrink-0" /> Can't reach Piranha's server
       </div>
     );
   }
@@ -126,7 +126,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
 
   // Primary line: live activity when something's happening, else the orchestrator's human status line.
   const primary = corrupt
-    ? 'The task board file looks damaged — a repair may be needed.'
+    ? 'The task board database is corrupted. Stop the swarm and run `tsx scripts/repair-db.ts` to back it up and rebuild. Heal will not fix this.'
     : activityActive
       ? act.label
       : humanizeStatusMessage(orch?.statusLine || act.label);
@@ -212,7 +212,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
             {/* Events feed */}
             <div className="max-h-[42vh] sm:max-h-64 overflow-y-auto custom-scrollbar">
               {events.length === 0 ? (
-                <div className="px-3 py-6 text-center text-[11px] text-slate-500">No recent orchestrator events.</div>
+                <div className="px-3 py-6 text-center text-[11px] text-slate-500">No swarm activity yet.</div>
               ) : (
                 <ul className="divide-y divide-slate-800">
                   {events.map((e, i) => (

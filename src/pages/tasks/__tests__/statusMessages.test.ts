@@ -19,8 +19,8 @@ describe('humanizeStatusMessage', () => {
   });
 
   it('rewrites orchestrator offline/running', () => {
-    expect(humanizeStatusMessage('Orchestrator offline')).toBe('The task runner is offline.');
-    expect(humanizeStatusMessage('Orchestrator running')).toBe('The task runner is up and running.');
+    expect(humanizeStatusMessage('Orchestrator offline')).toBe('The swarm is offline.');
+    expect(humanizeStatusMessage('Orchestrator running')).toBe('The swarm is running.');
   });
 
   it('strips a leading emoji/glyph when no rule matches', () => {

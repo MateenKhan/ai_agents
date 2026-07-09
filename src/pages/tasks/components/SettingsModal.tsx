@@ -51,7 +51,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
       isOpen={isOpen}
       onClose={onClose}
       title="Settings"
-      subtitle="Show or hide tabs and configure board swimlanes"
+      subtitle="Show or hide tabs and edit board lanes"
       icon={<Settings className="w-5 h-5 text-accent-600" />}
       maxW="sm:max-w-2xl"
       featureId="settings-modal"

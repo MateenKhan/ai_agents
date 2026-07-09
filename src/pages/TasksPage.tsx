@@ -250,7 +250,7 @@ const TasksPage: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-100 gap-4">
         <div className="w-12 h-12 border-4 border-accent-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Initializing AI-Agents...</p>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Waking the swarm…</p>
       </div>
     );
   }
@@ -346,12 +346,12 @@ const TasksPage: React.FC = () => {
                     <RefreshCw size={16} />
                   </button>
                 </Tooltip>
-                <Tooltip label="Heal — reset stuck in-progress tasks">
+                <Tooltip label="Unstick — restart stalled tasks">
                   <button onClick={handleHeal} disabled={healing} data-feature-id="tasks-heal" aria-label="Heal" className={iconBtn}>
                     <HeartPulse size={16} className={healing ? 'animate-pulse' : ''} />
                   </button>
                 </Tooltip>
-                <Tooltip label="Chat → Tasks">
+                <Tooltip label="Describe work, get tasks">
                   <button onClick={() => setChatOpen(true)} data-feature-id="tasks-chat-create" aria-label="Chat to Tasks" className={iconBtn}>
                     <MessageSquarePlus size={16} />
                   </button>
@@ -376,7 +376,7 @@ const TasksPage: React.FC = () => {
         {error && (
           <div className="m-6 p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between">
             <span className="text-xs font-bold text-rose-600 uppercase tracking-widest">Error: {error}</span>
-            <button onClick={fetchTasks} className="text-[10px] font-black underline uppercase tracking-tighter text-rose-600">Retry Sync</button>
+            <button onClick={fetchTasks} className="text-[10px] font-black underline uppercase tracking-tighter text-rose-600">Try again</button>
           </div>
         )}
 
@@ -505,7 +505,7 @@ const TasksPage: React.FC = () => {
                     <span className="text-[10px] text-slate-400 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">logs ›</span>
                   </button>
                 ))}
-                <p className="text-[11px] text-slate-400 pt-1">Orchestrator set to STARTED — reset tasks re-dispatch within a few seconds.</p>
+                <p className="text-[11px] text-slate-400 pt-1">Swarm restarted — the tasks it reset pick back up in a few seconds.</p>
               </div>
             </Modal>
           )}
