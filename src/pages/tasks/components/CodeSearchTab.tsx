@@ -5,11 +5,15 @@ import { API_BASE, withProject } from '../../../apiBase';
 import { useProjects } from '../projectContext';
 
 /**
- * Code Search — queries the per-project semantic code index via the db-server.
+ * Code Search — queries the ACTIVE project's semantic code index via the db-server.
  *  • "Search" mode → POST /search returns ranked code nodes (retrieval only).
  *  • "Ask" mode    → POST /ask runs RAG: retrieves snippets, then a headless Claude
  *                    call answers the question grounded in them.
- * The project dropdown lets you query ANY project's index, not just the active one.
+ *
+ * Scope comes from the project switcher in the header — the one place the whole app
+ * agrees on. This tab used to carry its OWN project <select>, seeded once from activeId
+ * via useState, which meant it silently kept querying the old index after you switched
+ * projects: two controls, one truth, and the wrong one winning.
  */
 
 interface Hit { score: number; name: string; type: string; path: string; line: number; signature: string }
@@ -46,8 +50,9 @@ function renderAnswer(md: string): React.ReactNode {
 }
 
 export default function CodeSearchTab() {
-  const { projects, activeId } = useProjects();
-  const [project, setProject] = useState(activeId);
+  // Single source of scope: the header's project switcher. Renamed, not copied into state,
+  // so a project change re-renders and re-queries instead of stranding this tab on the old one.
+  const { activeId: project } = useProjects();
   const [q, setQ] = useState('');
   const [mode, setMode] = useState<'search' | 'ask'>('search');
   const [loading, setLoading] = useState(false);
@@ -129,21 +134,6 @@ export default function CodeSearchTab() {
     <div className="p-3 sm:p-5 space-y-4" data-feature-id="tasks-code-search-tab">
       {/* Query bar */}
       <div className="flex flex-col sm:flex-row items-stretch gap-2">
-        <div className="relative shrink-0">
-          <select
-            value={project}
-            onChange={e => setProject(e.target.value)}
-            data-feature-id="code-search-project"
-            className="h-11 pl-3 pr-8 rounded-lg border border-slate-300 bg-white text-sm font-bold text-slate-700 focus:outline-none focus:border-accent-500 appearance-none cursor-pointer"
-            title="Which project's code index to query"
-          >
-            {projects.length === 0 && <option value={project}>{project}</option>}
-            {projects.map(p => (
-              <option key={p.id} value={p.id}>{p.emoji ? `${p.emoji} ` : ''}{p.name}</option>
-            ))}
-          </select>
-        </div>
-
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -255,7 +245,7 @@ export default function CodeSearchTab() {
 
       {hits == null && answer == null && !loading && !error && (
         <div className="p-10 text-center text-xs text-slate-500">
-          Pick a project, type a query, and hit <span className="font-bold">Search</span> for code matches or <span className="font-bold">Ask</span> for an AI answer.
+          Type a query, then hit <span className="font-bold">Search</span> for code matches or <span className="font-bold">Ask</span> for an AI answer.
         </div>
       )}
     </div>
