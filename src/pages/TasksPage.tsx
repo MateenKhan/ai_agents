@@ -19,6 +19,7 @@ import { useProjects } from './tasks/projectContext';
 import type { Task, Column } from './tasks/types';
 import { loadColumns, saveColumns, BOARD_COLUMNS_EVENT } from './tasks/boardConfig';
 import { API_BASE, withProject } from '../apiBase';
+import { iconBtn, iconBtnLg } from './tasks/ui';
 
 // Lazy Loaded Components
 const TaskModal = lazy(() => import('./tasks/components/TaskModal').then(m => ({ default: m.TaskModal })));
@@ -317,9 +318,10 @@ const TasksPage: React.FC = () => {
               <button
                 onClick={() => setActionsOpen(o => !o)}
                 aria-label={actionsOpen ? 'Hide actions' : 'Show actions'}
-                className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 transition-colors"
+                data-feature-id="tasks-actions-toggle"
+                className={iconBtnLg}
               >
-                {actionsOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                {actionsOpen ? <ChevronRight size={22} strokeWidth={2.5} /> : <ChevronLeft size={22} strokeWidth={2.5} />}
               </button>
             </Tooltip>
             {actionsOpen && (
@@ -331,9 +333,7 @@ const TasksPage: React.FC = () => {
                     onClick={() => setTodosOpen(true)}
                     data-feature-id="tasks-open-todos"
                     aria-label="Human Review"
-                    className={`relative flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg border transition-colors ${reviewQueue.length > 0
-                      ? 'bg-amber-50 text-amber-700 border-amber-300 sm:hover:bg-amber-100'
-                      : 'bg-slate-100 border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900'}`}
+                    className={`${iconBtn} relative ${reviewQueue.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-300 sm:hover:bg-amber-100' : ''}`}
                   >
                     <ClipboardCheck size={16} />
                     {reviewQueue.length > 0 && (
@@ -342,27 +342,27 @@ const TasksPage: React.FC = () => {
                   </button>
                 </Tooltip>
                 <Tooltip label="Refresh board">
-                  <button onClick={fetchTasks} aria-label="Refresh board" className={`flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 transition-colors ${loading ? 'animate-spin text-accent-600' : ''}`}>
+                  <button onClick={fetchTasks} aria-label="Refresh board" className={`${iconBtn} ${loading ? 'animate-spin text-accent-600' : ''}`}>
                     <RefreshCw size={16} />
                   </button>
                 </Tooltip>
                 <Tooltip label="Heal — reset stuck in-progress tasks">
-                  <button onClick={handleHeal} disabled={healing} data-feature-id="tasks-heal" aria-label="Heal" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 disabled:opacity-60 transition-colors">
+                  <button onClick={handleHeal} disabled={healing} data-feature-id="tasks-heal" aria-label="Heal" className={iconBtn}>
                     <HeartPulse size={16} className={healing ? 'animate-pulse' : ''} />
                   </button>
                 </Tooltip>
                 <Tooltip label="Chat → Tasks">
-                  <button onClick={() => setChatOpen(true)} data-feature-id="tasks-chat-create" aria-label="Chat to Tasks" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 transition-colors">
+                  <button onClick={() => setChatOpen(true)} data-feature-id="tasks-chat-create" aria-label="Chat to Tasks" className={iconBtn}>
                     <MessageSquarePlus size={16} />
                   </button>
                 </Tooltip>
                 <Tooltip label="Settings">
-                  <button onClick={() => setIsSettingsOpen(true)} data-feature-id="tasks-open-settings" aria-label="Settings" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 transition-colors">
+                  <button onClick={() => setIsSettingsOpen(true)} data-feature-id="tasks-open-settings" aria-label="Settings" className={iconBtn}>
                     <Settings size={16} />
                   </button>
                 </Tooltip>
                 <Tooltip label="New task">
-                  <button onClick={() => handleAddTask()} aria-label="New task" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 active:scale-95 transition-all">
+                  <button onClick={() => handleAddTask()} aria-label="New task" className={iconBtn}>
                     <Plus size={16} strokeWidth={3} />
                   </button>
                 </Tooltip>

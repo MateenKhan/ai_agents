@@ -77,11 +77,28 @@
            active:bg-slate-100 sm:hover:bg-slate-50 transition-colors disabled:opacity-50
            inline-flex items-center justify-center gap-1.5;
   }
-  /* Square icon-only button — the app's most repeated button shape (~47 sites). */
+  /* ── Square icon-only button — the app's most repeated shape (header cluster, toolbars).
+     ONE geometry for every icon button. Semantic controls (orchestrator = green, record =
+     red) layer their COLOUR on top of this, so the row never mixes heights or radii.
+     `active:scale-[0.97]` is the app's press feedback — deliberate and instant, rather
+     than a Material ripple, which would fight the crisp/dev-tool language. */
   .icon-btn {
+    @apply min-h-[2.5rem] min-w-[2.5rem] rounded-lg border border-slate-200 bg-slate-100 text-slate-500
+           sm:hover:bg-slate-200 sm:hover:text-slate-900 active:scale-[0.97]
+           transition-all disabled:opacity-50 disabled:active:scale-100
+           inline-flex items-center justify-center shrink-0;
+  }
+  /* Larger icon button for primary affordances (e.g. the collapse chevron). */
+  .icon-btn-lg {
+    @apply min-h-control-lg min-w-[2.75rem] rounded-lg border border-slate-200 bg-slate-100 text-slate-500
+           sm:hover:bg-slate-200 sm:hover:text-slate-900 active:scale-[0.97]
+           transition-all disabled:opacity-50 inline-flex items-center justify-center shrink-0;
+  }
+  /* Neutral icon button on a white surface (inside panels/toolbars, not the header bar). */
+  .icon-btn-plain {
     @apply min-h-control min-w-[2.25rem] rounded-lg border border-slate-300 bg-white text-slate-600
-           sm:hover:bg-slate-50 active:bg-slate-100 transition-colors disabled:opacity-50
-           inline-flex items-center justify-center;
+           sm:hover:bg-slate-50 active:bg-slate-100 active:scale-[0.97] transition-all
+           disabled:opacity-50 inline-flex items-center justify-center shrink-0;
   }
   /* Text field. Selects and textareas share this look; `.input-select` adds room for the caret. */
   .input {

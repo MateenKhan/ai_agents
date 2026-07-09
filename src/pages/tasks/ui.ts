@@ -23,8 +23,13 @@ export const btnDangerSm = 'btn-danger-sm';
 export const btnPrimarySm = 'btn-primary-sm';
 /** Compact secondary button for toolbars/dense rows. */
 export const btnSm = 'btn-sm';
-/** Square icon-only button (the most repeated button shape in the app). */
+/** Square icon-only button — ONE geometry for the header cluster and toolbars.
+ *  Semantic controls layer colour on top: `${iconBtn} bg-emerald-50 text-emerald-700 …` */
 export const iconBtn = 'icon-btn';
+/** Larger icon button for primary affordances (the collapse chevron). */
+export const iconBtnLg = 'icon-btn-lg';
+/** Neutral icon button on a white panel surface (not the header bar). */
+export const iconBtnPlain = 'icon-btn-plain';
 export const inputCls = 'input';
 /** Native <select> — text-field look with room for the caret. */
 export const selectCls = 'input-select';

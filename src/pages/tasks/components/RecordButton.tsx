@@ -7,6 +7,7 @@ import {
 } from '../services/screenRecorder';
 import { useToast } from './Toast';
 import { Tooltip } from './Tooltip';
+import { iconBtn } from '../ui';
 
 /**
  * Manual screen-recorder control for the board's action cluster.
@@ -14,9 +15,9 @@ import { Tooltip } from './Tooltip';
  * The browser's own picker provides consent; the browser's "Stop sharing" is handled too.
  */
 
-const CLUSTER_BTN =
-  'flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 ' +
-  'text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 transition-colors';
+// Shared header geometry — see `.icon-btn` in src/index.css. Semantic states (mic on,
+// recording) layer colour on top so the header row never mixes heights or radii.
+const CLUSTER_BTN = iconBtn;
 
 const LS_TIER = 'mc.rec.tier';
 const LS_FPS = 'mc.rec.fps';
@@ -133,7 +134,7 @@ export function RecordButton() {
           onClick={() => void finalize()}
           data-feature-id="tasks-record-session"
           aria-label={`Stop recording — ${mmss(elapsed)} elapsed`}
-          className="flex items-center gap-2 px-3 min-h-[40px] rounded-lg bg-rose-50 border border-rose-300 text-rose-700 sm:hover:bg-rose-100 transition-colors"
+          className="flex items-center gap-2 px-3 min-h-[2.5rem] rounded-lg bg-rose-50 border border-rose-300 text-rose-700 sm:hover:bg-rose-100 active:scale-[0.97] transition-all shrink-0"
         >
           <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
           <span className="text-xs font-black font-mono tabular-nums">{mmss(elapsed)}</span>
@@ -153,7 +154,7 @@ export function RecordButton() {
           aria-pressed={withMic}
           aria-label={withMic ? 'Disable microphone' : 'Enable microphone'}
           className={withMic
-            ? 'flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-700 sm:hover:bg-emerald-100 transition-colors'
+            ? `${iconBtn} bg-emerald-50 border-emerald-300 text-emerald-700 sm:hover:bg-emerald-100`
             : CLUSTER_BTN}
         >
           {withMic ? <Mic size={16} /> : <MicOff size={16} />}
