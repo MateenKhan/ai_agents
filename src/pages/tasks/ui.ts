@@ -19,6 +19,9 @@ export const btnGhost = 'btn-ghost';
 export const btnDanger = 'btn-danger';
 /** Tier 3, compact — destructive action in a dense row/toolbar. */
 export const btnDangerSm = 'btn-danger-sm';
+/** Tier 3, icon-only — IRREVERSIBLE actions. Rose ink AT REST so the delete affordance is
+ *  visible while the user is deciding, not revealed on hover. Reversible actions stay neutral. */
+export const iconBtnDanger = 'icon-btn-danger';
 /** Compact PRIMARY button for small inline CTAs (Add/Apply/Custom). Tier 2 → ink. */
 export const btnPrimarySm = 'btn-primary-sm';
 /** Compact secondary button for toolbars/dense rows. */

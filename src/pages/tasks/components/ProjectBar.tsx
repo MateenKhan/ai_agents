@@ -87,7 +87,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
           {name && (
             <p className="text-[11px] text-slate-500 mt-1.5">
               {isUrl ? 'Clones into folder ' : 'Project & folder: '}<span className="font-bold text-accent-600">{name}</span>
-              {onlyDefault && <span className="text-slate-400"> · renames the Default tab</span>}
+              {onlyDefault && <span className="text-slate-500"> · renames the Default tab</span>}
             </p>
           )}
         </div>
@@ -189,7 +189,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
             <button onClick={askDelete} disabled={busy} className={btnDanger} data-feature-id="project-delete">
               <Trash2 size={15} /> Delete project
             </button>
-          ) : <span className="text-[11px] text-slate-400">Default project can't be deleted.</span>}
+          ) : <span className="text-[11px] text-slate-500">Default project can't be deleted.</span>}
           <div className="flex gap-2">
             <button onClick={onClose} className={btnGhost}>Cancel</button>
             <button onClick={save} disabled={busy} className={btnPrimary}>Save</button>
@@ -213,7 +213,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
             >
               <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600">
                 <FolderGit2 className="w-4 h-4 text-accent-600" /> Git repository
-                <span className="text-slate-400 font-bold normal-case tracking-normal truncate max-w-[120px]">· {repoPath ? repoPath.split(/[\\/]/).pop() : 'not set'}</span>
+                <span className="text-slate-500 font-bold normal-case tracking-normal truncate max-w-[120px]">· {repoPath ? repoPath.split(/[\\/]/).pop() : 'not set'}</span>
               </span>
               {gitOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
             </button>
@@ -221,7 +221,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
               <div className="p-3 border-t border-slate-200 space-y-1.5">
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">Local repo path</label>
                 <input value={repoPath} onChange={e => setRepoPath(e.target.value)} placeholder="C:\code\my-repo" disabled={isDefault} className={`${inputCls} font-mono text-xs sm:text-sm disabled:opacity-50`} />
-                <p className="text-[10px] text-slate-400">{isDefault ? 'The Default project is Piranha itself — it has no user repo.' : 'This git repo is the project. Its files + context show in the Context tab; agents work inside it.'}</p>
+                <p className="text-[10px] text-slate-500">{isDefault ? 'The Default project is Piranha itself — it has no user repo.' : 'This git repo is the project. Its files + context show in the Context tab; agents work inside it.'}</p>
               </div>
             )}
           </div>
@@ -240,7 +240,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
               placeholder="Inherit default"
               className={`${inputCls} sm:max-w-[160px]`}
             />
-            <p className="text-[10px] text-slate-400 mt-1">How many agents may run at once for this project. Blank = use the global default (Settings); 0 = unlimited (capped only by CPU/RAM).</p>
+            <p className="text-[10px] text-slate-500 mt-1">How many agents may run at once for this project. Blank = use the global default (Settings); 0 = unlimited (capped only by CPU/RAM).</p>
           </div>
 
           {/* Boards accordion — same swimlane editor as the Board tab, scoped to this project. */}
@@ -253,7 +253,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
             >
               <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600">
                 <Columns className="w-4 h-4 text-accent-600" /> Boards
-                <span className="text-slate-400 font-bold normal-case tracking-normal">· {boardCols.length} lanes</span>
+                <span className="text-slate-500 font-bold normal-case tracking-normal">· {boardCols.length} lanes</span>
               </span>
               {boardsOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
             </button>
@@ -270,7 +270,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
                     <RotateCcw size={13} /> Reset lanes
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-400">Board changes save automatically for this project.</p>
+                <p className="text-[10px] text-slate-500">Board changes save automatically for this project.</p>
               </div>
             )}
           </div>
@@ -322,7 +322,7 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
             <div className="flex flex-col justify-center">
               <div className="flex items-center gap-1.5">
                 <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight whitespace-nowrap">Piranha</h1>
-                <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981] shrink-0" />
+                <div className="w-1 h-1 rounded-full bg-emerald-500 shrink-0" />
               </div>
               <p className="text-micro text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap">Watch the swarm.</p>
             </div>
@@ -335,7 +335,7 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
           >
           <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 min-w-0">
             <FolderGit2 className="w-4 h-4 text-accent-600 shrink-0" /> Projects
-            <span className="flex items-center gap-1 text-slate-400 font-bold normal-case tracking-normal truncate">
+            <span className="flex items-center gap-1 text-slate-500 font-bold normal-case tracking-normal truncate">
               · <span>{activeProject?.emoji || '📁'}</span> {activeProject?.name ?? 'Default'}
             </span>
           </span>

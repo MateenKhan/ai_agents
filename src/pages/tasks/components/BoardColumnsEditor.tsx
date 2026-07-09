@@ -73,13 +73,13 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
                 className="flex-1 min-w-0 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-800 focus:outline-none focus:border-accent-400"
               />
 
-              <span className="hidden sm:inline text-[9px] font-bold text-slate-400 uppercase tracking-tighter shrink-0">
+              <span className="hidden sm:inline text-[9px] font-bold text-slate-500 uppercase tracking-tighter shrink-0">
                 {lane.builtin ? lane.id : 'custom'}
               </span>
 
               <button
                 onClick={() => remove(lane.id)}
-                className="p-1.5 rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors shrink-0"
+                className="p-1.5 rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors shrink-0"
                 title="Remove lane"
               >
                 <Trash2 size={15} />

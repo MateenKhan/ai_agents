@@ -182,7 +182,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
               className="flex-1 flex flex-col gap-3 p-3 overflow-y-auto custom-scrollbar [-webkit-overflow-scrolling:touch]"
             >
               {colTasks.length === 0 && !isDropTarget ? (
-                <div className="flex-1 flex items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-[11px] uppercase font-bold tracking-tight text-center">
+                <div className="flex-1 flex items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl text-slate-500 text-[11px] uppercase font-bold tracking-tight text-center">
                   Empty lane. Drop a task in, or hit + to feed one.
                 </div>
               ) : (

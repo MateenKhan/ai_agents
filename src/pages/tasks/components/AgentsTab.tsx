@@ -8,7 +8,7 @@ import { API_BASE as API } from '../../../apiBase';
 // Same skill map the orchestrator injects into prompts (dependency-free module) — so
 // the UI shows exactly which superpowers each role runs, with no drift.
 import { skillsForRole, SKILL_DESCRIPTIONS } from '../../../../agentic/methodology/superpowers';
-import { btnPrimary, btnPrimarySm, btnGhost, inputCls, selectCls, textareaCls, selectSm } from '../ui';
+import { btnPrimary, btnPrimarySm, btnGhost, inputCls, selectCls, textareaCls, selectSm, iconBtnDanger } from '../ui';
 
 /**
  * Agents tab — edit the pipeline's role config (prompt + model + worktree + enabled),
@@ -181,7 +181,7 @@ export default function AgentsTab() {
         if (/^(tasks|board_settings|logs\.db\.agent_logs)$/.test(tok)) cls = 'text-cyan-700 font-bold';
         else if (/^(SET|INSERT|DELETE|GATE|if)$/.test(tok)) cls = 'text-fuchsia-700 font-bold';
         else if (tok === '→') cls = 'text-emerald-600';
-        else if (/^\/\//.test(tok)) cls = 'text-slate-400 italic';
+        else if (/^\/\//.test(tok)) cls = 'text-slate-500 italic';
         return <span key={j} className={cls}>{tok}</span>;
       })}
     </div>
@@ -270,7 +270,7 @@ export default function AgentsTab() {
                           data-feature-id="agents-pipeline-accordion"
                         >
                           <span className="text-[12px] font-black font-mono text-amber-700">{s.label}</span>
-                          <span className="text-[11px] text-slate-400 truncate">— {s.who}</span>
+                          <span className="text-[11px] text-slate-500 truncate">— {s.who}</span>
                           <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }} className="ml-auto shrink-0 text-slate-400"><ChevronDown size={16} /></motion.span>
                         </button>
                         <AnimatePresence initial={false}>
@@ -381,7 +381,7 @@ export default function AgentsTab() {
                 <div className="ml-auto flex items-center gap-1.5">
                   <button onClick={() => toggle(a)} className={`p-2 rounded-lg border transition-colors ${a.enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`} title={a.enabled ? 'Enabled' : 'Disabled'}><Power size={14} /></button>
                   <button onClick={() => setEditing(a)} className="p-2 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100" title="Edit"><Save size={14} /></button>
-                  {!a.isSystem && <button onClick={() => del(a.role)} className="p-2 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100" title="Delete"><Trash2 size={14} /></button>}
+                  {!a.isSystem && <button onClick={() => del(a.role)} className={iconBtnDanger} title="Delete"><Trash2 size={14} /></button>}
                 </div>
               </div>
               <div className="flex items-center gap-3 text-xs">
@@ -403,7 +403,7 @@ export default function AgentsTab() {
               </div>
               {/* Superpowers — the skills this role leads with (from the shared skill map) */}
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Superpowers</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Superpowers</span>
                 {skillsForRole(a.role).map(s => <SkillChip key={s} name={s} />)}
               </div>
               <p className="text-[11px] text-slate-500 font-mono bg-slate-50 border border-slate-200 rounded-lg p-2 line-clamp-3 whitespace-pre-wrap">{a.promptTemplate}</p>

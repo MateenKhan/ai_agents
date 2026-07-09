@@ -303,7 +303,7 @@ const TasksPage: React.FC = () => {
                       title={`Hide ${t.label} — restore from Settings`}
                       onClick={(e) => { e.stopPropagation(); hideTab(t.id); }}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); hideTab(t.id); } }}
-                      className="flex items-center justify-center min-w-[32px] min-h-control -mr-2 ml-0.5 p-1 rounded text-slate-400 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
+                      className="flex items-center justify-center min-w-[32px] min-h-control -mr-2 ml-0.5 p-1 rounded text-slate-500 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
                     >
                       <X size={12} />
                     </span>
@@ -497,15 +497,15 @@ const TasksPage: React.FC = () => {
                     style={{ animation: 'healStepIn .35s ease both', animationDelay: `${i * 90}ms` }}
                     className={`w-full text-left text-xs rounded-lg px-3 py-2.5 border flex items-start gap-2 transition-colors group ${s.status === 'fixed' ? 'bg-amber-50 border-amber-200 hover:bg-amber-100' : s.status === 'warn' ? 'bg-rose-50 border-rose-200 hover:bg-rose-100' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
                   >
-                    <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${s.status === 'fixed' ? 'bg-amber-500 animate-pulse' : s.status === 'warn' ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                    <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${s.status === 'fixed' ? 'bg-amber-500' : s.status === 'warn' ? 'bg-rose-500' : 'bg-emerald-500'}`} />
                     <div className="flex-1 min-w-0">
                       <div className="font-bold text-slate-700">{s.step}</div>
                       <div className="text-slate-500 mt-0.5">{s.detail}</div>
                     </div>
-                    <span className="text-[10px] text-slate-400 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">logs ›</span>
+                    <span className="text-[10px] text-slate-500 mt-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">logs ›</span>
                   </button>
                 ))}
-                <p className="text-[11px] text-slate-400 pt-1">Swarm restarted — the tasks it reset pick back up in a few seconds.</p>
+                <p className="text-[11px] text-slate-500 pt-1">Swarm restarted — the tasks it reset pick back up in a few seconds.</p>
               </div>
             </Modal>
           )}

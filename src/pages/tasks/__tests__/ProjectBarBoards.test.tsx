@@ -2,6 +2,18 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { ToastProvider } from '../components/Toast';
+import { ConfirmProvider } from '../components/ConfirmProvider';
+
+// ProjectBar fires toasts (delete feedback) and opens a typed confirm before deleting a
+// project, so it needs both providers. Render through this, never bare.
+const renderBar = () => render(
+  <ToastProvider>
+    <ConfirmProvider>
+      <ProjectBar />
+    </ConfirmProvider>
+  </ToastProvider>,
+);
 
 // Mock the projects context so the bar renders without any network/fetch.
 vi.mock('../projectContext', () => ({
@@ -35,7 +47,7 @@ function openEditWithBoards(container: HTMLElement) {
 
 describe('ProjectBar — Boards accordion', () => {
   it('opens the project editor and shows the shared lane editor with default lanes', () => {
-    const { container } = render(<ProjectBar />);
+    const { container } = renderBar();
     openEditWithBoards(container);
     expect(screen.getByText('Swimlanes (4)')).toBeTruthy();
     // Board editor default labels are present.
@@ -48,7 +60,7 @@ describe('ProjectBar — Boards accordion', () => {
     const onEvt = (e: Event) => seen.push((e as CustomEvent).detail?.projectId);
     window.addEventListener(BOARD_COLUMNS_EVENT, onEvt);
 
-    const { container } = render(<ProjectBar />);
+    const { container } = renderBar();
     openEditWithBoards(container);
 
     fireEvent.click(screen.getByText('Add Lane'));
@@ -62,7 +74,7 @@ describe('ProjectBar — Boards accordion', () => {
   });
 
   it('Reset lanes writes the 4 default lanes back', () => {
-    const { container } = render(<ProjectBar />);
+    const { container } = renderBar();
     openEditWithBoards(container);
     fireEvent.click(screen.getByText('Add Lane'));
     expect(stored()).toHaveLength(5);

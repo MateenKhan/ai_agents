@@ -25,7 +25,7 @@ export interface LogConsoleProps {
 
   // ── header ──
   title?: string;
-  /** Pulsing green dot in the header (a stream is live). */
+  /** Green dot in the header (a stream is live). Still, not pulsing: steady state, no motion. */
   live?: boolean;
   /** Optional note rendered under the console body (e.g. the log source line). */
   footer?: React.ReactNode;
@@ -203,7 +203,7 @@ export function LogConsole({
     <div className="flex items-center gap-2 flex-wrap">
       {title && (
         <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-300">
-          {live && <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />}
+          {live && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />}
           {title}
         </span>
       )}

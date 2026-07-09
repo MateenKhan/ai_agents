@@ -181,7 +181,7 @@ export function RecordButton() {
             <div className="fixed inset-0 z-[70]" onClick={() => setPanelOpen(false)} />
             <div className="absolute right-0 top-full mt-2 z-[75] w-64 p-3 rounded-xl border border-slate-200 bg-white shadow-xl space-y-3">
               <div>
-                <label className="eyebrow text-slate-400">Resolution</label>
+                <label className="eyebrow text-slate-500">Resolution</label>
                 <div className="mt-1 grid grid-cols-4 gap-1">
                   {tiers.map(t => (
                     <button
@@ -202,7 +202,7 @@ export function RecordButton() {
               </div>
 
               <div>
-                <label className="eyebrow text-slate-400">Frame rate</label>
+                <label className="eyebrow text-slate-500">Frame rate</label>
                 <div className="mt-1 grid grid-cols-3 gap-1">
                   {FPS_OPTIONS.map(f => (
                     <button

@@ -64,7 +64,7 @@ export function TerminalMonitor({
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Live Stream</span>
             </div>
           </div>
@@ -91,7 +91,7 @@ export function TerminalMonitor({
                 />
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 opacity-20">
-                  <Activity size={32} className="animate-pulse" />
+                  <Activity size={32} />
                   <span className="text-[10px] font-bold uppercase tracking-widest">Waiting for signal...</span>
                 </div>
               )}

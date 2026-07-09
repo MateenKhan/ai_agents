@@ -104,7 +104,7 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
         >
           {f.kind === 'system'
             ? <Terminal size={12} />
-            : <span className={`w-1.5 h-1.5 rounded-full ${f.busy ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />}
+            : <span className={`w-1.5 h-1.5 rounded-full ${f.busy ? 'bg-emerald-500' : 'bg-slate-300'}`} />}
           {f.kind === 'system'
             ? (f.name === '__clone__' ? 'clone' : f.name === '__index__' ? 'index' : 'orchestrator')
             : (f.busy && f.now ? f.now.split(' · ')[0] : f.name)}

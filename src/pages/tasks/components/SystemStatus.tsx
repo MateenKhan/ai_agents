@@ -31,7 +31,7 @@ function look(kind: string) {
     case 'cloning': return { Icon: DownloadCloud, ring: 'text-sky-300', busy: true };
     case 'indexing': return { Icon: Database, ring: 'text-ai-300', busy: true };
     case 'agents': return { Icon: Bot, ring: 'text-emerald-300', busy: true };
-    case 'idle': return { Icon: CheckCircle2, ring: 'text-slate-400', busy: false };
+    case 'idle': return { Icon: CheckCircle2, ring: 'text-slate-500', busy: false };
     default: return { Icon: Activity, ring: 'text-accent-300', busy: true };
   }
 }
@@ -161,11 +161,11 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
             {/* Orchestrator heartbeat line */}
             {orch && (
               <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700/70">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${orch.up ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
+                <span className={`w-2 h-2 rounded-full shrink-0 ${orch.up ? 'bg-emerald-400' : 'bg-rose-500'}`} />
                 <span className="text-[11px] font-bold truncate flex-1">
                   {orch.up ? humanizeStatusMessage(orch.statusLine) || 'The task runner is up and running.' : 'The task runner is offline.'}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                <span className="text-[10px] text-slate-500 font-mono shrink-0">
                   {orch.agentStatus}{typeof orch.ageSec === 'number' ? ` · ${orch.ageSec}s` : ''}
                 </span>
               </div>
@@ -193,7 +193,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Recent events</span>
               <button
                 onClick={() => { setOpen(false); navigate('/tasks/logs'); }}
-                className="ml-auto flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-slate-100 transition-colors"
+                className="ml-auto flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-slate-100 transition-colors"
                 title="Open the Logs tab"
               >
                 <ScrollText size={12} /> Logs
@@ -201,7 +201,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
               {events.length > 0 && (
                 <button
                   onClick={clearEvents}
-                  className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-rose-300 transition-colors"
+                  className="flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-rose-300 transition-colors"
                   title="Delete all events from the feed (logs.db)"
                 >
                   <Trash2 size={12} /> Clear
@@ -258,10 +258,10 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
         <div className="min-w-0 flex-1">
           <div className="text-xs font-bold leading-tight truncate">{primary}</div>
           {activityActive && act.detail && !corrupt && (
-            <div className="text-[10px] text-slate-400 font-mono truncate">{act.detail}</div>
+            <div className="text-[10px] text-slate-500 font-mono truncate">{act.detail}</div>
           )}
           {!activityActive && orch && !corrupt && (
-            <div className={`text-[10px] truncate ${orchDown ? 'text-rose-300' : 'text-slate-400'}`}>
+            <div className={`text-[10px] truncate ${orchDown ? 'text-rose-300' : 'text-slate-500'}`}>
               {orchDown ? `No response for ${orch.ageSec}s` : `Updated ${orch.ageSec}s ago`}
             </div>
           )}

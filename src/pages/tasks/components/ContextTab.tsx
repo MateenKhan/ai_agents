@@ -142,7 +142,7 @@ export default function ContextTab({ activeId }: { activeId: string }) {
           disabled={added}
           data-feature-id="context-add-file"
           title={added ? 'Already in context' : 'Add to context'}
-          className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-colors ${added ? 'text-emerald-500' : 'text-slate-400 hover:text-accent-600 hover:bg-accent-50 sm:opacity-0 sm:group-hover:opacity-100'}`}
+          className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-md transition-colors ${added ? 'text-emerald-500' : 'text-slate-500 hover:text-accent-600 hover:bg-accent-50 sm:opacity-0 sm:group-hover:opacity-100'}`}
         >
           {added ? <Pin size={12} /> : <Plus size={13} />}
         </button>
@@ -215,10 +215,10 @@ export default function ContextTab({ activeId }: { activeId: string }) {
               <div className="p-6 text-center space-y-2">
                 <FolderGit2 size={22} className="mx-auto text-slate-300" />
                 <p className="text-[12px] font-bold text-slate-600">No project loaded</p>
-                <p className="text-[11px] text-slate-400 leading-relaxed">This is Piranha's own repo. Each git repository is one project — open the <span className="font-bold text-accent-600">Projects</span> switcher (top-left) and add/point a project at your git repo to manage its context here.</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">This is Piranha's own repo. Each git repository is one project — open the <span className="font-bold text-accent-600">Projects</span> switcher (top-left) and add/point a project at your git repo to manage its context here.</p>
               </div>
             ) : filteredTree.length ? filteredTree.map(n => renderNode(n)) : (
-              <p className="p-4 text-center text-[11px] text-slate-400">No files found in this project's repo.</p>
+              <p className="p-4 text-center text-[11px] text-slate-500">No files found in this project's repo.</p>
             )}
           </div>
         </div>
@@ -240,9 +240,9 @@ export default function ContextTab({ activeId }: { activeId: string }) {
             <div className="flex-1 overflow-auto custom-scrollbar">
               {preview ? (
                 preview.truncated
-                  ? <p className="p-4 text-[11px] text-slate-400">File too large to preview ({fmt(preview.tokens)} tokens).</p>
+                  ? <p className="p-4 text-[11px] text-slate-500">File too large to preview ({fmt(preview.tokens)} tokens).</p>
                   : <pre className="p-3 text-[11px] leading-relaxed font-mono text-slate-700 whitespace-pre">{preview.content}</pre>
-              ) : <p className="p-4 text-center text-[11px] text-slate-400">Tap a file on the left, then Add it to context.</p>}
+              ) : <p className="p-4 text-center text-[11px] text-slate-500">Tap a file on the left, then Add it to context.</p>}
             </div>
           )}
         </div>
@@ -252,7 +252,7 @@ export default function ContextTab({ activeId }: { activeId: string }) {
           <div className="border border-slate-200 rounded-xl bg-white flex flex-col max-h-[calc(100dvh-260px)]">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200">
               <span className="text-[11px] font-black uppercase tracking-widest text-slate-500">In Memory {stats ? `· ${stats.fileCount}` : ''}</span>
-              <span className="text-[10px] text-slate-400">{stats?.pinnedCount ?? 0} pinned</span>
+              <span className="text-[10px] text-slate-500">{stats?.pinnedCount ?? 0} pinned</span>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5 space-y-1">
               {files.length ? files.map(f => (
@@ -260,14 +260,14 @@ export default function ContextTab({ activeId }: { activeId: string }) {
                   <FileCode size={12} className="text-slate-400 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-[11px] font-semibold text-slate-800 truncate" title={f.path}>{f.path}</div>
-                    <div className="text-[9px] text-slate-400">{fmt(f.tokens)} tok · used {f.useCount}× · {f.addedBy || 'agent'}</div>
+                    <div className="text-[9px] text-slate-500">{fmt(f.tokens)} tok · used {f.useCount}× · {f.addedBy || 'agent'}</div>
                   </div>
-                  <button onClick={() => togglePin(f)} title={f.pinned ? 'Unpin (allow auto-evict)' : 'Pin (never auto-evict)'} className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md ${f.pinned ? 'text-accent-600' : 'text-slate-400 hover:text-accent-600'}`}>
+                  <button onClick={() => togglePin(f)} title={f.pinned ? 'Unpin (allow auto-evict)' : 'Pin (never auto-evict)'} className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md ${f.pinned ? 'text-accent-600' : 'text-slate-500 hover:text-accent-600'}`}>
                     {f.pinned ? <Pin size={12} /> : <PinOff size={12} />}
                   </button>
                   <button onClick={() => remove(f.path)} title="Remove from context" className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600"><X size={12} /></button>
                 </div>
-              )) : <p className="p-4 text-center text-[11px] text-slate-400">Nothing in context. Add files from the explorer, or agents will populate it as they search.</p>}
+              )) : <p className="p-4 text-center text-[11px] text-slate-500">Nothing in context. Add files from the explorer, or agents will populate it as they search.</p>}
             </div>
             {/* Model tier for this budget */}
             <div className="flex items-center gap-2 px-3 py-2 border-t border-slate-200">
@@ -294,10 +294,10 @@ export default function ContextTab({ activeId }: { activeId: string }) {
                   <div key={o.id} className="flex items-center gap-1.5 text-[10px]">
                     <span className={`shrink-0 px-1.5 py-0.5 rounded border font-bold uppercase ${OP_STYLE[o.op] || 'text-slate-600 bg-slate-50 border-slate-200'}`}>{o.op}</span>
                     <span className="flex-1 min-w-0 truncate font-mono text-slate-600" title={o.reason || ''}>{o.path || o.reason}</span>
-                    {o.durationMs != null && <span className="shrink-0 text-slate-400 tabular-nums">{o.durationMs}ms</span>}
+                    {o.durationMs != null && <span className="shrink-0 text-slate-500 tabular-nums">{o.durationMs}ms</span>}
                     <span className="shrink-0 text-slate-300">{o.actor}</span>
                   </div>
-                )) : <p className="p-3 text-center text-[11px] text-slate-400">No memory operations yet.</p>}
+                )) : <p className="p-3 text-center text-[11px] text-slate-500">No memory operations yet.</p>}
               </div>
             )}
           </div>

@@ -122,6 +122,17 @@
            sm:hover:bg-slate-200 sm:hover:text-slate-900 active:scale-[0.97]
            transition-all disabled:opacity-50 inline-flex items-center justify-center shrink-0;
   }
+  /* Tier 3, icon-only — IRREVERSIBLE actions (delete a task/row/agent/token).
+     Rose ink AT REST, not on hover: the delete affordance must be visible at the moment the
+     user is deciding, not revealed after the cursor is already on it. Reversible actions
+     (remove a lane, sweep context, clear a log) stay neutral — if every destructive-sounding
+     icon is red, red stops meaning "you cannot undo this". */
+  .icon-btn-danger {
+    @apply min-h-control min-w-[2.25rem] rounded-lg border border-rose-200 bg-rose-50 text-rose-600
+           sm:hover:bg-rose-600 sm:hover:text-white sm:hover:border-rose-600
+           active:bg-rose-700 active:scale-[0.97] transition-all disabled:opacity-50
+           inline-flex items-center justify-center shrink-0;
+  }
   /* Neutral icon button on a white surface (inside panels/toolbars, not the header bar). */
   .icon-btn-plain {
     @apply min-h-control min-w-[2.25rem] rounded-lg border border-slate-300 bg-white text-slate-600

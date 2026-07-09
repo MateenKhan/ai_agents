@@ -83,10 +83,10 @@ export default function DbBackendTab() {
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex items-center gap-3">
         <Database size={18} className="text-accent-600 shrink-0" />
         <div className="min-w-0">
-          <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Current backend</div>
+          <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Current backend</div>
           <div className="text-sm font-bold text-slate-800 truncate">
             {loading ? 'Loading…' : current ? (
-              <><span className="uppercase">{current.kind}</span> <span className="text-slate-400">·</span> <span className="font-mono text-xs text-slate-600">{current.target}</span></>
+              <><span className="uppercase">{current.kind}</span> <span className="text-slate-500">·</span> <span className="font-mono text-xs text-slate-600">{current.target}</span></>
             ) : 'Unavailable (db-server unreachable)'}
           </div>
         </div>
@@ -122,7 +122,7 @@ export default function DbBackendTab() {
       {kind === 'postgres' && (
         <div className="space-y-3">
           <div>
-            <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">Connection URL</label>
+            <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Connection URL</label>
             <div className="relative mt-1">
               <input
                 type={showUrl ? 'text' : 'password'}
@@ -133,12 +133,12 @@ export default function DbBackendTab() {
                 className={`${inputCls} font-mono text-xs sm:text-sm pr-11`}
               />
               <button type="button" onClick={() => setShowUrl(s => !s)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-400 sm:hover:text-slate-700"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-slate-500 sm:hover:text-slate-700"
                 title={showUrl ? 'Hide' : 'Show'} aria-label={showUrl ? 'Hide URL' : 'Show URL'}>
                 {showUrl ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">Stored encrypted on the server. The saved value is never shown back — the password is masked.</p>
+            <p className="text-[11px] text-slate-500 mt-1">Stored encrypted on the server. The saved value is never shown back — the password is masked.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button onClick={test} disabled={testing || !url.trim()} className={btnGhost}>

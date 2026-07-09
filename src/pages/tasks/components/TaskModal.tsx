@@ -167,7 +167,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
             </select>
             <ChevronDown className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" size={14} />
           </div>
-          {editingTask && <p className="text-[10px] text-slate-400">A task can't be moved between projects here.</p>}
+          {editingTask && <p className="text-[10px] text-slate-500">A task can't be moved between projects here.</p>}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Database, Search, Trash2, Edit2, Plus, ChevronLeft, ChevronRight, X, Save, AlertTriangle, ArrowUp, ArrowDown, PencilLine } from 'lucide-react';
 import { API_BASE as API } from '../../../apiBase';
 import { Modal } from './Modal';
-import { btnDangerSm } from '../ui';
+import { btnDangerSm, iconBtnDanger } from '../ui';
 
 /**
  * DB Browser tab — clean paginated view over the allowlisted SQLite tables
@@ -143,7 +143,7 @@ export default function DbTab() {
       return <span className={`font-bold ${c}`}>{s}</span>;
     }
     if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
-      return <span className="text-slate-600">{s.slice(0, 10)} <span className="text-slate-400">{s.slice(11, 19)}</span></span>;
+      return <span className="text-slate-600">{s.slice(0, 10)} <span className="text-slate-500">{s.slice(11, 19)}</span></span>;
     }
     return s.length > 80 ? s.slice(0, 80) + '…' : s;
   };
@@ -269,7 +269,7 @@ export default function DbTab() {
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={cols.length + 2} className="px-4 py-10 text-center text-sm text-slate-400">No rows{q ? ' match the search' : ''}.</td></tr>
+              <tr><td colSpan={cols.length + 2} className="px-4 py-10 text-center text-sm text-slate-500">No rows{q ? ' match the search' : ''}.</td></tr>
             ) : rows.map((r, ri) => (
               <tr key={r._rowid}
                 className={`border-b border-slate-100 transition-colors ${selected.has(r._rowid) ? 'bg-accent-50/70' : ri % 2 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-accent-50/40`}>
@@ -287,7 +287,7 @@ export default function DbTab() {
                   {confirmDel === r._rowid ? (
                     <button onClick={() => del(r._rowid)} disabled={busy} className={btnDangerSm} title="Confirm delete">Delete</button>
                   ) : (
-                    <button onClick={() => setConfirmDel(r._rowid)} className="p-1.5 text-slate-500 hover:text-rose-600 transition-colors" title="Delete"><Trash2 size={14} /></button>
+                    <button onClick={() => setConfirmDel(r._rowid)} className={iconBtnDanger} title="Delete"><Trash2 size={14} /></button>
                   )}
                 </td>
               </tr>
@@ -336,7 +336,7 @@ export default function DbTab() {
           <div className="space-y-3">
             {cols.map(c => (
               <div key={c.name}>
-                <label className="text-[10px] font-bold uppercase text-slate-500 tracking-wide">{c.name} <span className="text-slate-400">({c.type || 'TEXT'})</span></label>
+                <label className="text-[10px] font-bold uppercase text-slate-500 tracking-wide">{c.name} <span className="text-slate-500">({c.type || 'TEXT'})</span></label>
                 <textarea
                   rows={String(editing[c.name] ?? '').length > 60 ? 3 : 1}
                   value={editing[c.name] ?? ''}

@@ -93,7 +93,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
                 <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                   <Icon size={15} className="text-slate-500" /> {t.label}
                 </span>
-                <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
                   {hidden ? <><EyeOff size={13} /> Hidden</> : <><Eye size={13} className="text-accent-500" /> Shown</>}
                   <input
                     type="checkbox"

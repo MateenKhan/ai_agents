@@ -56,7 +56,7 @@ function OrchestratorToggle() {
       title={`Swarm: ${state.label}`}
       data-feature-id="orchestrator-toggle"
     >
-      <span className={`w-2 h-2 rounded-full shrink-0 ${state.dot} ${up && !paused ? 'animate-pulse' : ''}`} />
+      <span className={`w-2 h-2 rounded-full shrink-0 ${state.dot}`} />
       <span className={`hidden sm:inline text-[11px] font-black uppercase tracking-wide ${state.text}`}>{state.label}</span>
       <button
         onClick={toggle}

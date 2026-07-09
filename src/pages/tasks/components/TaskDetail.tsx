@@ -118,11 +118,11 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                     title="Open this agent's logs"
                     className="flex flex-col items-center gap-1 shrink-0 group focus:outline-none"
                   >
-                    <div className={`relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-transform group-hover:scale-110 ${i < stageIdx ? 'bg-emerald-500 text-white' : i === stageIdx ? 'bg-accent-600 text-white ring-4 ring-accent-100' : 'bg-slate-200 text-slate-400'}`}>
+                    <div className={`relative w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-transform group-hover:scale-110 ${i < stageIdx ? 'bg-emerald-500 text-white' : i === stageIdx ? 'bg-accent-600 text-white ring-4 ring-accent-100' : 'bg-slate-200 text-slate-500'}`}>
                       {i === stageIdx && task.status === 'WORKING' && <span className="absolute -inset-1 rounded-full ring-2 ring-accent-400 animate-ping" />}
                       <span className="relative">{i < stageIdx ? <CheckCircle2 size={13} /> : i + 1}</span>
                     </div>
-                    <span className={`text-[9px] font-semibold group-hover:underline ${i === stageIdx ? 'text-accent-700' : i < stageIdx ? 'text-emerald-600' : 'text-slate-400'}`}>{s.label}</span>
+                    <span className={`text-[9px] font-semibold group-hover:underline ${i === stageIdx ? 'text-accent-700' : i < stageIdx ? 'text-emerald-600' : 'text-slate-500'}`}>{s.label}</span>
                   </button>
                   {i < STAGES.length - 1 && <div className={`flex-1 h-0.5 mx-1 ${i < stageIdx ? 'bg-emerald-400' : 'bg-slate-200'}`} />}
                 </React.Fragment>
@@ -143,7 +143,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
               </button>
               {showPlan
                 ? <div className="px-4 py-4 border-t border-slate-200 min-h-[120px] max-h-[45vh] overflow-y-auto custom-scrollbar text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap bg-accent-50/40">{task.summary}</div>
-                : <div className="px-4 py-2.5 border-t border-slate-100 text-xs text-slate-400 italic truncate">{task.summary.split('\n').find(Boolean)?.slice(0, 90)}…</div>}
+                : <div className="px-4 py-2.5 border-t border-slate-100 text-xs text-slate-500 italic truncate">{task.summary.split('\n').find(Boolean)?.slice(0, 90)}…</div>}
             </div>
           )}
 
@@ -155,7 +155,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
               </button>
               {showDesc
                 ? <div className="px-4 py-4 border-t border-slate-200 min-h-[120px] max-h-[45vh] overflow-y-auto custom-scrollbar text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{task.description}</div>
-                : <div className="px-4 py-2.5 border-t border-slate-100 text-xs text-slate-400 italic truncate">{task.description.split('\n').find(Boolean)?.slice(0, 90)}…</div>}
+                : <div className="px-4 py-2.5 border-t border-slate-100 text-xs text-slate-500 italic truncate">{task.description.split('\n').find(Boolean)?.slice(0, 90)}…</div>}
             </div>
           )}
 
@@ -234,7 +234,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5 max-h-72 overflow-y-auto custom-scrollbar">
                 {logs.map(l => (
                   <p key={l.id} className={`text-[11px] leading-relaxed font-mono ${typeColor[l.type] ?? 'text-slate-600'}`}>
-                    <span className="text-slate-400">{l.timestamp.slice(11, 19)}</span> {l.message}
+                    <span className="text-slate-500">{l.timestamp.slice(11, 19)}</span> {l.message}
                   </p>
                 ))}
               </div>

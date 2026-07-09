@@ -227,7 +227,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                     >
                       <ChevronDown
                         size={18}
-                        className={`mt-0.5 shrink-0 text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+                        className={`mt-0.5 shrink-0 text-slate-500 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
                       />
                       <div className="min-w-0 flex-1">
                       <h3 className="text-base font-bold text-slate-900 leading-snug break-words">{task.title}</h3>

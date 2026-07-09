@@ -116,7 +116,7 @@ export default function CodeSearchTab() {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-bold text-slate-800 truncate">{h.name}</span>
           <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${typeColor[h.type] || typeColor.const}`}>{h.type}</span>
-          <span className="text-[10px] font-mono text-slate-400">{(h.score * 100).toFixed(0)}%</span>
+          <span className="text-[10px] font-mono text-slate-500">{(h.score * 100).toFixed(0)}%</span>
         </div>
         <div className="text-[11px] text-slate-500 font-mono break-all">{h.path}:{h.line}</div>
         {h.signature && <div className="mt-1 text-[11px] text-slate-600 font-mono break-all line-clamp-2">{h.signature}</div>}
@@ -183,7 +183,7 @@ export default function CodeSearchTab() {
       </div>
 
       {mode === 'ask' && (
-        <p className="text-[11px] text-slate-400">
+        <p className="text-[11px] text-slate-500">
           Ask mode runs a Claude agent grounded in the retrieved code (RAG). First call can take ~10–120s.
         </p>
       )}
@@ -195,8 +195,8 @@ export default function CodeSearchTab() {
             <BookOpen size={15} className="text-accent-500 shrink-0" />
             <span className="text-xs font-bold text-slate-700">Project context brief</span>
             {brief?.generatedAt
-              ? <span className="text-[10px] text-slate-400">· {new Date(brief.generatedAt).toLocaleString()}</span>
-              : <span className="text-[10px] text-slate-400">· not generated yet</span>}
+              ? <span className="text-[10px] text-slate-500">· {new Date(brief.generatedAt).toLocaleString()}</span>
+              : <span className="text-[10px] text-slate-500">· not generated yet</span>}
             <ChevronDown size={14} className={`ml-auto text-slate-400 transition-transform ${briefOpen ? 'rotate-180' : ''}`} />
           </button>
           <button
@@ -212,7 +212,7 @@ export default function CodeSearchTab() {
           <div className="px-4 pb-3 pt-1 border-t border-slate-100 text-sm text-slate-800 space-y-1.5">
             {brief?.brief
               ? renderAnswer(brief.brief)
-              : <p className="text-xs text-slate-400 py-2">No brief yet. Click <span className="font-bold">Rebuild</span> to generate one — it's cached in the index and injected into every agent's prompt.</p>}
+              : <p className="text-xs text-slate-500 py-2">No brief yet. Click <span className="font-bold">Rebuild</span> to generate one — it's cached in the index and injected into every agent's prompt.</p>}
           </div>
         )}
       </div>
@@ -234,7 +234,7 @@ export default function CodeSearchTab() {
           </div>
           {sources.length > 0 && (
             <div className="space-y-2">
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sources ({sources.length})</div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">Sources ({sources.length})</div>
               {sources.map((h, i) => <HitRow key={i} h={h} />)}
             </div>
           )}
@@ -244,17 +244,17 @@ export default function CodeSearchTab() {
       {/* Search results */}
       {hits != null && (
         hits.length === 0
-          ? <div className="p-8 text-center text-xs text-slate-400">No matches. Try rephrasing, or rebuild the index if this project was just cloned.</div>
+          ? <div className="p-8 text-center text-xs text-slate-500">No matches. Try rephrasing, or rebuild the index if this project was just cloned.</div>
           : (
             <div className="space-y-2">
-              <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">{hits.length} results</div>
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">{hits.length} results</div>
               {hits.map((h, i) => <HitRow key={i} h={h} />)}
             </div>
           )
       )}
 
       {hits == null && answer == null && !loading && !error && (
-        <div className="p-10 text-center text-xs text-slate-400">
+        <div className="p-10 text-center text-xs text-slate-500">
           Pick a project, type a query, and hit <span className="font-bold">Search</span> for code matches or <span className="font-bold">Ask</span> for an AI answer.
         </div>
       )}

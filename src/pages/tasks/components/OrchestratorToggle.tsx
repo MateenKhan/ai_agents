@@ -59,7 +59,7 @@ export function OrchestratorToggle() {
         data-feature-id="orchestrator-toggle"
         className={`flex items-center gap-1.5 px-2 min-h-[40px] rounded-lg border transition-colors ${state.bg} ${state.text} ${busy ? 'opacity-60 animate-pulse' : ''}`}
       >
-        <span className={`w-2 h-2 rounded-full shrink-0 ${state.dot} ${up && !paused ? 'animate-pulse' : ''}`} />
+        <span className={`w-2 h-2 rounded-full shrink-0 ${state.dot}`} />
         {willPause ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
       </button>
     </Tooltip>

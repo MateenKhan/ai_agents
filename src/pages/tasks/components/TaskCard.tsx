@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { iconBtnDanger } from '../ui';
 import { Play, Pause, Square, RotateCcw, Edit2, Trash2, Link, FileText, User, ArrowRightLeft, Loader2, Clock, AlertCircle } from 'lucide-react';
 import type { Task, Column, TaskControlAction } from '../types';
 import { COLUMNS } from '../types';
@@ -162,7 +163,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               title="Agent working — click for live logs"
               className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-300 hover:bg-emerald-100 transition-colors"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               {task.claimedBy}
             </button>
           ) : (
@@ -262,7 +263,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           <button
             onClick={() => onDelete(task.id)}
             data-feature-id="task-card-delete"
-            className="flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-rose-50 text-rose-600 border border-rose-300 active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors"
+            className={iconBtnDanger}
             title="Delete"
           >
             <Trash2 size={15} />

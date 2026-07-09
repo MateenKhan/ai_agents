@@ -111,7 +111,7 @@ function ToastRow({ t, onDismiss }: { t: Toast; onDismiss: (id: number) => void 
               </div>
             )}
           </div>
-          <button onClick={() => onDismiss(t.id)} aria-label="Dismiss" className="shrink-0 -m-1 p-1 text-slate-400 hover:text-slate-700 rounded-md transition-colors">
+          <button onClick={() => onDismiss(t.id)} aria-label="Dismiss" className="shrink-0 -m-1 p-1 text-slate-500 hover:text-slate-700 rounded-md transition-colors">
             <X size={15} />
           </button>
         </div>

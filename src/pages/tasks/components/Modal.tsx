@@ -56,7 +56,7 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, footer
             aria-label="Close (Esc)"
           >
             <X size={18} />
-            <span className="text-[9px] font-semibold uppercase tracking-wider leading-none text-slate-400">esc</span>
+            <span className="text-[9px] font-semibold uppercase tracking-wider leading-none text-slate-500">esc</span>
           </button>
         </div>
 
