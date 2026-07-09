@@ -137,7 +137,7 @@ export function RecordButton() {
           className="flex items-center gap-2 px-3 min-h-[2.5rem] rounded-lg bg-rose-50 border border-rose-300 text-rose-700 sm:hover:bg-rose-100 active:scale-[0.97] transition-all shrink-0"
         >
           <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
-          <span className="text-xs font-black font-mono tabular-nums">{mmss(elapsed)}</span>
+          <span className="text-xs font-bold font-mono tabular-nums">{mmss(elapsed)}</span>
           <Square size={12} fill="currentColor" />
         </button>
       </Tooltip>

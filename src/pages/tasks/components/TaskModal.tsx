@@ -124,7 +124,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-micro font-bold uppercase text-amber-700 tracking-tight">
+            <label className="text-micro font-semibold uppercase text-amber-700 tracking-tight">
               Definition of Done — required *
             </label>
             <textarea
@@ -207,7 +207,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
 
         {/* Advanced Metadata */}
         <div className="pt-4 border-t border-slate-200 space-y-4">
-          <h3 className="text-micro font-black uppercase text-accent-600 tracking-widest">Advanced</h3>
+          <h3 className="text-micro font-bold uppercase text-accent-600 tracking-widest">Advanced</h3>
 
           <div className="space-y-1.5">
             <label className="eyebrow flex items-center gap-2">

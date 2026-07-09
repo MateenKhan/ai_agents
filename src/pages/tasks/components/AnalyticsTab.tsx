@@ -21,7 +21,7 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
       <p className="eyebrow">{label}</p>
-      <p className="text-2xl font-black text-slate-900 mt-1">{value}</p>
+      <p className="text-2xl font-bold text-slate-900 mt-1">{value}</p>
       {sub && <p className="text-2xs text-slate-500 mt-0.5">{sub}</p>}
     </div>
   );
@@ -209,7 +209,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
               <div key={t.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-slate-900 truncate">{t.title}</span>
-                  <span className="text-micro font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-300 shrink-0">{t.status}</span>
+                  <span className="text-micro font-semibold px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 border border-rose-300 shrink-0">{t.status}</span>
                 </div>
                 <p className="text-2xs text-slate-600 mt-1 leading-relaxed">{why}</p>
                 {t.claimedBy && <p className="text-micro text-slate-500 mt-0.5">last agent: {t.claimedBy}</p>}

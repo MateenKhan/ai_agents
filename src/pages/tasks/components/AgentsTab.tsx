@@ -30,7 +30,7 @@ function SkillChip({ name }: { name: string }) {
   return (
     <span
       title={SKILL_DESCRIPTIONS[name] || 'superpowers skill'}
-      className="inline-flex items-center gap-1 text-micro font-bold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200"
+      className="inline-flex items-center gap-1 text-micro font-semibold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200"
     >
       <Sparkles size={9} /> {name}
     </span>
@@ -247,7 +247,7 @@ export default function AgentsTab() {
             <div className="space-y-5">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-700">Workflow</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-slate-700">Workflow</h4>
                   <span className="text-2xs text-slate-500">click a stage to edit it</span>
                 </div>
                 <WorkflowFlow />
@@ -268,7 +268,7 @@ export default function AgentsTab() {
                           className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left"
                           data-feature-id="agents-pipeline-accordion"
                         >
-                          <span className="text-[12px] font-black font-mono text-amber-700">{s.label}</span>
+                          <span className="text-[12px] font-bold font-mono text-amber-700">{s.label}</span>
                           <span className="text-2xs text-slate-500 truncate">— {s.who}</span>
                           <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }} className="ml-auto shrink-0 text-slate-400"><ChevronDown size={16} /></motion.span>
                         </button>
@@ -301,7 +301,7 @@ export default function AgentsTab() {
                           className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left"
                           data-feature-id="agents-pipeline-accordion"
                         >
-                          <span className="text-[12px] font-black font-mono text-emerald-700">{label}</span>
+                          <span className="text-[12px] font-bold font-mono text-emerald-700">{label}</span>
                           <motion.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }} className="ml-auto shrink-0 text-slate-400"><ChevronDown size={16} /></motion.span>
                         </button>
                         <AnimatePresence initial={false}>
@@ -374,7 +374,7 @@ export default function AgentsTab() {
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 flex items-center justify-center bg-accent-50 border border-accent-200 rounded-lg"><Bot size={18} className="text-accent-600" /></div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900">{a.label || a.role} {a.isSystem ? '' : <span className="text-micro font-black text-accent-600">CUSTOM</span>}</h3>
+                  <h3 className="text-sm font-bold text-slate-900">{a.label || a.role} {a.isSystem ? '' : <span className="text-micro font-bold text-accent-600">CUSTOM</span>}</h3>
                   <p className="text-2xs font-mono text-slate-500">{a.role}</p>
                 </div>
                 <div className="ml-auto flex items-center gap-1.5">
@@ -478,7 +478,7 @@ export default function AgentsTab() {
               <div className="rounded-lg border border-ai-200 bg-ai-50/50 p-3">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <Sparkles size={13} className="text-ai-600" />
-                  <span className="text-micro font-black uppercase tracking-wider text-ai-700">Superpowers skills</span>
+                  <span className="text-micro font-bold uppercase tracking-wider text-ai-700">Superpowers skills</span>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {skillsForRole(editing.role || 'custom').map(s => <SkillChip key={s} name={s} />)}

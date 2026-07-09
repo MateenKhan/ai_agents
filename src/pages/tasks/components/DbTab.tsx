@@ -137,7 +137,7 @@ export default function DbTab() {
     if (v === null || v === undefined) return <span className="text-slate-300 italic">null</span>;
     const s = String(v);
     if (colName === 'status' && STATUS_CLASS[s]) {
-      return <span className={`inline-block px-2 py-0.5 text-micro font-black rounded-full border ${STATUS_CLASS[s]}`}>{s}</span>;
+      return <span className={`inline-block px-2 py-0.5 text-micro font-bold rounded-full border ${STATUS_CLASS[s]}`}>{s}</span>;
     }
     if (colName === 'type' && ['error', 'warning', 'success', 'info'].includes(s)) {
       const c = s === 'error' ? 'text-rose-600' : s === 'warning' ? 'text-amber-600' : s === 'success' ? 'text-emerald-600' : 'text-slate-500';
@@ -224,7 +224,7 @@ export default function DbTab() {
               </button>
               {confirmBulkDel ? (
                 <button onClick={bulkDelete} disabled={busy} data-feature-id="db-bulk-delete-confirm"
-                  className="px-3 min-h-control text-xs font-black bg-rose-600 text-white rounded-lg">
+                  className="px-3 min-h-control text-xs font-bold bg-rose-600 text-white rounded-lg">
                   Delete {selected.size} rows
                 </button>
               ) : (
@@ -256,7 +256,7 @@ export default function DbTab() {
                   key={c.name}
                   onClick={() => toggleSort(c.name)}
                   data-feature-id="db-sort-header"
-                  className={`px-3 py-3 text-2xs font-black uppercase tracking-wide whitespace-nowrap cursor-pointer select-none border-r border-slate-300 transition-colors ${sort?.col === c.name ? 'text-accent-700 bg-accent-100/70' : 'text-slate-700 hover:bg-slate-200/80'}`}
+                  className={`px-3 py-3 text-2xs font-bold uppercase tracking-wide whitespace-nowrap cursor-pointer select-none border-r border-slate-300 transition-colors ${sort?.col === c.name ? 'text-accent-700 bg-accent-100/70' : 'text-slate-700 hover:bg-slate-200/80'}`}
                   title={`Sort by ${c.name}`}
                 >
                   <span className="inline-flex items-center gap-1">
@@ -265,7 +265,7 @@ export default function DbTab() {
                   </span>
                 </th>
               ))}
-              <th className="px-3 py-3 text-2xs font-black uppercase text-slate-700 text-right">Actions</th>
+              <th className="px-3 py-3 text-2xs font-bold uppercase text-slate-700 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>

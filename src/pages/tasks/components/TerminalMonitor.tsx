@@ -57,7 +57,7 @@ export function TerminalMonitor({
             <div className="w-px h-4 bg-white/10 mx-1" />
             <div className="flex items-center gap-2">
               <Terminal className="w-3.5 h-3.5 text-accent-400" />
-              <span className="text-micro font-black uppercase tracking-widest text-slate-300">
+              <span className="text-micro font-bold uppercase tracking-widest text-slate-300">
                 Agent Monitor — {agentName || 'Initializing...'}
               </span>
             </div>
@@ -92,7 +92,7 @@ export function TerminalMonitor({
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 opacity-20">
                   <Activity size={32} />
-                  <span className="text-micro font-bold uppercase tracking-widest">Waiting for signal...</span>
+                  <span className="text-micro font-semibold uppercase tracking-widest">Waiting for signal...</span>
                 </div>
               )}
             </div>

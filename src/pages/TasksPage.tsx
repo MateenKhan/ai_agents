@@ -344,7 +344,7 @@ const TasksPage: React.FC = () => {
                   >
                     <ClipboardCheck size={16} />
                     {reviewQueue.length > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-micro font-black bg-amber-500 text-white rounded-full">{reviewQueue.length}</span>
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-micro font-bold bg-amber-500 text-white rounded-full">{reviewQueue.length}</span>
                     )}
                   </button>
                 </Tooltip>
@@ -383,7 +383,7 @@ const TasksPage: React.FC = () => {
         {error && (
           <div className="m-6 p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between">
             <span className="text-xs font-bold text-rose-600 uppercase tracking-widest">Error: {error}</span>
-            <button onClick={fetchTasks} className="text-micro font-black underline uppercase tracking-tighter text-rose-600">Try again</button>
+            <button onClick={fetchTasks} className="text-micro font-bold underline uppercase tracking-tighter text-rose-600">Try again</button>
           </div>
         )}
 

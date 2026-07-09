@@ -163,7 +163,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
             {orch && (
               <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700/70">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${orch.up ? 'bg-emerald-400' : 'bg-rose-500'}`} />
-                <span className="text-2xs font-bold truncate flex-1">
+                <span className="text-2xs font-semibold truncate flex-1">
                   {orch.up ? humanizeStatusMessage(orch.statusLine) || 'The task runner is up and running.' : 'The task runner is offline.'}
                 </span>
                 <span className="text-micro text-slate-500 font-mono shrink-0">
@@ -182,7 +182,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
                   ['Done', counts.done, 'text-emerald-300'],
                 ] as const).map(([label, val, cls]) => (
                   <div key={label} className="flex flex-col items-center py-2 bg-slate-900/95">
-                    <span className={`text-sm font-black leading-none ${cls}`}>{val ?? 0}</span>
+                    <span className={`text-sm font-bold leading-none ${cls}`}>{val ?? 0}</span>
                     <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold mt-1">{label}</span>
                   </div>
                 ))}

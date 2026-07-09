@@ -58,7 +58,7 @@ function OrchestratorToggle() {
       data-feature-id="orchestrator-toggle"
     >
       <span className={`w-2 h-2 rounded-full shrink-0 ${state.dot}`} />
-      <span className={`hidden sm:inline text-2xs font-black uppercase tracking-wide ${state.text}`}>{state.label}</span>
+      <span className={`hidden sm:inline text-2xs font-bold uppercase tracking-wide ${state.text}`}>{state.label}</span>
       <Tooltip label={willPause ? 'Pause orchestrator' : 'Start orchestrator'}><button
         onClick={toggle}
         disabled={busy}
@@ -91,14 +91,14 @@ export function TasksHeader({ onRefresh, onOpenSettings, onAddTask, onOpenTodos,
           <Tooltip label="Your Review — merged tasks awaiting your approval"><button
             onClick={onOpenTodos}
             data-feature-id="tasks-open-todos"
-            className={`relative flex items-center gap-2 px-3 min-h-control-lg rounded-lg text-xs font-black transition-all active:scale-95 ${todoCount > 0
+            className={`relative flex items-center gap-2 px-3 min-h-control-lg rounded-lg text-xs font-bold transition-all active:scale-95 ${todoCount > 0
               ? 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
               : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
           >
             <ClipboardCheck size={16} />
             <span className="hidden lg:inline">Your Review</span>
             {todoCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 flex items-center justify-center text-micro font-black bg-amber-500 text-white rounded-full">
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 flex items-center justify-center text-micro font-bold bg-amber-500 text-white rounded-full">
                 {todoCount}
               </span>
             )}
@@ -130,7 +130,7 @@ export function TasksHeader({ onRefresh, onOpenSettings, onAddTask, onOpenTodos,
 
           <Tooltip label="New Task"><button
             onClick={onAddTask}
-            className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-black shadow-lg shadow-slate-900/15 transition-all hover:scale-105 active:scale-95"
+            className="flex items-center gap-2 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-lg shadow-slate-900/15 transition-all hover:scale-105 active:scale-95"
           >
             <Plus size={16} strokeWidth={3} />
             <span className="hidden lg:inline">New Task</span>

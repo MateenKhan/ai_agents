@@ -321,7 +321,7 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
             </svg>
             <div className="flex flex-col justify-center">
               <div className="flex items-center gap-1.5">
-                <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight whitespace-nowrap">Piranha</h1>
+                <h1 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">Piranha</h1>
                 <div className="w-1 h-1 rounded-full bg-emerald-500 shrink-0" />
               </div>
               <p className="eyebrow whitespace-nowrap">Watch the swarm.</p>

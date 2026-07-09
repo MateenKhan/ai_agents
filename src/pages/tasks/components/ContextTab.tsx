@@ -189,7 +189,7 @@ function ContextMemory({ activeId }: { activeId: string }) {
             <div className="flex-1 h-2.5 rounded-full bg-slate-200 overflow-hidden">
               <div className={`h-full rounded-full transition-all ${over ? 'bg-rose-500' : gaugePct > 80 ? 'bg-amber-500' : 'bg-accent-500'}`} style={{ width: `${gaugePct}%` }} />
             </div>
-            <span className={`text-2xs font-black tabular-nums ${over ? 'text-rose-600' : 'text-slate-600'}`}>{fmt(stats.totalTokens)}/{fmt(cap)}</span>
+            <span className={`text-2xs font-bold tabular-nums ${over ? 'text-rose-600' : 'text-slate-600'}`}>{fmt(stats.totalTokens)}/{fmt(cap)}</span>
           </div>
         )}
       </div>
@@ -229,7 +229,7 @@ function ContextMemory({ activeId }: { activeId: string }) {
             </button></Tooltip>
             <FileCode size={13} className="text-slate-400 shrink-0" />
             <span className="flex-1 min-w-0 text-xs font-mono text-slate-600 truncate">{preview?.path || 'Select a file to preview'}</span>
-            {preview && <span className="text-micro font-bold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200 shrink-0">{fmt(preview.tokens)} tok</span>}
+            {preview && <span className="text-micro font-semibold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200 shrink-0">{fmt(preview.tokens)} tok</span>}
             {preview && !inContext.has(preview.path) && (
               <button onClick={() => addToContext(preview.path)} className="shrink-0 flex items-center gap-1 text-micro font-bold text-white bg-slate-900 hover:bg-slate-800 px-2 py-1 rounded-md"><Plus size={11} /> Add</button>
             )}

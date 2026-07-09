@@ -143,7 +143,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
             <span className="min-w-0">
               <span className="block text-sm font-semibold text-slate-900">
                 Skip permission prompts
-                {skipPerms && <span className="ml-2 align-middle text-micro font-black uppercase tracking-wider text-rose-700">Dangerous</span>}
+                {skipPerms && <span className="ml-2 align-middle text-micro font-bold uppercase tracking-wider text-rose-700">Dangerous</span>}
               </span>
               <span className="block text-2xs text-slate-600 mt-1 leading-relaxed">
                 Agents edit, delete and commit files without asking. Required for unattended runs —

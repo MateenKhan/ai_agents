@@ -81,17 +81,17 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
         <div className="flex items-start justify-between gap-3 px-4 py-3.5 border-b border-slate-200 bg-slate-50 pt-[max(0.875rem,env(safe-area-inset-top))]">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-micro font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: col?.color ?? '#64748b' }}>
+              <span className="text-micro font-semibold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: col?.color ?? '#64748b' }}>
                 {col?.label ?? task.status}
               </span>
-              <span className="text-micro font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono">{task.id}</span>
+              <span className="text-micro font-semibold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono">{task.id}</span>
               {isPaused && (
-                <span className="flex items-center gap-1 text-micro font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded-full border border-amber-300">
+                <span className="flex items-center gap-1 text-micro font-semibold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded-full border border-amber-300">
                   <Pause size={9} fill="currentColor" /> Paused
                 </span>
               )}
               {isStopping && (
-                <span className="flex items-center gap-1 text-micro font-bold text-rose-700 px-1.5 py-0.5 bg-rose-50 rounded-full border border-rose-300 animate-pulse">
+                <span className="flex items-center gap-1 text-micro font-semibold text-rose-700 px-1.5 py-0.5 bg-rose-50 rounded-full border border-rose-300 animate-pulse">
                   <Square size={9} fill="currentColor" /> Stopping…
                 </span>
               )}
@@ -208,7 +208,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
             <Meta label="Depends on">
               <div className="flex flex-wrap gap-1.5">
                 {task.dependsOn.map(d => (
-                  <span key={d} className="flex items-center gap-1 text-2xs font-bold text-accent-700 px-2 py-1 bg-accent-50 rounded border border-accent-200"><LinkIcon size={10} />{d}</span>
+                  <span key={d} className="flex items-center gap-1 text-2xs font-semibold text-accent-700 px-2 py-1 bg-accent-50 rounded border border-accent-200"><LinkIcon size={10} />{d}</span>
                 ))}
               </div>
             </Meta>

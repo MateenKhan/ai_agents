@@ -116,7 +116,7 @@ export default function CodeSearchTab() {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-bold text-slate-800 truncate">{h.name}</span>
-          <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${typeColor[h.type] || typeColor.const}`}>{h.type}</span>
+          <span className={`text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 border ${typeColor[h.type] || typeColor.const}`}>{h.type}</span>
           <span className="text-micro font-mono text-slate-500">{(h.score * 100).toFixed(0)}%</span>
         </div>
         <div className="text-2xs text-slate-500 font-mono break-all">{h.path}:{h.line}</div>
@@ -176,7 +176,7 @@ export default function CodeSearchTab() {
           onClick={run}
           disabled={loading || !q.trim()}
           data-feature-id="code-search-run"
-          className="flex items-center justify-center gap-2 px-4 h-11 rounded-lg bg-slate-900 text-white text-sm font-black shadow-lg shadow-slate-900/15 hover:bg-slate-800 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
+          className="flex items-center justify-center gap-2 px-4 h-11 rounded-lg bg-slate-900 text-white text-sm font-bold shadow-lg shadow-slate-900/15 hover:bg-slate-800 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shrink-0"
         >
           {loading ? <Loader2 size={16} className="animate-spin" /> : <CornerDownLeft size={16} />}
           {loading ? (mode === 'ask' ? 'Thinking…' : 'Searching…') : (mode === 'ask' ? 'Ask' : 'Search')}
@@ -227,7 +227,7 @@ export default function CodeSearchTab() {
       {answer != null && (
         <div className="space-y-3">
           <div className="p-4 rounded-xl border border-accent-200 bg-accent-50/50">
-            <div className="flex items-center gap-1.5 mb-2 text-micro font-black uppercase tracking-wider text-accent-500">
+            <div className="flex items-center gap-1.5 mb-2 text-micro font-bold uppercase tracking-wider text-accent-500">
               <Sparkles size={12} /> Answer
             </div>
             <div className="text-sm text-slate-800 space-y-1.5">{renderAnswer(answer)}</div>

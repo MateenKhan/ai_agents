@@ -130,30 +130,30 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
             {task.id.slice(-6)}
           </span>
 
-          <span className={`text-micro font-bold px-1.5 py-0.5 rounded border ${pb.class}`}>
+          <span className={`text-micro font-semibold px-1.5 py-0.5 rounded border ${pb.class}`}>
             {pb.label}
           </span>
 
           {isPaused && (
-            <span className="flex items-center gap-1 text-micro font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-300" title="Task paused by you">
+            <span className="flex items-center gap-1 text-micro font-semibold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-300" title="Task paused by you">
               <Pause size={9} fill="currentColor" /> Paused
             </span>
           )}
 
           {isStopping && (
-            <span className="flex items-center gap-1 text-micro font-bold text-rose-700 px-1.5 py-0.5 bg-rose-50 rounded border border-rose-300 animate-pulse" title="Orchestrator is halting this task">
+            <span className="flex items-center gap-1 text-micro font-semibold text-rose-700 px-1.5 py-0.5 bg-rose-50 rounded border border-rose-300 animate-pulse" title="Orchestrator is halting this task">
               <Square size={9} fill="currentColor" /> Stopping…
             </span>
           )}
 
           {task.dependsOn && task.dependsOn.length > 0 && (
-            <span className="flex items-center gap-1 text-micro font-bold text-accent-600 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200" title="Has dependencies">
+            <span className="flex items-center gap-1 text-micro font-semibold text-accent-600 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200" title="Has dependencies">
               <Link size={9} /> {task.dependsOn.length}
             </span>
           )}
 
           {task.files && task.files.length > 0 && (
-            <span className="flex items-center gap-1 text-micro font-bold text-emerald-700 px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-200" title="Associated files">
+            <span className="flex items-center gap-1 text-micro font-semibold text-emerald-700 px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-200" title="Associated files">
               <FileText size={9} /> {task.files.length}
             </span>
           )}
@@ -167,7 +167,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               {task.claimedBy}
             </button></Tooltip>
           ) : (
-            <span className="flex items-center gap-1 text-micro font-bold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200">
+            <span className="flex items-center gap-1 text-micro font-semibold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-200">
               <User size={9} /> {task.claimedBy}
             </span>
           ))}

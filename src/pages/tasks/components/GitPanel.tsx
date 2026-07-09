@@ -876,8 +876,8 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 <>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1"><GitBranch size={13} className="text-slate-500" />{status.branch || '(detached)'}</span>
-                    {!!status.ahead && <span className="text-2xs font-bold text-accent-700 bg-accent-50 border border-accent-200 rounded-lg px-2 py-1">↑ {status.ahead}</span>}
-                    {!!status.behind && <span className="text-2xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">↓ {status.behind}</span>}
+                    {!!status.ahead && <span className="text-2xs font-semibold text-accent-700 bg-accent-50 border border-accent-200 rounded-lg px-2 py-1">↑ {status.ahead}</span>}
+                    {!!status.behind && <span className="text-2xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">↓ {status.behind}</span>}
                   </div>
 
                   {status.clean ? (
@@ -889,7 +889,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         return (
                           <div key={f.path}>
                             <button onClick={() => loadDiff(f.path)} className={`w-full min-h-control-lg flex items-center gap-2.5 text-left px-2.5 py-2 rounded-lg border transition-colors ${active ? 'ring-2 ring-accent-300 ' : ''}${fileColors(f)}`}>
-                              <span className="text-micro font-black uppercase tracking-wider shrink-0 rounded px-1.5 py-0.5 bg-white/60 border border-black/10">{f.label}</span>
+                              <span className="text-micro font-bold uppercase tracking-wider shrink-0 rounded px-1.5 py-0.5 bg-white/60 border border-black/10">{f.label}</span>
                               <span className="font-mono text-xs text-slate-700 break-all min-w-0">{f.path}</span>
                             </button>
                             {active && (
@@ -1075,7 +1075,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
               {activeRun && (
                 <div className="rounded-xl border border-slate-200 overflow-hidden">
                   <div className="px-3 py-2 bg-slate-900 flex items-center gap-2">
-                    <span className="text-2xs font-bold text-white flex items-center gap-1.5">
+                    <span className="text-2xs font-semibold text-white flex items-center gap-1.5">
                       {runRunning ? <span className="w-2 h-2 rounded-full bg-emerald-400" /> : <span className={`w-2 h-2 rounded-full ${runExit === 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} />}
                       {activeRun.which} {runRunning ? 'running…' : `exited (${runExit})`}
                     </span>
@@ -1101,7 +1101,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                       <button key={id} type="button" onClick={() => pickProvider(id)}
                         className={`flex flex-col items-center gap-1.5 py-2.5 rounded-xl border transition-colors ${active ? 'border-accent-500 bg-accent-50 text-accent-700' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'}`}>
                         <P.Icon size={20} className={active ? 'text-accent-600' : 'text-slate-400'} />
-                        <span className="text-2xs font-bold">{P.label}</span>
+                        <span className="text-2xs font-semibold">{P.label}</span>
                       </button>
                     );
                   })}
@@ -1113,7 +1113,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 <button type="button" onClick={() => setSavedTokOpen(o => !o)} className="w-full px-3 py-2.5 flex items-center gap-2 bg-slate-50 hover:bg-slate-100">
                   <KeyRound size={14} className="text-slate-500 shrink-0" />
                   <span className="text-xs font-bold text-slate-700">Saved credentials</span>
-                  <span className="text-micro font-black rounded-full px-2 py-0.5 bg-slate-200 text-slate-600">{patTokens.length + apps.length}</span>
+                  <span className="text-micro font-bold rounded-full px-2 py-0.5 bg-slate-200 text-slate-600">{patTokens.length + apps.length}</span>
                   <ChevronDown size={16} className={`ml-auto text-slate-400 transition-transform ${savedTokOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {savedTokOpen && (
@@ -1127,7 +1127,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-bold text-slate-800 truncate">{t.label}</span>
-                            <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${t.scope === 'readwrite' ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>{t.scope}</span>
+                            <span className={`text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 border ${t.scope === 'readwrite' ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>{t.scope}</span>
                           </div>
                           <div className="text-2xs text-slate-500 font-mono break-all">{t.tokenMasked} · {t.host}</div>
                         </div>
@@ -1166,7 +1166,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                             ) : (
                               <>
                                 <span className="text-sm font-bold text-slate-800 truncate">{app.name}</span>
-                                <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${badge}`}>{app.state}</span>
+                                <span className={`text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 border ${badge}`}>{app.state}</span>
                                 <Tooltip label="Rename / label this app"><button onClick={() => startRename(app.id, app.name || '')} className="ml-auto p-2 min-h-control-lg min-w-control-lg flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Rename app"><Pencil size={15} /></button></Tooltip>
                                 <button onClick={() => deleteGithubApp(app.id)} className={iconBtnDanger} aria-label="Delete app"><Trash2 size={15} /></button>
                               </>
@@ -1202,7 +1202,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 <button type="button" onClick={() => setConnectOpen(o => !o)} className="w-full px-3 py-2.5 bg-slate-900 hover:bg-slate-800 flex items-center gap-2 flex-wrap">
                   <Github size={16} className="text-white shrink-0" />
                   <span className="text-xs font-bold text-white">Connect GitHub (App)</span>
-                  <span className="text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 bg-white/10 text-slate-200 border border-white/10">recommended</span>
+                  <span className="text-[9px] font-bold uppercase tracking-wider rounded px-1.5 py-0.5 bg-white/10 text-slate-200 border border-white/10">recommended</span>
                   <ChevronDown size={16} className={`ml-auto text-slate-300 transition-transform ${connectOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {connectOpen && (
@@ -1243,7 +1243,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         ? ['Contents R', 'Metadata R', 'Pull requests R']
                         : ['Contents R/W', 'Administration R/W', 'Metadata R', 'Pull requests R/W', 'Workflows R/W']
                       ).map(p => (
-                        <span key={p} className="text-micro font-bold rounded px-1.5 py-0.5 bg-white border border-slate-200 text-slate-600">{p}</span>
+                        <span key={p} className="text-micro font-semibold rounded px-1.5 py-0.5 bg-white border border-slate-200 text-slate-600">{p}</span>
                       ))}
                     </div>
                     {appScope === 'readonly' && (
@@ -1393,8 +1393,8 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="eyebrow rounded px-1.5 py-0.5 bg-slate-100 border border-slate-200">{wt.isPlan ? 'PLAN' : 'DEV'}</span>
                     <span className="font-mono text-xs font-bold text-slate-800">{wt.branch || wt.name}</span>
-                    {wt.merged ? <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700">merged</span>
-                      : <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-700">unmerged</span>}
+                    {wt.merged ? <span className="text-[9px] font-bold uppercase rounded px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700">merged</span>
+                      : <span className="text-[9px] font-bold uppercase rounded px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-700">unmerged</span>}
                   </div>
                   {wt.title && <div className="text-sm text-slate-700 break-words">{wt.title}</div>}
                   <div className="text-2xs text-slate-500 flex items-center gap-2 flex-wrap">
@@ -1433,8 +1433,8 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     <div key={c.hash}>
                       <button onClick={() => openCommitDetail(c.hash)} className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${open ? 'ring-2 ring-accent-300 ' : ''}${c.merge ? 'bg-ai-50 border-ai-200' : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-2xs text-accent-600 font-bold">{c.shortHash}</span>
-                          {c.merge && <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-ai-100 border border-ai-200 text-ai-700">merge</span>}
+                          <span className="font-mono text-2xs text-accent-600 font-semibold">{c.shortHash}</span>
+                          {c.merge && <span className="text-[9px] font-bold uppercase rounded px-1.5 py-0.5 bg-ai-100 border border-ai-200 text-ai-700">merge</span>}
                           <span className="text-sm text-slate-800 break-words min-w-0 flex-1">{c.subject}</span>
                         </div>
                         <div className="text-micro text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
@@ -1478,8 +1478,8 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                   <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2 flex-wrap">
                     <Database size={15} className="text-accent-600" />
                     <span className="text-xs font-bold text-slate-700">Active repo</span>
-                    {idx.isDefault && <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-500">host default</span>}
-                    <span className={`ml-auto text-[9px] font-black uppercase rounded px-1.5 py-0.5 border ${idx.rebuilding ? 'bg-amber-50 border-amber-200 text-amber-700' : idx.healthy ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+                    {idx.isDefault && <span className="text-[9px] font-bold uppercase rounded px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-500">host default</span>}
+                    <span className={`ml-auto text-[9px] font-bold uppercase rounded px-1.5 py-0.5 border ${idx.rebuilding ? 'bg-amber-50 border-amber-200 text-amber-700' : idx.healthy ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
                       {idx.rebuilding ? 'remembering…' : idx.healthy ? 'healthy' : 'corrupt'}
                     </span>
                   </div>

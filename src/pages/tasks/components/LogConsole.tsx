@@ -235,7 +235,7 @@ export function LogConsole({
   const toolbar = hasToolbar && (
     <div className="flex items-center gap-2 flex-wrap">
       {title && (
-        <span className="flex items-center gap-2 text-micro font-black uppercase tracking-widest text-slate-300">
+        <span className="flex items-center gap-2 text-micro font-bold uppercase tracking-widest text-slate-300">
           {live && <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />}
           {title}
         </span>

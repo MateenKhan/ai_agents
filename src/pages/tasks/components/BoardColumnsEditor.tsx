@@ -45,7 +45,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
           <button
             onClick={addCustom}
             data-feature-id="board-editor-add-column"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-2xs font-black uppercase tracking-wide bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-2xs font-bold uppercase tracking-wide bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
           >
             <Plus size={14} /> Add Lane
           </button>
@@ -112,7 +112,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
 
       <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
         <p className="text-micro text-slate-500 leading-relaxed">
-          <span className="font-black uppercase tracking-widest block mb-1 text-slate-600">Note</span>
+          <span className="eyebrow block mb-1">Note</span>
           Only the built-in lanes (Todo, Available, In Progress, Blocked, Testing, Done) are driven by the orchestrator. Custom lanes are for organizing — a task moved into one is parked until you move it back to a built-in lane.
         </p>
       </div>

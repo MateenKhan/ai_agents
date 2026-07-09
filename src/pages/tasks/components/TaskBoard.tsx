@@ -49,7 +49,7 @@ function DropIndicator({ color }: { color: string }) {
       className="origin-top"
     >
       <div
-        className="flex items-center justify-center h-14 rounded-xl border-2 border-dashed text-micro font-black uppercase tracking-widest"
+        className="flex items-center justify-center h-14 rounded-xl border-2 border-dashed text-micro font-bold uppercase tracking-widest"
         style={{ borderColor: color, backgroundColor: withAlpha(color, '1a'), color }}
       >
         Drop here
@@ -157,7 +157,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
                 <h2 className="text-xs font-bold uppercase tracking-widest text-slate-900 truncate">
                   {col.label}
                 </h2>
-                <span className="text-2xs font-black px-2 py-0.5 bg-slate-100 rounded-full text-slate-600 shrink-0">
+                <span className="text-2xs font-bold px-2 py-0.5 bg-slate-100 rounded-full text-slate-600 shrink-0">
                   {colTasks.length}
                 </span>
               </div>

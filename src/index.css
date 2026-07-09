@@ -7,8 +7,18 @@
      matching dev-tool density (Linear/Vercel/GitHub) without touching individual components. */
   html { font-size: 15px; }
   html, body, #root { height: 100%; }
-  /* Body defaults to NORMAL weight. Bold must be earned: if every label is bold, boldness
-     carries no information and the eye finds no entry point. See the weight ramp below. */
+  /* ── The weight ramp ────────────────────────────────────────────────────────
+     Bold must be earned: if every label is bold, boldness carries no information and the
+     eye finds no entry point.
+
+       900  font-black      RESERVED to .eyebrow and .btn-danger. Never written inline.
+       700  font-bold       headings, buttons, emphasised numbers.
+       600  font-semibold   small muted labels — present, not shouting.
+       400  (default)       body copy.
+
+     900 used to appear at 44 inline sites across 41 distinct class strings — a weight that
+     shows up once is decoration, not a system. If you reach for font-black, you want an
+     eyebrow. */
   body { margin: 0; font-family: theme('fontFamily.sans'); font-weight: 400; }
 
   /* ── Focus is a safety feature ──────────────────────────────────────────────
