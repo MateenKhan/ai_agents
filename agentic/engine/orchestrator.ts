@@ -87,7 +87,10 @@ const sysLogFile = () => join(getConfig().paths.logsDir, 'orchestrator.log');
 const log = (taskId: string, msg: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
   const line = `[${new Date().toISOString()}] ${taskId === '__system__' ? '' : `[${taskId}] `}${msg}`;
   try { console.log('[ai]', line); } catch { /* stdout closed */ }
-  try { addAgentLog(taskId, msg, type); } catch { /* logs.db busy */ }
+  // addAgentLog is async: a sync try/catch would NOT catch its rejection, so a transient
+  // logs.db lock would surface as an unhandled rejection (fatal on modern Node). Swallow it
+  // on the promise itself — logging is best-effort and must never take the orchestrator down.
+  addAgentLog(taskId, msg, type).catch(() => { /* logs.db busy */ });
   try { appendFileSync(sysLogFile(), line + '\n'); } catch { /* disk */ }
 };
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -99,7 +102,8 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 let statusLine = 'Starting up…';
 function setStatus(line: string, beat = false): void {
   statusLine = line;
-  if (beat) { try { beatHeartbeat({ statusLine }); } catch { /* logs busy */ } }
+  // beatHeartbeat is async — swallow on the promise (a sync catch misses the rejection).
+  if (beat) beatHeartbeat({ statusLine }).catch(() => { /* logs busy */ });
 }
 
 // ── config-derived knobs ───────────────────────────────────────────────────────
@@ -268,8 +272,11 @@ async function computeSteadyStatus(): Promise<string> {
   return 'Idle — nothing to dispatch';
 }
 
-/** Periodic SQLite integrity check — warns loudly if a board DB is corrupt. */
+/** Periodic SQLite integrity check — warns loudly if a board DB is corrupt.
+ *  SQLite-only: `PRAGMA quick_check` and the raw getTasksDb()/getLogsDb() handles are
+ *  meaningless under Postgres (they would open a stale/empty local .db file), so skip. */
 function dbHealthCheck(logFn: (id: string, m: string, t?: 'info' | 'success' | 'warning' | 'error') => void): void {
+  if (isPostgres()) return;
   for (const [name, conn] of [['tasks.db', getTasksDb()], ['logs.db', getLogsDb()]] as [string, any][]) {
     try {
       const r: any = conn.prepare('PRAGMA quick_check').get();
@@ -877,10 +884,12 @@ async function loop(): Promise<void> {
           setStatus(await computeSteadyStatus()); // steady line unless a transition already set one this tick
         }
         // Beat the human-readable status line OFTEN (~every 9s) so the UI feels live…
-        if (n % 3 === 0) beatHeartbeat({ statusLine });
+        // Awaited so a heartbeat failure lands in this loop's try/catch (logged) rather than
+        // escaping as an unhandled rejection — beatHeartbeat is async since the Store refactor.
+        if (n % 3 === 0) await beatHeartbeat({ statusLine });
         // …and the fuller snapshot less often (~every 60s).
         if (n % 20 === 0) {
-          beatHeartbeat({
+          await beatHeartbeat({
             nextBeatAt: new Date(Date.now() + POLL_MS * 20 + 15000).toISOString(),
             activeAgents: [...agentTaskMap.entries()].map(([a, id]) => `${a}→${id}`),
             circuit: breaker.state, mode: 'headless', statusLine,
