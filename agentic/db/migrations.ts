@@ -18,14 +18,13 @@
 //    statement — NOT wrapped in one big transaction — because a failed ALTER inside
 //    a Postgres transaction would abort the whole block; here a caught failure
 //    leaves the next step unaffected (autocommit per statement).
-//  • IDENTIFIER CASING (Phase 1b caveat): the current schema uses unquoted
-//    camelCase column names (claimedBy, createdAt, …). Postgres folds unquoted
-//    identifiers to lower-case, so on Postgres these columns become claimedby /
-//    createdat. That is internally consistent (queries fold the same way) but the
-//    row-object KEYS returned by pg will be lower-cased — the row→object mappers in
-//    tasks.ts/etc. read camelCase keys. Reconciling that (quoted identifiers or a
-//    key-normalising result mapper) is part of the Phase 1b caller conversion, NOT
-//    this foundation. The tables are created correctly either way.
+//  • IDENTIFIER CASING (RESOLVED): the schema uses unquoted camelCase column names
+//    (claimedBy, createdAt, …). Postgres folds unquoted identifiers to lower-case, so
+//    on Postgres these columns become claimedby / createdat. That is internally
+//    consistent (queries fold the same way), but the row-object KEYS pg returns would
+//    be lower-cased while the row→object mappers in tasks.ts/etc. read camelCase.
+//    Reconciled by a key-normalising result mapper in pgStore, driven by the
+//    ALL_COLUMN_NAMES export below. SQLite preserves declared case and is unaffected.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Store } from './store';
@@ -244,6 +243,7 @@ const LOCKS: Col[] = [
   { name: 'expiresAt', type: 'ts' },
 ];
 
+
 // Additive ALTERs — historically added by migrate() to pre-existing tables. On a
 // fresh DB the columns are already present (in the CREATE TABLE above) so these are
 // caught + ignored; on an OLD SQLite DB run through this list they upgrade it.
@@ -272,6 +272,24 @@ const ADDITIVE: Array<[string, Col]> = [
   ['projects', { name: 'readinessBypass', type: 'bool' }],
   ['agents', { name: 'rescuePromptTemplate', type: 'text' }],
 ];
+
+/**
+ * Every canonical (camelCase) column name in the schema.
+ *
+ * We create + query columns UNQUOTED, so Postgres folds them to lower-case
+ * (`claimedBy` → `claimedby`). That is self-consistent for the SQL itself, but the row
+ * objects pg hands back are keyed by the folded, lower-case name — while every row→object
+ * mapper (tasks.ts, agents.ts, …) reads camelCase. `pgStore` uses this list to map result
+ * keys back to their canonical spelling. SQLite preserves declared case, so it is
+ * unaffected; this is a Postgres-only reconciliation.
+ */
+export const ALL_COLUMN_NAMES: readonly string[] = Array.from(new Set(
+  ([] as Col[]).concat(
+    TASKS, BOARD_SETTINGS, GIT_TOKENS, GIT_TOKEN_ASSIGNMENTS, GITHUB_APPS, PROJECTS,
+    AGENTS, AGENT_META, AGENT_LOGS, AGENT_DB_USAGE, MEMORY, WORKERS, LOCKS,
+    ADDITIVE.map(([, c]) => c),
+  ).map(c => c.name),
+));
 
 /**
  * Run the full schema against any Store (SQLite or Postgres). Idempotent: every

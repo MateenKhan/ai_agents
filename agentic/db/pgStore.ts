@@ -14,6 +14,35 @@
 import { Pool, type PoolClient, type PoolConfig } from 'pg';
 import type { Store } from './store';
 import { toPg } from './store';
+import { ALL_COLUMN_NAMES } from './migrations';
+
+// ── Identifier-case reconciliation (Postgres only) ────────────────────────────
+// Columns are created + queried UNQUOTED, so Postgres folds them to lower-case
+// (`claimedBy` → `claimedby`). The SQL is self-consistent, but pg returns row objects
+// keyed by the folded name, while every row→object mapper reads camelCase. Map the
+// keys back to their canonical spelling on the way out. Keys we don't recognise (SQL
+// aliases like `distance`, snake_case code-index columns) are passed through untouched.
+const CANONICAL_BY_LOWER: ReadonlyMap<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const name of ALL_COLUMN_NAMES) {
+    const lower = name.toLowerCase();
+    // Only remap where folding actually changes the name; ignore ambiguous collisions.
+    if (lower !== name && !m.has(lower)) m.set(lower, name);
+  }
+  return m;
+})();
+
+function normalizeRow<T>(row: any): T {
+  if (!row || typeof row !== 'object') return row as T;
+  let changed = false;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(row)) {
+    const canonical = CANONICAL_BY_LOWER.get(key);
+    if (canonical && canonical !== key) { out[canonical] = row[key]; changed = true; }
+    else out[key] = row[key];
+  }
+  return (changed ? out : row) as T;
+}
 
 export class PgStore implements Store {
   readonly dialect = 'postgres' as const;
@@ -40,12 +69,12 @@ export class PgStore implements Store {
 
   async get<T = any>(sql: string, params: any[] = []): Promise<T | null> {
     const r = await this.q().query(toPg(sql), params);
-    return (r.rows[0] as T) ?? null;
+    return r.rows[0] === undefined ? null : normalizeRow<T>(r.rows[0]);
   }
 
   async all<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     const r = await this.q().query(toPg(sql), params);
-    return r.rows as T[];
+    return r.rows.map(row => normalizeRow<T>(row));
   }
 
   /** Check out ONE pooled client, run BEGIN → fn → COMMIT (ROLLBACK on throw), then
