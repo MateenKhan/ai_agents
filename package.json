@@ -70,7 +70,7 @@
     "db:annotate": "cross-env DB_FILE=local.db tsx db/index.ts annotate",
     "test": "vitest run",
     "test:watch": "vitest",
-    "agents": "kill-port 6951 6952 && concurrently --restart-tries -1 --restart-after 3000 \"pnpm:dev\" \"pnpm:db:server:stable\" \"pnpm:db:orchestrator:stable\" --names \"vite,db,ai\" --prefix-colors \"cyan,magenta,green\"",
+    "agents": "kill-port 6951 6952 && concurrently --restart-tries 5 --restart-after 5000 \"pnpm exec vite\" \"pnpm:db:server:stable\" \"pnpm:db:orchestrator:stable\" --names \"vite,db,ai\" --prefix-colors \"cyan,magenta,green\"",
     "agents:vps": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run agents"
   },
   "dependencies": {

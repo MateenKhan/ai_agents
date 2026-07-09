@@ -8,6 +8,7 @@
 
 import https from 'node:https';
 import http from 'node:http';
+import net from 'node:net';
 import os from 'node:os';
 import { appendFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -155,10 +156,23 @@ function startProbe(): void {
 // it "exited without advancing" — an INFRA fault, not the agent's fault. When we detect it,
 // we pause dispatch, heal the daemon (Layer 1 restarts it; we also spawn as a fallback), and
 // auto-resume the SAME stage once it's back — without burning the task's retry budget.
-const DB_HEALTH_URL = `http://127.0.0.1:${process.env.DB_SERVER_PORT || '6952'}/health`;
+const DB_PORT = parseInt(process.env.DB_SERVER_PORT || '6952', 10);
+const DB_HEALTH_URL = `http://127.0.0.1:${DB_PORT}/health`;
 const dbBreaker = { state: 'closed' as 'closed' | 'open' };
 let dbProbing = false;
 let lastDbSpawnAt = 0;
+
+/** True when SOMETHING is already listening on `port` (even if it isn't answering /health
+ *  yet — e.g. a db-server that is still booting, or one a process supervisor just restarted). */
+function portInUse(port: number): Promise<boolean> {
+  return new Promise(res => {
+    const sock = net.connect({ host: '127.0.0.1', port });
+    const done = (v: boolean) => { try { sock.destroy(); } catch { /* closed */ } res(v); };
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+    sock.setTimeout(1500, () => done(false));
+  });
+}
 
 function probeDbServer(): Promise<boolean> {
   return new Promise(res => {
@@ -169,14 +183,22 @@ function probeDbServer(): Promise<boolean> {
 }
 function dbBreakerAllows(): boolean { return dbBreaker.state !== 'open'; }
 
-/** Fallback heal (Layer 2b): spawn a fresh db-server if the health probe keeps failing.
- *  Rate-limited so we never spawn a storm — if the daemon is merely slow (or Layer-1's
- *  supervisor already respawned it), the duplicate loses the port race and exits harmlessly. */
-function trySpawnDbServer(): void {
-  if (Date.now() - lastDbSpawnAt < 20000) return; // one attempt per ~20s
+/** Fallback heal (Layer 2b): spawn a fresh db-server ONLY when nothing at all is listening.
+ *  A duplicate does NOT "lose the port race harmlessly" — it dies with EADDRINUSE, which can
+ *  push the process supervisor (concurrently --restart-tries) into a restart loop as the two
+ *  healers fight. So we gate on portInUse() and rate-limit to one attempt per ~30s. */
+async function trySpawnDbServer(): Promise<void> {
+  if (Date.now() - lastDbSpawnAt < 30000) return; // one attempt per ~30s
+  // NEVER spawn while something already holds the port. A process supervisor (the `agents`
+  // script runs concurrently with --restart-tries) also resurrects the db-server, and a
+  // booting server binds the port before it answers /health. Spawning here anyway starts a
+  // SECOND db-server that loses the bind, dies with EADDRINUSE, and can push the supervisor
+  // into a restart loop — the two healers fight each other. Only step in when nothing is
+  // listening at all; otherwise just keep probing and let it finish coming up.
+  if (await portInUse(DB_PORT)) return;
   lastDbSpawnAt = Date.now();
   try {
-    log('__system__', '🩹 spawning a fresh db-server (fallback heal)…', 'warning');
+    log('__system__', '🩹 nothing listening on the db port — spawning a fresh db-server (fallback heal)…', 'warning');
     const child = spawn('pnpm run db:server:stable', {
       cwd: process.cwd(), env: { ...process.env }, detached: true, stdio: 'ignore', shell: true,
     });
@@ -201,7 +223,10 @@ function startDbProbe(): void {
       log('__system__', '✅ db-server reachable again — resuming; tasks paused by the outage will retry their stage', 'success');
       return;
     }
-    if (++fails >= 2) trySpawnDbServer(); // give Layer-1's supervisor a beat, then spawn as fallback
+    // give Layer-1's supervisor a beat, then spawn as fallback (only if the port is truly free).
+    // trySpawnDbServer is async now — swallow on the promise so a failure can't become an
+    // unhandled rejection inside this probe loop.
+    if (++fails >= 2) trySpawnDbServer().catch(() => { /* fallback heal is best-effort */ });
     setTimeout(tick, 5000);
   });
   tick();
@@ -422,7 +447,6 @@ async function escalateToArchitect(task: Task, note: string): Promise<void> {
 }
 
 // ── periodic architect triage pass ────────────────────────────────────────────
-const DB_PORT = process.env.DB_SERVER_PORT || '6952';
 function triagePromptFor(pid: string, tasks: Task[]): string {
   const rows = tasks.map(x => {
     const age = x.started ? `${Math.round((Date.now() - Date.parse(x.started)) / 60000)}min at stage` : 'waiting to be picked up';
