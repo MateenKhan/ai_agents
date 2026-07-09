@@ -8,6 +8,7 @@ import { TAB_META, loadHiddenTabs, saveHiddenTabs, type TabId } from './tasks/ta
 import { useTasks } from './tasks/hooks/useTasks';
 import { OrchestratorToggle } from './tasks/components/OrchestratorToggle';
 import { Tooltip } from './tasks/components/Tooltip';
+import { RecordButton } from './tasks/components/RecordButton';
 import { TaskBoard } from './tasks/components/TaskBoard';
 import { HumanTodos } from './tasks/components/HumanTodos';
 import { Modal } from './tasks/components/Modal';
@@ -324,6 +325,7 @@ const TasksPage: React.FC = () => {
             {actionsOpen && (
               <div className="flex items-center gap-1">
                 <OrchestratorToggle />
+                <RecordButton />
                 <Tooltip label={`Human Review${reviewQueue.length ? ` — ${reviewQueue.length} awaiting` : ''}`}>
                   <button
                     onClick={() => setTodosOpen(true)}

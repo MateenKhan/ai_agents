@@ -21,7 +21,7 @@ describe('tab metadata', () => {
   it('Board is first and is NOT closeable; every other tab is closeable', () => {
     expect(TAB_META[0].id).toBe('board');
     expect(TAB_META.find(t => t.id === 'board')!.closeable).toBe(false);
-    expect(CLOSEABLE_TABS).toEqual(['context', 'analytics', 'logs', 'db', 'agents']);
+    expect(CLOSEABLE_TABS).toEqual(['context', 'analytics', 'logs', 'db', 'agents', 'search']);
   });
 });
 
