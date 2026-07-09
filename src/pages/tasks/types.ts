@@ -66,6 +66,6 @@ export const COLUMNS: Column[] = [
   { id: 'AVAILABLE', label: 'Available',   color: '#06b6d4', builtin: true },
   { id: 'WORKING',   label: 'In Progress', color: '#6366f1', builtin: true },
   { id: 'BLOCKED',   label: 'Blocked',     color: '#f43f5e', builtin: true },
-  { id: 'TESTING',   label: 'Testing',     color: '#f59e0b', builtin: true },
+  { id: 'TESTING',   label: 'Review',      color: '#f59e0b', builtin: true },
   { id: 'DONE',      label: 'Done',        color: '#10b981', builtin: true },
 ];

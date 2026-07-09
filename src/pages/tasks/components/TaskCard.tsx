@@ -50,8 +50,10 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
     return () => clearInterval(id);
   }, [agentAlive, task.etcSetAt, task.etcMinutes]);
 
-  const STAGE_LABEL: Record<string, string> = { plan: 'Planning', build: 'Building', qa: 'Testing', merge: 'Merging', merged: 'Merged' };
-  const stageLabel = STAGE_LABEL[task.stage || ''] || 'Working';
+  // One concept, one name: the QA stage is 'QA' (the TESTING lane means awaiting review),
+  // and a stageless WORKING task reads exactly like its lane, 'In Progress'.
+  const STAGE_LABEL: Record<string, string> = { plan: 'Planning', build: 'Building', qa: 'QA', merge: 'Merging', merged: 'Merged' };
+  const stageLabel = STAGE_LABEL[task.stage || ''] || 'In Progress';
 
   const etc = (() => {
     if (!task.etcSetAt || !task.etcMinutes) return null;

@@ -33,7 +33,7 @@ describe('TaskBoard', () => {
 
   it('defaults to all 6 built-in lanes when no columns prop is given', () => {
     render(<TaskBoard {...baseProps()} tasks={[]} />);
-    ['Todo', 'Available', 'In Progress', 'Blocked', 'Testing', 'Done'].forEach(l =>
+    ['Todo', 'Available', 'In Progress', 'Blocked', 'Review', 'Done'].forEach(l =>
       expect(screen.getByText(l)).toBeTruthy());
   });
 

@@ -324,7 +324,7 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
                 <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight whitespace-nowrap">Piranha</h1>
                 <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981] shrink-0" />
               </div>
-              <p className="text-micro text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap">Task Orchestrator</p>
+              <p className="text-micro text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap">Watch the swarm.</p>
             </div>
           </div>
           {/* Accordion header — minimized by default; shows the active project. */}

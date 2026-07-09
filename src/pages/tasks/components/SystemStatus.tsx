@@ -177,7 +177,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
                 {([
                   ['Pending', counts.pending, 'text-slate-300'],
                   ['Working', counts.working, 'text-accent-300'],
-                  ['Testing', counts.testing, 'text-amber-300'],
+                  ['Review', counts.testing, 'text-amber-300'],
                   ['Done', counts.done, 'text-emerald-300'],
                 ] as const).map(([label, val, cls]) => (
                   <div key={label} className="flex flex-col items-center py-2 bg-slate-900/95">

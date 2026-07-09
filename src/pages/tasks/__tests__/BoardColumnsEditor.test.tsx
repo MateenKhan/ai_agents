@@ -87,7 +87,7 @@ describe('BoardColumnsEditor', () => {
     render(<Harness initial={DEFAULT_COLUMNS} />); // missing BLOCKED, TESTING
     const readd = screen.getByText('Re-add built-in lanes').parentElement!;
     expect(within(readd).getByText('Blocked')).toBeTruthy();
-    expect(within(readd).getByText('Testing')).toBeTruthy();
+    expect(within(readd).getByText('Review')).toBeTruthy();
     fireEvent.click(within(readd).getByText('Blocked'));
     expect(labels()).toBe('Todo|Available|In Progress|Done|Blocked');
   });
@@ -96,7 +96,7 @@ describe('BoardColumnsEditor', () => {
     // Full 6-lane catalog → nothing missing.
     const all = DEFAULT_COLUMNS.concat(
       { id: 'BLOCKED', label: 'Blocked', color: '#f43f5e', builtin: true },
-      { id: 'TESTING', label: 'Testing', color: '#f59e0b', builtin: true },
+      { id: 'TESTING', label: 'Review', color: '#f59e0b', builtin: true },
     );
     render(<Harness initial={all} />);
     expect(screen.queryByText('Re-add built-in lanes')).toBeNull();
