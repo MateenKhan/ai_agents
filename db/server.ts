@@ -577,6 +577,32 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     res.end(JSON.stringify(VERSION_INFO)); return;
   }
 
+  // --- Backend: create tables on a Postgres target ("Create tables" button) ---
+  // POST /backend/migrate { url } → open a pgStore to that url, run the portable
+  // migrations (see agentic/db/migrations.ts) to CREATE every table, then close the
+  // pool. Does NOT switch the live datastore (SQLite stays live) — it only prepares
+  // a Postgres DB so a later Phase can point at it. Returns { ok } | { ok:false, error }.
+  if (req.method === 'POST' && req.url === '/backend/migrate') {
+    try {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const url = String(body.url || '').trim();
+      if (!url) { res.statusCode = 400; res.end(JSON.stringify({ ok: false, error: 'url required' })); return; }
+      const { openPgStore } = await import('../agentic/db/pgStore.ts');
+      const { runMigrations: runStoreMigrations } = await import('../agentic/db/migrations.ts');
+      const store = openPgStore(url);
+      try {
+        await runStoreMigrations(store);
+        res.end(JSON.stringify({ ok: true }));
+      } finally {
+        await store.end().catch(() => { /* pool already closing */ });
+      }
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, error: e?.message || String(e) }));
+    }
+    return;
+  }
+
   // --- Spec file API (read-only, specs dir only — inline review context) ---
   if (req.method === 'GET' && req.url?.startsWith('/spec/')) {
     const name = decodeURIComponent(req.url.split('/')[2] || '');
