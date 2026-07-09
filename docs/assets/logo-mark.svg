@@ -1,0 +1,18 @@
+<svg viewBox="0 0 120 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Piranha">
+  <g fill="#FF3B1D">
+    <!-- body: blunt toothy snout on the left (jagged mouth), deep belly -->
+    <path d="M92 38
+             C78 18 46 14 30 33
+             L18 45 L27 50 L18 55 L27 60 L21 66
+             C44 86 80 80 92 62
+             Z"/>
+    <!-- forked tail on the right -->
+    <path d="M90 40 L108 26 L101 50 L108 74 L90 60 Z"/>
+    <!-- dorsal fin -->
+    <path d="M50 21 L63 6 L70 26 Z"/>
+    <!-- lower fin -->
+    <path d="M49 77 L57 90 L64 74 Z"/>
+  </g>
+  <!-- eye -->
+  <circle cx="39" cy="41" r="4.2" fill="#0A0E14"/>
+</svg>

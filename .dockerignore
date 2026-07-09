@@ -1,0 +1,21 @@
+node_modules
+**/node_modules
+dist
+.vite
+coverage
+.worktrees
+**/.worktrees
+.agent_logs
+**/.agent_logs
+*.log
+# Data files — created fresh inside the container (ephemeral demo state).
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+# Cloned per-project repos — not part of the image.
+projects
+# Local env is passed via compose, not baked into the image.
+.env
+.git/COMMIT_EDITMSG

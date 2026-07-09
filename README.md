@@ -1,4 +1,66 @@
-# AI-Agents
+<!-- Repo links below use the slug `airtajal/ai-agents`. After renaming the repo to
+     `piranha`, find-and-replace `airtajal/ai-agents` → `airtajal/piranha`. -->
+
+<p align="center">
+  <img src="docs/assets/logo-mark.svg" width="130" alt="Piranha"/>
+</p>
+
+<h1 align="center">Piranha</h1>
+
+<p align="center"><b>Throw a task in. Watch the swarm.</b></p>
+
+<p align="center">
+  A swarm of AI agents that strips your backlog to the bone — they <b>plan → build → QA</b> in
+  isolated git worktrees, and <b>nothing lands in <code>main</code> without your click</b>.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/stars/airtajal/ai-agents?style=flat&color=FF3B1D" alt="Stars"/>
+  <img src="https://img.shields.io/badge/license-MIT-FF3B1D" alt="MIT"/>
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-0A0E14" alt="Node ≥ 22"/>
+  <img src="https://img.shields.io/badge/PRs-welcome-14B8A6" alt="PRs welcome"/>
+</p>
+
+<p align="center">
+  <a href="#-quick-start"><b>Quick start</b></a> ·
+  <a href="./ROADMAP.md">Roadmap</a> ·
+  <a href="./CONTRIBUTING.md">Contributing</a> ·
+  <a href="./SECURITY.md">Security</a>
+</p>
+
+<!-- HERO GIF — record a ~15s screen capture of a task flowing plan → build → qa → review → merge,
+     drop it at docs/assets/demo.gif, then uncomment the line below. It's the single
+     highest-ROI thing in this README — see ROADMAP.md.
+<p align="center"><img src="docs/assets/demo.gif" width="820" alt="Piranha demo"/></p>
+-->
+<p align="center"><i>▶ demo GIF goes here — the highest-ROI addition to this page. See <a href="./ROADMAP.md">ROADMAP</a>.</i></p>
+
+---
+
+## 🦈 Why Piranha
+
+Most agentic coding tools hand you a **chat** or a **CLI**. Piranha hands you a **Kanban board of
+autonomous agents** with a **hard human-review gate before any merge** and **per-agent worktree
+isolation** — so you can turn many agents loose, unattended, and still never lose control of what
+enters `main`.
+
+| | **Piranha** | OpenHands | Aider |
+| :-- | :--: | :--: | :--: |
+| Visual Kanban board of live agents | ✅ | — | — |
+| Human-approved merge gate | ✅ | — | — |
+| Per-agent git worktree isolation | ✅ | — | — |
+| Local / private code embeddings | ✅ | partial | — |
+| Runs unattended (breaker, watchdog, resume) | ✅ | — | — |
+| Self-hosted · Open source (MIT) | ✅ | ✅ | ✅ |
+
+### The bite — four things nobody else pairs
+
+- 🩸 **Human-gated merge** — nothing touches `main` without your click. QA passes → the task parks in review → you preview the branch → you approve. The orchestrator is the *only* thing that merges.
+- 🔒 **Local embeddings** — your code never leaves your machine. A per-project semantic index runs **on-device** (`@huggingface/transformers`); no cloud upload.
+- 🧠 **Shared context memory** — agents remember instead of re-reading. An LRU context cache + your pins, **auto-synced to disk on every merge**, so each agent inherits a curated project context instead of cold-starting.
+- 🐟 **Worktree isolation** — every agent works in its own git worktree. Parallel tasks never collide; one merge writer keeps the tree sane.
+
+---
 
 A Jira-like Kanban board that drives `claude` CLI agents through a **plan → build → qa → merge** pipeline in isolated git worktrees. You write tasks (or paste a chat message that's decomposed into tasks); an orchestrator dispatches headless Claude agents to work them, gates each merge behind a human review, and keeps the whole thing running unattended — surviving API outages, stalls, and restarts.
 
@@ -18,7 +80,21 @@ Three processes run together (`pnpm run agents` starts all three):
 - **Code index**: a per-project code-embedding index built with `@huggingface/transformers` over the project's repo, queried via `POST /search` for semantic code retrieval.
 - Databases (`tasks.db`, `logs.db`, and per-project code index files like `local.db` / `index-<project>.db`) are created on first boot under `db/`.
 
-## Quick start
+## 🚀 Quick start
+
+### One command (Docker) — recommended
+
+Only prerequisite: **Docker** and an **Anthropic API key**. Everything else (Node 22, pnpm, the `claude` CLI, git) is baked into the image.
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... docker compose up
+```
+
+Open **http://localhost:6951**. That's it — all three processes boot together.
+
+> Ports are published to `127.0.0.1` only, so the unauthenticated API isn't exposed to your LAN. To have agents work on **your** repo instead of the demo repo, uncomment the `volumes:` block in [`docker-compose.yml`](./docker-compose.yml) and add a project in the UI pointing at the mounted path. (Container state is ephemeral — great for a test drive; run from source for persistent boards.)
+
+### From source
 
 Requirements: **Node ≥ 22** (uses the built-in `node:sqlite`), **pnpm**, and the `claude` CLI on your PATH (set `CLAUDE_BIN` to override).
 
@@ -51,6 +127,9 @@ Per-project git management, all backed by the db-server's `/git/*` routes:
 
 ### Code index
 `@huggingface/transformers` embeddings over the project repo. Build/update from the CLI (`pnpm run db:build` / `db:update` / `db:ensure`) or from the UI (build / heal / **retarget** to a cloned repo). The index auto-heals: on corruption the db-server rebuilds it and pauses `/search` until it's ready.
+
+### Context memory
+Per-project working memory — the files agents currently hold in context. Modeled as a cache: agent-added files are LRU entries (evicted by staleness/size), your files are **pins** (never auto-evicted). It **reconciles against disk on every merge** (files deleted/renamed by the merge are dropped), plus a manual **Sweep** to age out stale entries and enforce the token budget.
 
 ### Task lifecycle controls
 Per task: **start / pause / resume / stop** (stop kills any live agent and parks the task). Globally: **pause / start** the orchestrator — paused keeps it alive (heartbeat + watchdog still enforce stops, stalls, and lease reclaim) but stops handing out new work.
@@ -106,6 +185,21 @@ API responses — but the API can still *use* them, so keep the port private.
 
 Before exposing it on a LAN/VPS (`HOST=0.0.0.0`), or reporting a vulnerability, read
 **[SECURITY.md](./SECURITY.md)**.
+
+## Limitations & future scope
+
+- **Anthropic-only (today).** Agents run through the `claude` CLI, so the model provider is currently Claude. This is a deliberate v0 constraint, not a design lock-in — the agent runner ([`agentic/engine/runner.ts`](./agentic/engine/runner.ts)) is the single seam that spawns the CLI.
+  **Future scope:** a model-agnostic adapter behind that seam (OpenAI / Gemini / local Ollama), selectable per agent role — widening the tool to any team regardless of which model they pay for. Tracked in [ROADMAP.md](./ROADMAP.md).
+- **Single-user / local.** No multi-user auth or shared cloud board yet. See [SECURITY.md](./SECURITY.md) before exposing it beyond loopback.
+- **Self-hosted control plane.** You run it on your machine or your own VPS with your own API key. An optional hosted control plane (session-/seat-based, on a VPS) is on the roadmap — the code stays MIT; hosting would be a convenience layer, never a paywall on the core.
+
+See the full plan in **[ROADMAP.md](./ROADMAP.md)**.
+
+## Contributing
+
+Contributions welcome — start with **[CONTRIBUTING.md](./CONTRIBUTING.md)** and the
+[`good first issue`](https://github.com/airtajal/ai-agents/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+label. By participating you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## License
 

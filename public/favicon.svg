@@ -1,0 +1,11 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Piranha">
+  <rect width="100" height="100" rx="22" fill="#0A0E14"/>
+  <g fill="#FF3B1D">
+    <path d="M18 28 L28 54 L38 28 Z"/>
+    <path d="M36 28 L46 54 L56 28 Z"/>
+    <path d="M54 28 L64 54 L74 28 Z"/>
+    <path d="M27 74 L37 48 L47 74 Z"/>
+    <path d="M45 74 L55 48 L65 74 Z"/>
+    <path d="M63 74 L73 48 L83 74 Z"/>
+  </g>
+</svg>
