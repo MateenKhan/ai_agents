@@ -8,6 +8,7 @@ import { getLogsDb } from '../logs';
 import {
   keepInContext, touchContext, removeFromContext, setPinned, listContext,
   contextStats, enforceCap, sweepContext, reconcileContext, getFileUsage, getContextOps,
+  MAX_FILE_TOKENS,
 } from '../context';
 
 const P = 'proj_test';
@@ -169,5 +170,54 @@ describe('enforceCap idempotence', () => {
   it('is a no-op under cap', async () => {
     await keepInContext({ projectId: P, path: 'a.ts', tokens: 10, addedBy: 'agent-1' });
     expect(await enforceCap(P, 1000)).toEqual([]);
+  });
+});
+
+// ── the budget must actually be a bound ──────────────────────────────────────
+// Before these, "cap" was decorative: enforceCap only evicted pinned=0 rows, and prompts.ts
+// auto-pins every rule file — so auto-pinned files alone could sit over the cap forever. And a
+// single file larger than the whole cap was admitted, then evicted everything else to fit.
+describe('context budget is enforced', () => {
+  it('refuses a single file larger than the per-file ceiling (never persisted)', async () => {
+    const r = await keepInContext({ projectId: P, path: 'huge.ts', tokens: MAX_FILE_TOKENS + 1, addedBy: 'agent-1' });
+    expect(r.file).toBeNull();
+    expect(await listContext(P)).toEqual([]);
+    expect((await contextStats(P)).totalTokens).toBe(0);
+    // and it is recorded, not silently dropped
+    const ops = await getContextOps(P);
+    expect(ops.some(o => o.path === 'huge.ts' && /per-file ceiling/.test(o.reason ?? ''))).toBe(true);
+  });
+
+  it('admits a file exactly at the ceiling', async () => {
+    const r = await keepInContext({ projectId: P, path: 'edge.ts', tokens: MAX_FILE_TOKENS, addedBy: 'agent-1', cap: MAX_FILE_TOKENS });
+    expect(r.file).not.toBeNull();
+    expect(r.file!.path).toBe('edge.ts');
+  });
+
+  it('evicts SYSTEM auto-pins (e.g. rule files) rather than blowing the cap', async () => {
+    // both pinned, but added by the system — previously exempt from eviction forever
+    await keepInContext({ projectId: P, path: 'old-rule.md', tokens: 60, addedBy: 'rules', pinned: true, cap: 100 });
+    await keepInContext({ projectId: P, path: 'new-rule.md', tokens: 60, addedBy: 'rules', pinned: true, cap: 100 });
+    const stats = await contextStats(P, 100);
+    // enforceCap ran inside the second keep and evicted the LRU system pin to get under cap
+    expect(stats.totalTokens).toBeLessThanOrEqual(100);
+    expect((await listContext(P)).map(f => f.path)).toEqual(['new-rule.md']);
+  });
+
+  it('never evicts a USER pin, even when that leaves the context over cap', async () => {
+    // Admitted under a generous budget, then the cap is lowered underneath it. The ceiling
+    // guards ADMISSION; the user-pin rule guards EVICTION. Both must hold at once.
+    await keepInContext({ projectId: P, path: 'mine.md', tokens: 500, addedBy: 'user', pinned: true, cap: 1_000_000 });
+    const evicted = await enforceCap(P, 100);
+    expect(evicted).toEqual([]);                       // user pin survives
+    expect((await listContext(P)).map(f => f.path)).toEqual(['mine.md']);
+    expect((await contextStats(P, 100)).totalTokens).toBe(500); // honestly over cap, not hidden
+  });
+
+  it('prefers evicting unpinned entries before touching system pins', async () => {
+    await keepInContext({ projectId: P, path: 'cache.ts', tokens: 60, addedBy: 'agent-1', cap: 1_000 });
+    await keepInContext({ projectId: P, path: 'rule.md', tokens: 60, addedBy: 'rules', pinned: true, cap: 1_000 });
+    await enforceCap(P, 100);
+    expect((await listContext(P)).map(f => f.path)).toEqual(['rule.md']); // unpinned went first
   });
 });

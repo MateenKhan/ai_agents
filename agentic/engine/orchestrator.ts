@@ -758,6 +758,31 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
 }
 
 // ── watchdog + stall ─────────────────────────────────────────────────────────
+/**
+ * Periodic reconcile (~every 60s). Finds WORKING tasks that were stamped `started` but carry NO
+ * `leaseExpiresAt` and have no live agent here. Such rows are stranded: `dispatchPending` only
+ * picks up `WORKING && !started`, and `watchdog` only reclaims rows that HAVE a lease — so
+ * nobody owns them. (Anything the orchestrator itself claims always gets a lease via claimTask,
+ * so these only come from an outside writer marking work as started.)
+ *
+ * This NEVER starts a task. It only clears the false claim so the next dispatch tick can queue
+ * it through the normal gates — CPU/RAM resource gate, agent pool, per-project concurrency cap,
+ * project readiness — and then claim it atomically. Deciding when work actually begins is the
+ * orchestrator's job alone.
+ */
+async function reconcileStranded(): Promise<void> {
+  for (const task of await allTasks()) {
+    if (task.status !== 'WORKING' || !task.started) continue;
+    if (task.leaseExpiresAt) continue;   // leased → the watchdog owns it
+    if (isTaskRunning(task.id)) continue; // genuinely running on this worker
+    await updateTask(task.id, {
+      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
+      lastError: 'reconciled: marked started with no lease and no agent — requeued for dispatch',
+    });
+    log(task.id, '🩺 reconciled — was marked started with no lease and no agent; requeued for the orchestrator to schedule', 'warning');
+  }
+}
+
 async function watchdog(): Promise<void> {
   const now = Date.now();
   // Cross-machine reclaim: build the set of STALE workers (machines that stopped
@@ -911,8 +936,11 @@ async function loop(): Promise<void> {
         // Awaited so a heartbeat failure lands in this loop's try/catch (logged) rather than
         // escaping as an unhandled rejection — beatHeartbeat is async since the Store refactor.
         if (n % 3 === 0) await beatHeartbeat({ statusLine });
-        // …and the fuller snapshot less often (~every 60s).
+        // …and the fuller snapshot less often (~every 60s), alongside the periodic reconcile
+        // that un-strands tasks an outside writer marked as started. Reconcile only requeues —
+        // dispatchPending below decides IF and WHEN anything actually runs.
         if (n % 20 === 0) {
+          await reconcileStranded();
           await beatHeartbeat({
             nextBeatAt: new Date(Date.now() + POLL_MS * 20 + 15000).toISOString(),
             activeAgents: [...agentTaskMap.entries()].map(([a, id]) => `${a}→${id}`),

@@ -82,13 +82,33 @@ export interface KeepArgs {
   cap?: number;
 }
 
+/** A single file may never occupy more than this share of the budget. Without it, one huge
+ *  file is admitted and then either evicts the entire rest of the context to make room, or —
+ *  if it is pinned — parks itself over the cap permanently. Env: CONTEXT_MAX_FILE_TOKENS. */
+export const MAX_FILE_TOKENS = Math.max(1,
+  parseInt(process.env.CONTEXT_MAX_FILE_TOKENS || '', 10) || Math.floor(DEFAULT_CONTEXT_CAP / 2));
+
 /** Put a file INTO context (or refresh an existing entry). Bumps use-count, records a
- *  `keep` op with timing, then enforces the size cap by evicting LRU unpinned files. */
-export async function keepInContext(a: KeepArgs): Promise<{ file: ContextFile; evicted: ContextFile[] }> {
+ *  `keep` op with timing, then enforces the size cap by evicting LRU entries.
+ *
+ *  A file larger than the per-file ceiling is REJECTED (never inserted) and `file` comes back
+ *  null — admitting it would immediately blow the budget. Because of that ceiling, the entry we
+ *  just wrote can never be the one enforceCap evicts (it is the most-recently-used and is
+ *  smaller than the cap), so reading it back afterwards is safe. */
+export async function keepInContext(a: KeepArgs): Promise<{ file: ContextFile | null; evicted: ContextFile[] }> {
   const t0 = Date.now();
   const s = await store();
   const isUser = a.addedBy === 'user';
   const pin = (a.pinned ?? isUser) ? 1 : 0;
+  const cap = a.cap ?? DEFAULT_CONTEXT_CAP;
+  const ceiling = Math.min(MAX_FILE_TOKENS, cap);
+  if (a.tokens > ceiling) {
+    await logOp(s, { projectId: a.projectId, path: a.path, op: 'evict', actor: a.addedBy,
+      taskId: a.taskId ?? null, tokens: a.tokens, durationMs: Date.now() - t0,
+      reason: `rejected: ${a.tokens} tokens exceeds the per-file ceiling (${ceiling})` });
+    console.warn(`[context] ${a.projectId}: refused ${a.path} — ${a.tokens} tokens > per-file ceiling ${ceiling}`);
+    return { file: null, evicted: [] };
+  }
   await s.run(
     `INSERT INTO context_files (projectId, path, tokens, pinned, addedBy, useCount, addedAt, lastUsedAt)
      VALUES (?,?,?,?,?,1,?,?)
@@ -101,8 +121,11 @@ export async function keepInContext(a: KeepArgs): Promise<{ file: ContextFile; e
   await logOp(s, { projectId: a.projectId, path: a.path, op: 'keep', actor: a.addedBy,
     taskId: a.taskId ?? null, tokens: a.tokens, durationMs: a.durationMs ?? (Date.now() - t0),
     reason: isUser ? 'user pinned' : 'agent kept' });
-  const evicted = await enforceCap(a.projectId, a.cap ?? DEFAULT_CONTEXT_CAP);
-  const file = (await getContextFile(a.projectId, a.path))!;
+  const evicted = await enforceCap(a.projectId, cap);
+  // Safe by construction (see doc comment): the row we just kept is the most-recently-used and
+  // is under the per-file ceiling, so enforceCap cannot have evicted it. Still read it back
+  // rather than asserting — a null here means an invariant broke, not a crash for the caller.
+  const file = await getContextFile(a.projectId, a.path);
   return { file, evicted };
 }
 
@@ -164,24 +187,53 @@ export async function setPinned(projectId: string, path: string, pinned: boolean
   return hit;
 }
 
-/** Evict least-recently-used UNPINNED files until total ≤ cap. Pins are never touched.
- *  Each eviction is logged with the over-cap reason + timing. Returns evicted rows. */
+/**
+ * Evict least-recently-used files until total ≤ cap, in two passes:
+ *   1. unpinned entries (plain LRU cache entries)
+ *   2. SYSTEM auto-pins (addedBy <> 'user') — e.g. the rule files prompts.ts pins on every
+ *      dispatch. These were previously exempt, which meant the "cap" was not a bound at all:
+ *      auto-pinned files alone could exceed it forever and nothing would ever reclaim them.
+ * A USER pin is never evicted — an explicit human decision outranks the budget. If user pins
+ * alone still exceed the cap we log loudly rather than silently pretending we are under it.
+ *
+ * Each eviction is logged with the over-cap reason + timing. Returns evicted rows.
+ */
 export async function enforceCap(projectId: string, cap = DEFAULT_CONTEXT_CAP): Promise<ContextFile[]> {
   const s = await store();
   const evicted: ContextFile[] = [];
   let { totalTokens } = await contextStats(projectId, cap);
   if (totalTokens <= cap) return evicted;
-  // LRU order among unpinned candidates.
-  const candidates = await s.all(
-    `SELECT * FROM context_files WHERE projectId=? AND pinned=0 ORDER BY lastUsedAt ASC`,
-    [projectId]) as any[];
-  for (const f of candidates) {
-    if (totalTokens <= cap) break;
-    const t0 = Date.now();
-    await s.run(`DELETE FROM context_files WHERE projectId=? AND path=?`, [projectId, f.path]);
-    await logOp(s, { projectId, path: f.path, op: 'evict', actor: 'gc', taskId: null, tokens: f.tokens, durationMs: Date.now() - t0, reason: `over cap (${cap})` });
-    totalTokens -= f.tokens;
-    evicted.push(f);
+
+  const evictRows = async (rows: any[], reason: string) => {
+    for (const f of rows) {
+      if (totalTokens <= cap) break;
+      const t0 = Date.now();
+      await s.run(`DELETE FROM context_files WHERE projectId=? AND path=?`, [projectId, f.path]);
+      await logOp(s, { projectId, path: f.path, op: 'evict', actor: 'gc', taskId: null, tokens: f.tokens, durationMs: Date.now() - t0, reason });
+      totalTokens -= f.tokens;
+      evicted.push(f);
+    }
+  };
+
+  // Pass 1 — plain LRU cache entries.
+  await evictRows(
+    await s.all(`SELECT * FROM context_files WHERE projectId=? AND pinned=0 ORDER BY lastUsedAt ASC`, [projectId]) as any[],
+    `over cap (${cap})`,
+  );
+
+  // Pass 2 — system auto-pins (never a user pin). Last resort, so the budget actually holds.
+  if (totalTokens > cap) {
+    await evictRows(
+      await s.all(
+        `SELECT * FROM context_files WHERE projectId=? AND pinned=1 AND (addedBy IS NULL OR addedBy <> 'user') ORDER BY lastUsedAt ASC`,
+        [projectId]) as any[],
+      `over cap (${cap}) — evicting system auto-pin`,
+    );
+  }
+
+  // Only USER pins remain and they still blow the budget. Never evict those silently.
+  if (totalTokens > cap) {
+    console.warn(`[context] project ${projectId}: user-pinned files total ${totalTokens} tokens, over the ${cap} cap. Unpin something.`);
   }
   return evicted;
 }
