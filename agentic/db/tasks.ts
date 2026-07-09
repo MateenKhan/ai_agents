@@ -530,19 +530,29 @@ export async function setProjectMaxConcurrency(id: string, n: number | null): Pr
 // ── Agent defaults ── global fallbacks stored in the DB (board_settings 'agent_defaults'),
 // editable from Settings. A project's own value overrides these; here maxConcurrency 0 =
 // unlimited (resource-gated only), which is the out-of-the-box default.
-export interface AgentDefaults { maxConcurrency: number }
+/** Global agent defaults. `skipPermissions` maps to `--dangerously-skip-permissions`:
+ *  headless `claude -p` blocks on a permission prompt without it, so agents cannot run
+ *  unattended when it is OFF. Defaults to true (the product works out of the box) but is
+ *  now a VISIBLE, owned setting rather than a silent env-var default. */
+export interface AgentDefaults { maxConcurrency: number; skipPermissions: boolean }
 export async function getAgentDefaults(): Promise<AgentDefaults> {
   const s = await store();
   const r = await s.get(`SELECT data FROM board_settings WHERE id = 'agent_defaults'`) as any;
   try {
     const d = r ? JSON.parse(r.data) : {};
-    return { maxConcurrency: Math.max(0, Math.floor(Number(d.maxConcurrency) || 0)) };
-  } catch { return { maxConcurrency: 0 }; }
+    return {
+      maxConcurrency: Math.max(0, Math.floor(Number(d.maxConcurrency) || 0)),
+      skipPermissions: d.skipPermissions !== false, // absent => true (back-compat)
+    };
+  } catch { return { maxConcurrency: 0, skipPermissions: true }; }
 }
 export async function setAgentDefaults(d: Partial<AgentDefaults>): Promise<AgentDefaults> {
   const s = await store();
   const cur = await getAgentDefaults();
-  const next: AgentDefaults = { maxConcurrency: d.maxConcurrency != null ? Math.max(0, Math.floor(d.maxConcurrency)) : cur.maxConcurrency };
+  const next: AgentDefaults = {
+    maxConcurrency: d.maxConcurrency != null ? Math.max(0, Math.floor(d.maxConcurrency)) : cur.maxConcurrency,
+    skipPermissions: d.skipPermissions != null ? !!d.skipPermissions : cur.skipPermissions,
+  };
   await upsert(s, 'board_settings', { id: 'agent_defaults', data: JSON.stringify(next) }, ['id']);
   return next;
 }

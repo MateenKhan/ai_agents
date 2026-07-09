@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Settings, RotateCcw, Eye, EyeOff, Cpu } from 'lucide-react';
+import { Settings, RotateCcw, Eye, EyeOff, Cpu, ShieldAlert } from 'lucide-react';
 import type { Column } from '../types';
 import { DEFAULT_COLUMNS } from '../boardConfig';
 import { TAB_META, type TabId } from '../tabsConfig';
@@ -20,19 +20,27 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
   const [cols, setCols] = useState<Column[]>(columns);
   const closeableTabs = TAB_META.filter(t => t.closeable);
 
-  // Global agent default: max concurrent agents per project ('' = unset → 0/unlimited).
+  // Global agent defaults: max concurrent agents per project ('' = unset → 0/unlimited),
+  // and whether agents may skip Claude's permission prompts.
   const [agentMaxConc, setAgentMaxConc] = useState<string>('');
+  const [skipPerms, setSkipPerms] = useState(true);
   useEffect(() => {
     if (!isOpen) return;
     fetch(`${API_BASE}/agent-defaults`).then(r => r.json())
-      .then(d => setAgentMaxConc(d?.maxConcurrency ? String(d.maxConcurrency) : '0'))
+      .then(d => {
+        setAgentMaxConc(d?.maxConcurrency ? String(d.maxConcurrency) : '0');
+        setSkipPerms(d?.skipPermissions !== false);
+      })
       .catch(() => {});
   }, [isOpen]);
 
   const handleSave = () => {
     fetch(`${API_BASE}/agent-defaults`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ maxConcurrency: Math.max(0, Math.floor(Number(agentMaxConc) || 0)) }),
+      body: JSON.stringify({
+        maxConcurrency: Math.max(0, Math.floor(Number(agentMaxConc) || 0)),
+        skipPermissions: skipPerms,
+      }),
     }).catch(() => {});
     onSave(cols);
     onClose();
@@ -118,6 +126,42 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
           />
         </label>
         <p className="text-[10px] text-slate-500 mt-2">Default cap on how many agents run at once <span className="font-semibold">per project</span> — <span className="font-mono">0 = unlimited</span> (still bounded by CPU/RAM). A project can override this in its editor.</p>
+      </div>
+
+      {/* Agent safety — the single most dangerous setting in the product. It used to be a
+          silent env-var default with no UI at all. Surfaced so the user OWNS it. */}
+      <div className="mb-6">
+        <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2.5">Agent Safety</h3>
+        <label
+          data-feature-id="settings-skip-perms"
+          className={`flex items-start justify-between gap-3 px-3 py-3 rounded-lg border cursor-pointer transition-colors ${
+            skipPerms ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50'
+          }`}
+        >
+          <span className="flex items-start gap-2.5 min-w-0">
+            <ShieldAlert size={16} className={`mt-0.5 shrink-0 ${skipPerms ? 'text-rose-600' : 'text-slate-400'}`} />
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-slate-900">
+                Skip permission prompts
+                {skipPerms && <span className="ml-2 align-middle text-[10px] font-black uppercase tracking-wider text-rose-700">Dangerous</span>}
+              </span>
+              <span className="block text-[11px] text-slate-600 mt-1 leading-relaxed">
+                Agents edit, delete and commit files without asking. Required for unattended runs —
+                turn it off and an agent will stop at its first file write instead.
+              </span>
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={skipPerms}
+            onChange={e => setSkipPerms(e.target.checked)}
+            className="w-5 h-5 shrink-0 mt-0.5 accent-rose-600"
+          />
+        </label>
+        <p className="text-[10px] text-slate-500 mt-2">
+          Passes <span className="font-mono">--dangerously-skip-permissions</span> to each agent. Setting the
+          <span className="font-mono"> CLAUDE_FLAGS</span> environment variable overrides this entirely.
+        </p>
       </div>
 
       <BoardColumnsEditor columns={cols} onChange={setCols} />

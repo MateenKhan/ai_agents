@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle, HelpCircle } from 'lucide-react';
 
@@ -11,6 +11,15 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: ConfirmTone;
+  /**
+   * IRREVERSIBLE ops only (delete a repo/project). The user must type this exact string
+   * before Confirm unlocks, and Enter no longer fires.
+   *
+   * Colour cannot make an action dangerous — friction can. A red dialog that costs one
+   * click trains people to click through red. Reserve this for things that cannot be undone;
+   * putting it on reversible actions (pause, reject) just teaches people to ignore it.
+   */
+  requireType?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -20,16 +29,22 @@ interface ConfirmDialogProps {
  * (thumb-reachable, respects iOS safe area) and a centered modal on desktop.
  * Closes on backdrop click and Esc; confirms on Enter.
  */
-export function ConfirmDialog({ isOpen, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', tone = 'danger', onConfirm, onCancel }: ConfirmDialogProps) {
+export function ConfirmDialog({ isOpen, title, message, confirmLabel = 'Delete', cancelLabel = 'Cancel', tone = 'danger', requireType, onConfirm, onCancel }: ConfirmDialogProps) {
+  const [typed, setTyped] = useState('');
+  const locked = !!requireType && typed.trim() !== requireType;
+
+  useEffect(() => { if (isOpen) setTyped(''); }, [isOpen, requireType]);
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-      else if (e.key === 'Enter') { e.preventDefault(); onConfirm(); }
+      // Enter must NOT fire an irreversible action — typing the name is the whole point.
+      else if (e.key === 'Enter' && !requireType) { e.preventDefault(); onConfirm(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onCancel, onConfirm]);
+  }, [isOpen, onCancel, onConfirm, requireType]);
 
   if (!isOpen) return null;
 
@@ -67,6 +82,25 @@ export function ConfirmDialog({ isOpen, title, message, confirmLabel = 'Delete',
           </div>
         </div>
 
+        {requireType && (
+          <div className="mt-5">
+            <label htmlFor="confirm-type" className="block text-xs text-slate-600">
+              Type <span className="font-mono font-bold text-slate-900 select-all">{requireType}</span> to confirm
+            </label>
+            <input
+              id="confirm-type"
+              autoFocus
+              value={typed}
+              onChange={e => setTyped(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              data-feature-id="tasks-confirm-type"
+              className="mt-1.5 w-full min-h-control-lg rounded-xl border border-rose-300 px-3 py-2 text-sm font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-400"
+              placeholder={requireType}
+            />
+          </div>
+        )}
+
         <div className="flex gap-3 mt-6">
           <button
             data-feature-id="tasks-confirm-cancel"
@@ -78,8 +112,9 @@ export function ConfirmDialog({ isOpen, title, message, confirmLabel = 'Delete',
           <button
             data-feature-id="tasks-confirm-accept"
             onClick={onConfirm}
-            autoFocus
-            className={`flex-1 min-h-[48px] px-4 text-sm font-bold text-white rounded-xl transition-colors shadow-lg ${danger
+            disabled={locked}
+            autoFocus={!requireType}
+            className={`flex-1 min-h-control-lg px-4 text-sm font-bold text-white rounded-xl transition-colors shadow-lg disabled:opacity-40 disabled:cursor-not-allowed ${danger
               ? 'bg-rose-600 active:bg-rose-700 sm:hover:bg-rose-500 shadow-rose-600/25'
               : 'bg-sky-600 active:bg-sky-700 sm:hover:bg-sky-500 shadow-sky-600/25'}`}
           >

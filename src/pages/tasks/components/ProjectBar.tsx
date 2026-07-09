@@ -8,6 +8,7 @@ import { loadColumns, saveColumns, DEFAULT_COLUMNS } from '../boardConfig';
 import { BoardColumnsEditor } from './BoardColumnsEditor';
 import { Modal } from './Modal';
 import { useToast } from './Toast';
+import { useConfirm } from './ConfirmProvider';
 import { btnPrimary, btnGhost, btnDanger, inputCls } from '../ui';
 
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
@@ -103,13 +104,13 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
 function EditProjectModal({ project, onClose }: { project: Project; onClose: () => void }) {
   const { updateProject, deleteProject, setActiveId, refreshProjects } = useProjects();
   const toast = useToast();
+  const confirm = useConfirm();
   const [name, setName] = useState(project.name);
   const [repoPath, setRepoPath] = useState(project.repoPath || '');
   const [emoji, setEmoji] = useState(project.emoji || '');
   // '' = inherit the global default; else a number cap (0 = unlimited).
   const [maxConc, setMaxConc] = useState<string>(project.maxConcurrency == null ? '' : String(project.maxConcurrency));
   const [busy, setBusy] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
   const isDefault = project.id === DEFAULT_PROJECT;
 
@@ -134,6 +135,19 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
     } catch (e: any) {
       setMsg({ kind: 'err', text: e?.message || 'Failed to update project.' });
     } finally { setBusy(false); }
+  };
+
+  /** Type-to-confirm gate. The project NAME must be typed before Confirm unlocks. */
+  const askDelete = async () => {
+    const folder = project.repoPath ? project.repoPath.split(/[\\/]/).pop() : null;
+    const ok = await confirm({
+      title: `Delete "${project.name}"?`,
+      message: `Permanently deletes ${folder ? `the repo folder (${folder}), ` : ''}all of its tasks, and its code index (embeddings). This cannot be undone.`,
+      confirmLabel: 'Delete everything',
+      tone: 'danger',
+      requireType: project.name,
+    });
+    if (ok) await remove();
   };
 
   const remove = async () => {
@@ -169,19 +183,12 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
       footer={
         <div className="flex items-center justify-between gap-2 w-full">
           {!isDefault ? (
-            confirmDelete ? (
-              <div className="flex flex-col gap-1.5">
-                <p className="text-[11px] font-semibold text-rose-600 leading-snug">
-                  Permanently deletes {project.repoPath ? <>the repo folder <span className="font-mono text-[10px]">({project.repoPath.split(/[\\/]/).pop()})</span>, </> : ''}all its tasks, and the code index (embeddings). Cannot be undone.
-                </p>
-                <div className="flex items-center gap-2">
-                  <button onClick={remove} disabled={busy} className={btnDanger}><Trash2 size={15} /> Delete everything</button>
-                  <button onClick={() => setConfirmDelete(false)} className="text-xs font-bold text-slate-500 hover:text-slate-800">Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <button onClick={() => setConfirmDelete(true)} className="min-h-control-lg px-4 text-sm font-bold text-rose-600 border border-rose-200 bg-rose-50 rounded-xl hover:bg-rose-100 flex items-center gap-2"><Trash2 size={15} /> Delete</button>
-            )
+            // Irreversible: wipes the repo folder, every task, and the embeddings. A red
+            // button that costs one click trains people to click through red, so the name
+            // must be typed. Friction lives where the danger is, not in the palette.
+            <button onClick={askDelete} disabled={busy} className={btnDanger} data-feature-id="project-delete">
+              <Trash2 size={15} /> Delete project
+            </button>
           ) : <span className="text-[11px] text-slate-400">Default project can't be deleted.</span>}
           <div className="flex gap-2">
             <button onClick={onClose} className={btnGhost}>Cancel</button>

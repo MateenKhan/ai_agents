@@ -502,10 +502,18 @@ async function triagePass(): Promise<void> {
   const ok = await spawnHeadlessAgent({
     agentName: 'triage', taskId: anchor.id, role: 'architect',
     prompt: triagePromptFor(pid, tasks), model: modelFor('architect', arch), worktree: 'none',
+    skipPermissions: await skipPermissionsEnabled(),
     onExit: (r) => { release(); log('__system__', `🔭 architect triage done (${pid}, ${tasks.length} task(s), ${r.failure})`, r.failure === 'none' ? 'success' : 'warning'); },
   });
   if (ok) { log('__system__', `🔭 architect triage — reviewing ${tasks.length} in-flight task(s) in project ${pid}`, 'info'); setStatus(`Architect triage — reviewing ${tasks.length} task(s) in ${pid}`, true); }
   else release();
+}
+
+/** Does the user allow agents to run with `--dangerously-skip-permissions`?
+ *  Owned in Settings -> Agent safety. Absent => true, so the product works out of the box —
+ *  but it is now a VISIBLE setting rather than a silent env-var default. */
+async function skipPermissionsEnabled(): Promise<boolean> {
+  try { return (await getAgentDefaults()).skipPermissions !== false; } catch { return true; }
 }
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
@@ -526,6 +534,7 @@ async function dispatch(task: Task, route: Routed, ac: AgentConfig, name: string
 
   const ok = await spawnHeadlessAgent({
     agentName: name, taskId: task.id, role: route.role, prompt, model, worktree: wt,
+    skipPermissions: await skipPermissionsEnabled(),
     onExit: (r) => { handleAgentExit(name, task.id, route, r).catch(e => log(task.id, `exit handler error: ${e?.message || e}`, 'error')); },
   });
   if (ok) log(task.id, `🚀 ${route.role} (${model}) as ${name} — stage ${route.stage}, attempt ${attempts}/${maxAttempts()}`, 'success');

@@ -6,6 +6,8 @@ export interface ConfirmOptions {
   title: string;
   message: string;
   confirmLabel?: string;
+  /** Irreversible ops only: user must type this exact string to unlock Confirm. */
+  requireType?: string;
   cancelLabel?: string;
   tone?: ConfirmTone;
 }
@@ -52,6 +54,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             title={state.title}
             message={state.message}
             confirmLabel={state.confirmLabel}
+            requireType={state.requireType}
             cancelLabel={state.cancelLabel}
             tone={state.tone}
             onConfirm={() => settle(true)}

@@ -16,7 +16,18 @@ import { getConfig } from '../runtime-context';
 import { resolveAgentToken, gitAuthEnv, getTask, getProject } from '../db/tasks';
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
-const CLAUDE_FLAGS = (process.env.CLAUDE_FLAGS || '--dangerously-skip-permissions').split(' ').filter(Boolean);
+// An explicit CLAUDE_FLAGS env var still wins (power users / CI). Otherwise the flags are
+// derived per-spawn from the user's OWNED setting — see SpawnOptions.skipPermissions.
+// This used to hard-default to --dangerously-skip-permissions with no UI surface at all:
+// the single most dangerous setting in the product, invisible.
+const CLAUDE_FLAGS_ENV = process.env.CLAUDE_FLAGS
+  ? process.env.CLAUDE_FLAGS.split(' ').filter(Boolean)
+  : null;
+
+function claudeFlags(skipPermissions: boolean): string[] {
+  if (CLAUDE_FLAGS_ENV) return CLAUDE_FLAGS_ENV;
+  return skipPermissions ? ['--dangerously-skip-permissions'] : [];
+}
 const AGENT_TIMEOUT_MS = parseInt(process.env.AGENT_TIMEOUT_MS || String(30 * 60 * 1000));
 
 export interface SpawnOptions {
@@ -26,6 +37,9 @@ export interface SpawnOptions {
   prompt: string;
   model: string;
   worktree: WorktreeMode;
+  /** Pass --dangerously-skip-permissions. Owned by the user via Settings; when false the
+   *  agent will block on the first file write instead of editing without asking. */
+  skipPermissions?: boolean;
   onExit: (result: RunResult) => void;
 }
 
@@ -200,7 +214,7 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   } catch { /* disk */ }
 
   const modelArgs = model ? ['--model', model] : [];
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...modelArgs, ...CLAUDE_FLAGS];
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...modelArgs, ...claudeFlags(opts.skipPermissions !== false)];
 
   // Agents authenticate git with their assigned PAT (or the '*' default) — injected as a
   // per-process Authorization header scoped to the token's host. No token → no git auth env.
