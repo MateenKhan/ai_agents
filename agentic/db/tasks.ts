@@ -267,28 +267,28 @@ export async function claimTask(taskId: string, worker: string, leaseMs: number)
  * granted. An UNEXPIRED lock (any holder) is never re-granted, so it also serialises
  * two merges on the SAME machine (what the old in-memory mergeInFlight() did). A crashed
  * holder's lock is taken over once its expiresAt passes.
- *   - Postgres: INSERT … ON CONFLICT DO UPDATE … WHERE locks.expiresAt < now RETURNING —
- *     one atomic statement; the row is returned only when we actually take the lock.
- *   - SQLite: read-then-write under the single writer lock (no concurrency to race on a
- *     single machine).
+ *
+ * ONE atomic statement on BOTH dialects: the conditional upsert either inserts (no lock
+ * row yet) or updates only when the existing lease has expired; `RETURNING name` yields a
+ * row exactly when we took it. Postgres and SQLite (>= 3.35) both support this form, and
+ * `excluded` is case-insensitive in both.
+ *
+ * This must NOT be a read-then-write: SQLite's writer lock covers a single statement, not
+ * a SELECT+INSERT pair, so two orchestrator processes against the same .db file could both
+ * observe "free" and both take the lock. Two orchestrators on one SQLite file is not
+ * hypothetical — a stale process from a previous run is enough.
  */
 export async function acquireLock(name: string, holder: string, ttlMs: number): Promise<boolean> {
   const s = await store();
   const nowIso = new Date().toISOString();
   const expires = new Date(Date.now() + ttlMs).toISOString();
-  if (s.dialect === 'postgres') {
-    const row = await s.get(
-      `INSERT INTO locks (name, holder, expiresAt) VALUES (?, ?, ?)
-       ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, expiresAt = EXCLUDED.expiresAt
-       WHERE locks.expiresAt < ? RETURNING name`,
-      [name, holder, expires, nowIso],
-    );
-    return !!row;
-  }
-  const cur = await s.get<{ expiresAt: string | null }>(`SELECT expiresAt FROM locks WHERE name = ?`, [name]);
-  if (cur && cur.expiresAt && cur.expiresAt > nowIso) return false; // held & unexpired
-  await s.run(`INSERT OR REPLACE INTO locks (name, holder, expiresAt) VALUES (?, ?, ?)`, [name, holder, expires]);
-  return true;
+  const row = await s.get(
+    `INSERT INTO locks (name, holder, expiresAt) VALUES (?, ?, ?)
+     ON CONFLICT (name) DO UPDATE SET holder = excluded.holder, expiresAt = excluded.expiresAt
+     WHERE locks.expiresAt < ? RETURNING name`,
+    [name, holder, expires, nowIso],
+  );
+  return !!row;
 }
 
 /** Release a lock — only if `holder` still owns it (no-op otherwise). */

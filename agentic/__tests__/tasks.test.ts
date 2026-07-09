@@ -168,6 +168,23 @@ describe('acquireLock / releaseLock (merge lock)', () => {
     await releaseLock('merge:p2', 'hostB');
   });
 
+  it('grants to exactly ONE of many concurrent contenders (no read-then-write race)', async () => {
+    // acquireLock must be a single atomic statement. A SELECT-then-INSERT would let two
+    // orchestrator processes on the same .db file both observe "free" and both win —
+    // which would let two machines merge at once.
+    const contenders = ['w1', 'w2', 'w3', 'w4', 'w5'];
+    const results = await Promise.all(contenders.map(w => acquireLock('merge:race', w, 60_000)));
+    expect(results.filter(Boolean)).toHaveLength(1);
+
+    // and the winner is the one actually recorded as holder
+    const winner = contenders[results.indexOf(true)];
+    await releaseLock('merge:race', 'someone-else');            // wrong holder: no-op
+    expect(await acquireLock('merge:race', 'other', 60_000)).toBe(false); // still held
+    await releaseLock('merge:race', winner);                    // true holder frees it
+    expect(await acquireLock('merge:race', 'other', 60_000)).toBe(true);
+    await releaseLock('merge:race', 'other');
+  });
+
   it('releaseLock only frees the lock for its true holder', async () => {
     expect(await acquireLock('merge:p3', 'hostA', 60_000)).toBe(true);
     await releaseLock('merge:p3', 'hostB'); // wrong holder → no-op

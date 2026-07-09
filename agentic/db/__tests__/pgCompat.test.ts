@@ -118,7 +118,6 @@ describe('regression guard: no SQLite-only SQL in shared write paths', () => {
   // this test fails and the author must route it through upsert() or branch on dialect.
   const ALLOWED: Record<string, number> = {
     'store.ts': Infinity,      // buildUpsert's sqlite branch
-    'tasks.ts': 1,             // acquireLock, inside `if (s.dialect === 'postgres') … else`
     'migrations.ts': 1,        // default-project seed, inside `if (d === 'sqlite')`
   };
 
