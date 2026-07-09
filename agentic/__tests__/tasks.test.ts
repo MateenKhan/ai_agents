@@ -66,63 +66,63 @@ describe('gitAuthEnv', () => {
 
 // ── project + token scoping (DB-backed against the temp DB) ────────────────────
 describe('projects', () => {
-  it('createProject returns a proj_ id and listProjects includes it plus default', () => {
-    const p = createProject({ name: 'Scoped', repoPath: '/tmp/repo' });
+  it('createProject returns a proj_ id and listProjects includes it plus default', async () => {
+    const p = await createProject({ name: 'Scoped', repoPath: '/tmp/repo' });
     expect(p.id).toMatch(/^proj_/);
-    const ids = listProjects().map(x => x.id);
+    const ids = (await listProjects()).map(x => x.id);
     expect(ids).toContain('default'); // seeded in migrate()
     expect(ids).toContain(p.id);
   });
 });
 
 describe('git token project isolation', () => {
-  it('lists a token only under its own project', () => {
-    const p1 = createProject({ name: 'P1' });
-    const p2 = createProject({ name: 'P2' });
-    const added = addGitToken({ label: 'ci', token: 'ghp_iso', scope: 'readonly' }, p1.id);
+  it('lists a token only under its own project', async () => {
+    const p1 = await createProject({ name: 'P1' });
+    const p2 = await createProject({ name: 'P2' });
+    const added = await addGitToken({ label: 'ci', token: 'ghp_iso', scope: 'readonly' }, p1.id);
     expect(added.id).toMatch(/^tok_/);
 
-    const inP1 = listGitTokensRaw(p1.id);
+    const inP1 = await listGitTokensRaw(p1.id);
     expect(inP1.map(t => t.id)).toContain(added.id);
     // raw rows carry the plaintext token (internal getter)
     expect(inP1.find(t => t.id === added.id)!.token).toBe('ghp_iso');
 
-    expect(listGitTokensRaw(p2.id).map(t => t.id)).not.toContain(added.id);
+    expect((await listGitTokensRaw(p2.id)).map(t => t.id)).not.toContain(added.id);
   });
 });
 
 describe('resolveAgentToken', () => {
-  it('returns the explicit assignment for an assigned agent, else the "*" default', () => {
-    const p = createProject({ name: 'Resolve' });
-    const devTok = addGitToken({ label: 'dev', token: 'ghp_dev', scope: 'readwrite' }, p.id);
-    const defTok = addGitToken({ label: 'def', token: 'ghp_def', scope: 'readonly' }, p.id);
+  it('returns the explicit assignment for an assigned agent, else the "*" default', async () => {
+    const p = await createProject({ name: 'Resolve' });
+    const devTok = await addGitToken({ label: 'dev', token: 'ghp_dev', scope: 'readwrite' }, p.id);
+    const defTok = await addGitToken({ label: 'def', token: 'ghp_def', scope: 'readonly' }, p.id);
 
-    setTokenAssignment('dev', devTok.id, p.id);
-    setTokenAssignment('*', defTok.id, p.id);
+    await setTokenAssignment('dev', devTok.id, p.id);
+    await setTokenAssignment('*', defTok.id, p.id);
 
-    expect(resolveAgentToken('dev', p.id)!.id).toBe(devTok.id);   // explicit
-    expect(resolveAgentToken('qa', p.id)!.id).toBe(defTok.id);    // falls back to '*'
+    expect((await resolveAgentToken('dev', p.id))!.id).toBe(devTok.id);   // explicit
+    expect((await resolveAgentToken('qa', p.id))!.id).toBe(defTok.id);    // falls back to '*'
   });
 
-  it('returns null when neither an assignment nor a "*" default exists', () => {
-    const p = createProject({ name: 'NoTokens' });
-    expect(resolveAgentToken('dev', p.id)).toBeNull();
+  it('returns null when neither an assignment nor a "*" default exists', async () => {
+    const p = await createProject({ name: 'NoTokens' });
+    expect(await resolveAgentToken('dev', p.id)).toBeNull();
   });
 });
 
 describe('deleteProject', () => {
-  it('removes the project and its tokens', () => {
-    const p = createProject({ name: 'Doomed' });
-    addGitToken({ label: 'x', token: 'ghp_del', scope: 'readonly' }, p.id);
-    expect(listGitTokensRaw(p.id).length).toBeGreaterThan(0);
+  it('removes the project and its tokens', async () => {
+    const p = await createProject({ name: 'Doomed' });
+    await addGitToken({ label: 'x', token: 'ghp_del', scope: 'readonly' }, p.id);
+    expect((await listGitTokensRaw(p.id)).length).toBeGreaterThan(0);
 
-    deleteProject(p.id);
+    await deleteProject(p.id);
 
-    expect(listGitTokensRaw(p.id)).toEqual([]);
-    expect(listProjects().map(x => x.id)).not.toContain(p.id);
+    expect(await listGitTokensRaw(p.id)).toEqual([]);
+    expect((await listProjects()).map(x => x.id)).not.toContain(p.id);
   });
 
-  it('refuses to delete the default project', () => {
-    expect(() => deleteProject('default')).toThrow();
+  it('refuses to delete the default project', async () => {
+    await expect(deleteProject('default')).rejects.toThrow();
   });
 });

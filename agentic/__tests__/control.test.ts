@@ -24,41 +24,41 @@ afterAll(() => {
 });
 
 describe('task control lifecycle', () => {
-  it('defaults control to null when a task is created without one', () => {
-    createTask({ id: 'ctl-default', title: 'No control', status: 'todo' });
-    const t = getTask('ctl-default');
+  it('defaults control to null when a task is created without one', async () => {
+    await createTask({ id: 'ctl-default', title: 'No control', status: 'todo' });
+    const t = await getTask('ctl-default');
     expect(t).not.toBeNull();
     expect(t!.control).toBeNull();
   });
 
-  it('updateTask({control}) persists control and leaves status untouched', () => {
-    createTask({ id: 'ctl-pause', title: 'Pause me', status: 'in_progress' });
-    updateTask('ctl-pause', { control: 'paused' });
+  it('updateTask({control}) persists control and leaves status untouched', async () => {
+    await createTask({ id: 'ctl-pause', title: 'Pause me', status: 'in_progress' });
+    await updateTask('ctl-pause', { control: 'paused' });
 
-    const viaGet = getTask('ctl-pause')!;
+    const viaGet = (await getTask('ctl-pause'))!;
     expect(viaGet.control).toBe('paused');
     expect(viaGet.status).toBe('in_progress'); // control update must not alter status
 
-    const viaAll = getAllTasks().find(x => x.id === 'ctl-pause')!;
+    const viaAll = (await getAllTasks()).find(x => x.id === 'ctl-pause')!;
     expect(viaAll.control).toBe('paused'); // round-trips through the row→Task mapping
     expect(viaAll.status).toBe('in_progress');
   });
 
-  it('walks paused → resume(null) → stop, persisting each transition', () => {
-    createTask({ id: 'ctl-seq', title: 'Sequence', status: 'todo' });
-    expect(getTask('ctl-seq')!.control).toBeNull();
+  it('walks paused → resume(null) → stop, persisting each transition', async () => {
+    await createTask({ id: 'ctl-seq', title: 'Sequence', status: 'todo' });
+    expect((await getTask('ctl-seq'))!.control).toBeNull();
 
-    updateTask('ctl-seq', { control: 'paused' });
-    expect(getTask('ctl-seq')!.control).toBe('paused');
+    await updateTask('ctl-seq', { control: 'paused' });
+    expect((await getTask('ctl-seq'))!.control).toBe('paused');
 
-    updateTask('ctl-seq', { control: null }); // resume
-    expect(getTask('ctl-seq')!.control).toBeNull();
+    await updateTask('ctl-seq', { control: null }); // resume
+    expect((await getTask('ctl-seq'))!.control).toBeNull();
 
-    updateTask('ctl-seq', { control: 'stop' });
-    expect(getTask('ctl-seq')!.control).toBe('stop');
+    await updateTask('ctl-seq', { control: 'stop' });
+    expect((await getTask('ctl-seq'))!.control).toBe('stop');
 
     // Final state also survives the getAllTasks mapping path.
-    const fromAll = getAllTasks().find(x => x.id === 'ctl-seq')!;
+    const fromAll = (await getAllTasks()).find(x => x.id === 'ctl-seq')!;
     expect(fromAll.control).toBe('stop');
     expect(fromAll.status).toBe('todo');
   });

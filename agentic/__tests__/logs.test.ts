@@ -23,15 +23,15 @@ afterAll(() => {
 });
 
 describe('getRecentLogs', () => {
-  it('returns rows newest-first with the { ts, taskId, msg, type } event shape', () => {
+  it('returns rows newest-first with the { ts, taskId, msg, type } event shape', async () => {
     // Insert in a known order; id is autoincrement so ordering is deterministic
     // regardless of timestamp collisions.
-    addAgentLog('task-a', 'first', 'info');
-    addAgentLog('task-a', 'second', 'success');
-    addAgentLog('task-b', 'third', 'warning');
-    addAgentLog('task-b', 'fourth', 'error');
+    await addAgentLog('task-a', 'first', 'info');
+    await addAgentLog('task-a', 'second', 'success');
+    await addAgentLog('task-b', 'third', 'warning');
+    await addAgentLog('task-b', 'fourth', 'error');
 
-    const rows = getRecentLogs(10);
+    const rows = await getRecentLogs(10);
     expect(rows.length).toBe(4);
 
     // Newest-first: the last inserted comes back first.
@@ -47,10 +47,10 @@ describe('getRecentLogs', () => {
     expect(Object.keys(newest).sort()).toEqual(['msg', 'taskId', 'ts', 'type']);
   });
 
-  it('respects the limit, returning the N most-recent rows newest-first', () => {
-    for (let i = 0; i < 6; i++) addAgentLog('task-c', `msg-${i}`, 'info');
+  it('respects the limit, returning the N most-recent rows newest-first', async () => {
+    for (let i = 0; i < 6; i++) await addAgentLog('task-c', `msg-${i}`, 'info');
 
-    const rows = getRecentLogs(3);
+    const rows = await getRecentLogs(3);
     expect(rows.length).toBe(3);
     // The three most recent across ALL tasks are the last three task-c inserts.
     expect(rows.map(r => r.msg)).toEqual(['msg-5', 'msg-4', 'msg-3']);
