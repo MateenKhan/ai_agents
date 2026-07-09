@@ -214,7 +214,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
               <div className="p-3 border-t border-slate-200 space-y-1.5">
                 <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">Local repo path</label>
                 <input value={repoPath} onChange={e => setRepoPath(e.target.value)} placeholder="C:\code\my-repo" disabled={isDefault} className={`${inputCls} font-mono text-xs sm:text-sm disabled:opacity-50`} />
-                <p className="text-[10px] text-slate-400">{isDefault ? 'The Default project is AI-Agents itself — it has no user repo.' : 'This git repo is the project. Its files + context show in the Context tab; agents work inside it.'}</p>
+                <p className="text-[10px] text-slate-400">{isDefault ? 'The Default project is Piranha itself — it has no user repo.' : 'This git repo is the project. Its files + context show in the Context tab; agents work inside it.'}</p>
               </div>
             )}
           </div>
@@ -302,13 +302,23 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
     <div className="bg-white border-b border-slate-200">
       <div className="px-2 sm:px-3 py-2">
         <div className="flex items-center gap-3">
-          {/* Brand — first item on the page, same row as the Projects/active-project toggle. */}
-          <div className="shrink-0 flex flex-col justify-center pr-3 border-r border-slate-200">
-            <div className="flex items-center gap-1.5">
-              <h1 className="text-[10px] sm:text-xs font-black text-slate-900 tracking-[0.1em] sm:tracking-[0.2em] uppercase whitespace-nowrap">ai-agents</h1>
-              <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981] shrink-0" />
+          {/* Brand — first item on the page, same row as the Projects/active-project toggle.
+              Tier-1 identity: the teeth mark carries the accent red; nothing else here does. */}
+          <div className="shrink-0 flex items-center gap-2 pr-3 border-r border-slate-200">
+            <svg viewBox="0 0 100 100" aria-hidden="true" className="w-6 h-6 sm:w-7 sm:h-7 rounded-md shrink-0">
+              <rect width="100" height="100" rx="22" fill="#0A0E14" />
+              <g fill="#FF3B1D">
+                <path d="M18 28 L28 54 L38 28 Z" /><path d="M36 28 L46 54 L56 28 Z" /><path d="M54 28 L64 54 L74 28 Z" />
+                <path d="M27 74 L37 48 L47 74 Z" /><path d="M45 74 L55 48 L65 74 Z" /><path d="M63 74 L73 48 L83 74 Z" />
+              </g>
+            </svg>
+            <div className="flex flex-col justify-center">
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight whitespace-nowrap">Piranha</h1>
+                <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981] shrink-0" />
+              </div>
+              <p className="text-micro text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap">Task Orchestrator</p>
             </div>
-            <p className="text-[9px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap">Task Orchestrator</p>
           </div>
           {/* Accordion header — minimized by default; shows the active project. */}
           <button

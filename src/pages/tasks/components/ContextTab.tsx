@@ -215,7 +215,7 @@ export default function ContextTab({ activeId }: { activeId: string }) {
               <div className="p-6 text-center space-y-2">
                 <FolderGit2 size={22} className="mx-auto text-slate-300" />
                 <p className="text-[12px] font-bold text-slate-600">No project loaded</p>
-                <p className="text-[11px] text-slate-400 leading-relaxed">This is AI-Agents' own repo. Each git repository is one project — open the <span className="font-bold text-accent-600">Projects</span> switcher (top-left) and add/point a project at your git repo to manage its context here.</p>
+                <p className="text-[11px] text-slate-400 leading-relaxed">This is Piranha's own repo. Each git repository is one project — open the <span className="font-bold text-accent-600">Projects</span> switcher (top-left) and add/point a project at your git repo to manage its context here.</p>
               </div>
             ) : filteredTree.length ? filteredTree.map(n => renderNode(n)) : (
               <p className="p-4 text-center text-[11px] text-slate-400">No files found in this project's repo.</p>
