@@ -308,7 +308,7 @@ export function LogConsole({
           <Tooltip label="Clear this log"><button
             onClick={onClear}
             data-feature-id="logs-clear"
-            className="flex items-center justify-center min-w-[34px] min-h-control text-rose-600 bg-white border border-slate-300 rounded-lg hover:bg-rose-50 hover:border-rose-300 active:scale-[0.97] transition-all"
+            className="flex items-center justify-center min-w-control min-h-control text-rose-600 bg-white border border-slate-300 rounded-lg hover:bg-rose-50 hover:border-rose-300 active:scale-[0.97] transition-all"
           >
             <Trash2 size={14} />
           </button></Tooltip>
@@ -317,7 +317,7 @@ export function LogConsole({
           <Tooltip label="Refresh"><button
             onClick={onRefresh}
             data-feature-id="logs-refresh"
-            className="flex items-center justify-center min-w-[34px] min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 active:scale-[0.97] transition-all"
+            className="flex items-center justify-center min-w-control min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 active:scale-[0.97] transition-all"
           >
             <RefreshCw size={14} />
           </button></Tooltip>
@@ -331,7 +331,7 @@ export function LogConsole({
               onClick={() => setMenuOpen(o => !o)}
               aria-expanded={menuOpen}
               data-feature-id="logs-toolbar-options"
-              className="flex items-center justify-center min-w-[34px] min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 active:scale-[0.97] transition-all"
+              className="flex items-center justify-center min-w-control min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 active:scale-[0.97] transition-all"
             >
               <SlidersHorizontal size={14} />
             </button></Tooltip>

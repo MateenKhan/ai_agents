@@ -110,15 +110,21 @@
      red) layer their COLOUR on top of this, so the row never mixes heights or radii.
      `active:scale-[0.97]` is the app's press feedback — deliberate and instant, rather
      than a Material ripple, which would fight the crisp/dev-tool language. */
+  /* Size is RESPONSIVE, and that is the whole point. An icon button is 44px — the HIG touch
+     minimum — wherever a finger can reach it, and 36px from `sm` up, where a cursor makes the
+     extra 8px pure bulk. That kills the old 40px tier, which satisfied neither: too small to
+     tap reliably, too big for a dense desktop toolbar. Width mirrors height; these were
+     `2.5rem` = 37.5px against the 15px root, so they were never the 40px they claimed. */
   .icon-btn {
-    @apply min-h-[2.5rem] min-w-[2.5rem] rounded-lg border border-slate-200 bg-slate-100 text-slate-500
+    @apply min-h-control-lg min-w-control-lg sm:min-h-control sm:min-w-control
+           rounded-lg border border-slate-200 bg-slate-100 text-slate-500
            sm:hover:bg-slate-200 sm:hover:text-slate-900 active:scale-[0.97]
            transition-all disabled:opacity-50 disabled:active:scale-100
            inline-flex items-center justify-center shrink-0;
   }
-  /* Larger icon button for primary affordances (e.g. the collapse chevron). */
+  /* Primary affordances (e.g. the collapse chevron): 44px everywhere, pointer or not. */
   .icon-btn-lg {
-    @apply min-h-control-lg min-w-[2.75rem] rounded-lg border border-slate-200 bg-slate-100 text-slate-500
+    @apply min-h-control-lg min-w-control-lg rounded-lg border border-slate-200 bg-slate-100 text-slate-500
            sm:hover:bg-slate-200 sm:hover:text-slate-900 active:scale-[0.97]
            transition-all disabled:opacity-50 inline-flex items-center justify-center shrink-0;
   }
@@ -128,14 +134,16 @@
      (remove a lane, sweep context, clear a log) stay neutral — if every destructive-sounding
      icon is red, red stops meaning "you cannot undo this". */
   .icon-btn-danger {
-    @apply min-h-control min-w-[2.25rem] rounded-lg border border-rose-200 bg-rose-50 text-rose-600
+    @apply min-h-control-lg min-w-control-lg sm:min-h-control sm:min-w-control
+           rounded-lg border border-rose-200 bg-rose-50 text-rose-600
            sm:hover:bg-rose-600 sm:hover:text-white sm:hover:border-rose-600
            active:bg-rose-700 active:scale-[0.97] transition-all disabled:opacity-50
            inline-flex items-center justify-center shrink-0;
   }
   /* Neutral icon button on a white surface (inside panels/toolbars, not the header bar). */
   .icon-btn-plain {
-    @apply min-h-control min-w-[2.25rem] rounded-lg border border-slate-300 bg-white text-slate-600
+    @apply min-h-control-lg min-w-control-lg sm:min-h-control sm:min-w-control
+           rounded-lg border border-slate-300 bg-white text-slate-600
            sm:hover:bg-slate-50 active:bg-slate-100 active:scale-[0.97] transition-all
            disabled:opacity-50 inline-flex items-center justify-center shrink-0;
   }

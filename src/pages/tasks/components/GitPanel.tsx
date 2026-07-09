@@ -835,7 +835,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2 min-w-0">
             <GitBranch className="w-5 h-5 text-accent-600 shrink-0" /> Git Control
           </h2>
-          <Tooltip label="Close (Esc)"><button onClick={onClose} aria-label="Close (Esc)" className="flex flex-col items-center justify-center gap-0.5 p-2 min-h-control-lg min-w-[44px] hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-900 shrink-0">
+          <Tooltip label="Close (Esc)"><button onClick={onClose} aria-label="Close (Esc)" className="flex flex-col items-center justify-center gap-0.5 p-2 min-h-control-lg min-w-control-lg hover:bg-slate-100 rounded-xl text-slate-500 hover:text-slate-900 shrink-0">
             <X size={20} />
             <span className="text-[9px] font-semibold uppercase tracking-wider leading-none text-slate-500">esc</span>
           </button></Tooltip>
@@ -1134,7 +1134,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         {/* App pseudo-tokens can't be edited (minted on demand); their delete
                             disconnects the underlying app (removes this row + the app row). */}
                         {t.source !== 'github-app' && (
-                          <button onClick={() => { editToken(t); setAddTokOpen(true); }} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Edit"><Pencil size={15} /></button>
+                          <button onClick={() => { editToken(t); setAddTokOpen(true); }} className="p-2 min-h-control-lg min-w-control-lg flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Edit"><Pencil size={15} /></button>
                         )}
                         <Tooltip label={t.source === 'github-app' ? 'Disconnect the GitHub App' : 'Delete token'}><button
                           onClick={() => t.source === 'github-app' ? deleteGithubApp(t.id.replace(/^app:/, '')) : deleteToken(t.id)}
@@ -1160,14 +1160,14 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                                   autoFocus value={renameVal} onChange={e => setRenameVal(e.target.value)}
                                   onKeyDown={e => { if (e.key === 'Enter') saveRename(app.id); if (e.key === 'Escape') setRenamingId(null); }}
                                   className={`${inputCls} h-8 py-1 text-sm flex-1 min-w-0`} placeholder="Label for this app" />
-                                <button onClick={() => saveRename(app.id)} disabled={renameBusy} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-emerald-600 hover:bg-emerald-50 rounded-lg" aria-label="Save label"><CheckCircle2 size={16} /></button>
-                                <button onClick={() => setRenamingId(null)} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Cancel"><X size={16} /></button>
+                                <button onClick={() => saveRename(app.id)} disabled={renameBusy} className="p-2 min-h-control-lg min-w-control-lg flex items-center justify-center text-emerald-600 hover:bg-emerald-50 rounded-lg" aria-label="Save label"><CheckCircle2 size={16} /></button>
+                                <button onClick={() => setRenamingId(null)} className="p-2 min-h-control-lg min-w-control-lg flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Cancel"><X size={16} /></button>
                               </>
                             ) : (
                               <>
                                 <span className="text-sm font-bold text-slate-800 truncate">{app.name}</span>
                                 <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${badge}`}>{app.state}</span>
-                                <Tooltip label="Rename / label this app"><button onClick={() => startRename(app.id, app.name || '')} className="ml-auto p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Rename app"><Pencil size={15} /></button></Tooltip>
+                                <Tooltip label="Rename / label this app"><button onClick={() => startRename(app.id, app.name || '')} className="ml-auto p-2 min-h-control-lg min-w-control-lg flex items-center justify-center text-slate-400 hover:text-accent-600 rounded-lg" aria-label="Rename app"><Pencil size={15} /></button></Tooltip>
                                 <button onClick={() => deleteGithubApp(app.id)} className={iconBtnDanger} aria-label="Delete app"><Trash2 size={15} /></button>
                               </>
                             )}
@@ -1324,7 +1324,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 </div>
                 <div className="relative">
                   <input type={showToken ? 'text' : 'password'} value={tVal} onChange={e => setTVal(e.target.value)} placeholder={editingId ? 'paste to replace, blank keeps existing' : activeProvider.placeholder} autoComplete="off" className={`${inputCls} pr-12 font-mono`} />
-                  <button type="button" onClick={() => setShowToken(s => !s)} className="absolute right-1 top-1/2 -translate-y-1/2 p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg" aria-label="toggle">{showToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                  <button type="button" onClick={() => setShowToken(s => !s)} className="absolute right-1 top-1/2 -translate-y-1/2 p-2 min-h-control-lg min-w-control-lg flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg" aria-label="toggle">{showToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <input value={tUser} onChange={e => setTUser(e.target.value)} placeholder={activeProvider.user || 'username (optional)'} className={inputCls} />
@@ -1349,7 +1349,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     </ol>
                     <div className="flex items-center gap-2 flex-wrap bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                       <a href={activeProvider.tokenUrl} target="_blank" rel="noopener noreferrer" className="text-accent-600 font-mono text-xs break-all hover:underline">{activeProvider.tokenUrl}</a>
-                      <button type="button" onClick={copyLink} aria-label="Copy" className="p-1.5 min-h-control min-w-[36px] flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg">{copiedLink ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}</button>
+                      <button type="button" onClick={copyLink} aria-label="Copy" className="p-1.5 min-h-control min-w-control flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg">{copiedLink ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}</button>
                     </div>
                     <p className="text-2xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">A PAT is a password. Give agents a <strong>readonly</strong> token; keep your <strong>readwrite</strong> push token separate. Always set an expiry.</p>
                   </div>

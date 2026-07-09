@@ -93,7 +93,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
         {/* Title row — checkbox has a 44px hit area via padding */}
         <div className="flex items-start gap-1">
           <label
-            className="flex items-center justify-center -m-2 p-2 min-w-[44px] min-h-control-lg cursor-pointer shrink-0"
+            className="flex items-center justify-center -m-2 p-2 min-w-control-lg min-h-control-lg cursor-pointer shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
             <input
@@ -198,7 +198,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onClick={() => onTrigger(task.id)}
               disabled={isTriggering}
               data-feature-id="task-card-trigger"
-              className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-300 active:bg-cyan-600 active:text-white sm:hover:bg-cyan-600 sm:hover:text-white transition-all ${isTriggering ? 'animate-pulse' : ''}`}
+              className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-300 active:bg-cyan-600 active:text-white sm:hover:bg-cyan-600 sm:hover:text-white transition-all ${isTriggering ? 'animate-pulse' : ''}`}
             >
               <Play size={15} fill="currentColor" />
             </button></Tooltip>
@@ -210,7 +210,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onClick={() => onControl(task.id, 'start')}
               disabled={isControlling}
               data-feature-id="task-card-rerun"
-              className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-accent-50 text-accent-700 border border-accent-300 active:bg-slate-900 active:text-white sm:hover:bg-slate-900 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
+              className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-accent-50 text-accent-700 border border-accent-300 active:bg-slate-900 active:text-white sm:hover:bg-slate-900 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
             >
               <RotateCcw size={15} />
             </button></Tooltip>
@@ -220,7 +220,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onClick={() => onControl(task.id, 'resume')}
               disabled={isControlling}
               data-feature-id="task-card-resume"
-              className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 active:bg-emerald-600 active:text-white sm:hover:bg-emerald-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
+              className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 active:bg-emerald-600 active:text-white sm:hover:bg-emerald-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
             >
               <Play size={15} fill="currentColor" />
             </button></Tooltip>
@@ -230,7 +230,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onClick={() => onControl(task.id, 'pause')}
               disabled={isControlling}
               data-feature-id="task-card-pause"
-              className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-amber-50 text-amber-700 border border-amber-300 active:bg-amber-600 active:text-white sm:hover:bg-amber-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
+              className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-amber-50 text-amber-700 border border-amber-300 active:bg-amber-600 active:text-white sm:hover:bg-amber-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
             >
               <Pause size={15} fill="currentColor" />
             </button></Tooltip>
@@ -240,7 +240,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onClick={() => onControl(task.id, 'stop')}
               disabled={isControlling}
               data-feature-id="task-card-stop"
-              className={`flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-rose-50 text-rose-600 border border-rose-300 active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
+              className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-rose-50 text-rose-600 border border-rose-300 active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
             >
               <Square size={15} fill="currentColor" />
             </button></Tooltip>
@@ -249,7 +249,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           <Tooltip label="Edit"><button
             onClick={() => onEdit(task)}
             data-feature-id="task-card-edit"
-            className="flex items-center justify-center min-w-[44px] min-h-[40px] rounded-lg bg-slate-50 text-slate-600 border border-slate-300 active:bg-slate-200 sm:hover:bg-slate-100 sm:hover:text-slate-900 transition-colors"
+            className="flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-slate-50 text-slate-600 border border-slate-300 active:bg-slate-200 sm:hover:bg-slate-100 sm:hover:text-slate-900 transition-colors"
           >
             <Edit2 size={15} />
           </button></Tooltip>
@@ -268,7 +268,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               onChange={(e) => onMove(task.id, e.target.value)}
               data-feature-id="task-card-move"
               title="Move to lane"
-              className="w-full min-h-[40px] appearance-none pl-8 pr-2 text-2xs font-bold uppercase tracking-wide bg-slate-50 text-slate-700 border border-slate-300 rounded-lg active:bg-slate-100 sm:hover:bg-slate-100 transition-colors cursor-pointer"
+              className="w-full min-h-control-lg appearance-none pl-8 pr-2 text-2xs font-bold uppercase tracking-wide bg-slate-50 text-slate-700 border border-slate-300 rounded-lg active:bg-slate-100 sm:hover:bg-slate-100 transition-colors cursor-pointer"
             >
               {/* Keep the current status selectable even if its lane is hidden/removed. */}
               {!moveOptions.some(c => c.id === task.status) && (

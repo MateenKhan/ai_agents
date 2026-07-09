@@ -100,7 +100,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           </div>
           <button
             onClick={onClose}
-            className="flex items-center justify-center min-w-[44px] min-h-control-lg -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors shrink-0"
+            className="flex items-center justify-center min-w-control-lg min-h-control-lg -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors shrink-0"
           >
             <X size={18} />
           </button>
@@ -250,7 +250,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                 onClick={() => onControl(task.id, 'resume')}
                 disabled={isControlling}
                 data-feature-id="task-detail-resume"
-                className={`flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-emerald-600 text-white rounded-xl active:bg-emerald-700 sm:hover:bg-emerald-500 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
+                className={`flex-1 flex items-center justify-center gap-1.5 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-emerald-600 text-white rounded-xl active:bg-emerald-700 sm:hover:bg-emerald-500 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
               >
                 <Play size={14} fill="currentColor" /> Resume
               </button>
@@ -259,7 +259,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                 onClick={() => onControl(task.id, 'pause')}
                 disabled={isControlling}
                 data-feature-id="task-detail-pause"
-                className={`flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-amber-500 text-white rounded-xl active:bg-amber-600 sm:hover:bg-amber-400 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
+                className={`flex-1 flex items-center justify-center gap-1.5 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-amber-500 text-white rounded-xl active:bg-amber-600 sm:hover:bg-amber-400 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
               >
                 <Pause size={14} fill="currentColor" /> Pause
               </button>
@@ -269,7 +269,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                 onClick={() => onControl(task.id, 'start')}
                 disabled={isControlling}
                 data-feature-id="task-detail-rerun"
-                className={`flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl active:bg-slate-950 sm:hover:bg-slate-800 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
+                className={`flex-1 flex items-center justify-center gap-1.5 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl active:bg-slate-950 sm:hover:bg-slate-800 transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
               >
                 <RotateCcw size={14} /> Re-run
               </button>
@@ -279,7 +279,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                 onClick={() => onControl(task.id, 'stop')}
                 disabled={isControlling}
                 data-feature-id="task-detail-stop"
-                className={`flex items-center justify-center gap-1.5 min-w-[48px] min-h-[48px] px-3 text-xs font-bold uppercase tracking-wide text-rose-600 bg-rose-50 border border-rose-300 rounded-xl active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
+                className={`flex items-center justify-center gap-1.5 min-w-control-lg min-h-control-lg px-3 text-xs font-bold uppercase tracking-wide text-rose-600 bg-rose-50 border border-rose-300 rounded-xl active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors ${isControlling ? 'opacity-70 animate-pulse' : ''}`}
               >
                 <Square size={14} fill="currentColor" />
               </button></Tooltip>
@@ -292,20 +292,20 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           {task.status === 'AVAILABLE' && (
             <button
               onClick={() => { onTrigger(task.id); onClose(); }}
-              className="flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-cyan-600 text-white rounded-xl active:bg-cyan-700 sm:hover:bg-cyan-500 transition-colors"
+              className="flex-1 flex items-center justify-center gap-1.5 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-cyan-600 text-white rounded-xl active:bg-cyan-700 sm:hover:bg-cyan-500 transition-colors"
             >
               <Play size={14} fill="currentColor" /> Launch
             </button>
           )}
           <button
             onClick={() => { onEdit(task); onClose(); }}
-            className="flex-1 flex items-center justify-center gap-1.5 min-h-[48px] text-xs font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl active:bg-slate-950 sm:hover:bg-slate-800 transition-colors"
+            className="flex-1 flex items-center justify-center gap-1.5 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl active:bg-slate-950 sm:hover:bg-slate-800 transition-colors"
           >
             <Edit2 size={14} /> Edit
           </button>
           <Tooltip label="Delete"><button
             onClick={() => { onDelete(task.id); onClose(); }}
-            className="flex items-center justify-center min-w-[48px] min-h-[48px] text-rose-600 bg-rose-50 border border-rose-300 rounded-xl active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors"
+            className="flex items-center justify-center min-w-control-lg min-h-control-lg text-rose-600 bg-rose-50 border border-rose-300 rounded-xl active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors"
           >
             <Trash2 size={15} />
           </button></Tooltip>

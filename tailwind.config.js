@@ -45,10 +45,16 @@ export default {
         micro: ['10px', { lineHeight: '14px' }],
         '2xs': ['11px', { lineHeight: '16px' }],
       },
-      // Two canonical control heights: compact (toolbars) and touch (forms/CTAs, ≥44px = HIG).
+      // Two canonical control sizes: compact (pointer/toolbars) and touch (≥44px = HIG).
+      // Width mirrors height so a square icon button is `min-h-control min-w-control` and
+      // cannot drift into the 44×40 rectangles this replaced.
       minHeight: {
         control: '36px',
         'control-lg': '44px', // the HIG minimum — must not be a rem, see above
+      },
+      minWidth: {
+        control: '36px',
+        'control-lg': '44px',
       },
     },
   },

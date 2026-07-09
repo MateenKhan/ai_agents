@@ -52,7 +52,7 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, footer
           </div>
           <Tooltip label="Close (Esc)"><button
             onClick={onClose}
-            className="flex flex-col items-center justify-center gap-0.5 min-w-[44px] min-h-control-lg -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors shrink-0"
+            className="flex flex-col items-center justify-center gap-0.5 min-w-control-lg min-h-control-lg -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors shrink-0"
             aria-label="Close (Esc)"
           >
             <X size={18} />

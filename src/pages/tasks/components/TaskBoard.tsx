@@ -141,7 +141,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
             {/* Column Header */}
             <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b-2 bg-white" style={{ borderBottomColor: withAlpha(col.color, '4d') }}>
               <div className="flex items-center gap-2 min-w-0">
-                <label className="flex items-center justify-center -m-1.5 p-1.5 min-w-[40px] min-h-[40px] cursor-pointer shrink-0">
+                <label className="flex items-center justify-center -m-1.5 p-1.5 min-w-control-lg min-h-control-lg cursor-pointer shrink-0">
                   <input
                     type="checkbox"
                     data-feature-id="tasks-lane-select-all"
@@ -164,7 +164,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
               <button
                 onClick={() => onAddTask(col.id)}
                 data-feature-id="tasks-lane-add"
-                className="flex items-center justify-center min-w-[44px] min-h-control-lg -m-1.5 active:bg-slate-200 sm:hover:bg-slate-100 rounded-md text-slate-500 sm:hover:text-slate-900 transition-all shrink-0"
+                className="flex items-center justify-center min-w-control-lg min-h-control-lg -m-1.5 active:bg-slate-200 sm:hover:bg-slate-100 rounded-md text-slate-500 sm:hover:text-slate-900 transition-all shrink-0"
               >
                 <Plus size={18} />
               </button>

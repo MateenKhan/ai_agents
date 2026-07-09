@@ -327,8 +327,8 @@ export default function DbTab() {
           featureId="db-row-edit"
           footer={
             <div className="flex justify-end gap-2 w-full">
-              <button onClick={() => setEditing(null)} className="px-4 min-h-[42px] text-xs font-bold text-slate-600 rounded-lg hover:bg-slate-100">Cancel</button>
-              <button onClick={save} disabled={busy} className="flex items-center gap-1.5 px-5 min-h-[42px] text-xs font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50">
+              <button onClick={() => setEditing(null)} className="px-4 min-h-control-lg text-xs font-bold text-slate-600 rounded-lg hover:bg-slate-100">Cancel</button>
+              <button onClick={save} disabled={busy} className="flex items-center gap-1.5 px-5 min-h-control-lg text-xs font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800 disabled:opacity-50">
                 <Save size={14} /> {editing._rowid === undefined ? 'Insert' : 'Update'}
               </button>
             </div>

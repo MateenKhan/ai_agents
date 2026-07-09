@@ -279,7 +279,7 @@ const TasksPage: React.FC = () => {
                   key={t.id}
                   data-feature-id={`tasks-tab-${t.id}`}
                   onClick={() => setActiveTab(t.id)}
-                  className={`relative -mb-px shrink-0 flex items-center gap-1.5 px-4 min-h-[42px] text-xs font-bold uppercase tracking-widest rounded-t-lg border transition-colors ${active
+                  className={`relative -mb-px shrink-0 flex items-center gap-1.5 px-4 min-h-control-lg text-xs font-bold uppercase tracking-widest rounded-t-lg border transition-colors ${active
                     ? 'z-10 bg-white border-slate-300 border-b-white text-accent-700 shadow-sm'
                     : 'border-transparent text-slate-500 sm:hover:text-slate-900 sm:hover:bg-slate-50'}`}
                 >
@@ -310,7 +310,7 @@ const TasksPage: React.FC = () => {
                       title={`Hide ${t.label} — restore from Settings`}
                       onClick={(e) => { e.stopPropagation(); hideTab(t.id); }}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); hideTab(t.id); } }}
-                      className="flex items-center justify-center min-w-[32px] min-h-control -mr-2 ml-0.5 p-1 rounded text-slate-500 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
+                      className="flex items-center justify-center min-w-control min-h-control -mr-2 ml-0.5 p-1 rounded text-slate-500 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
                     >
                       <X size={12} />
                     </span>

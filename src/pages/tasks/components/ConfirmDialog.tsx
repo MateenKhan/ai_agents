@@ -105,7 +105,7 @@ export function ConfirmDialog({ isOpen, title, message, confirmLabel = 'Delete',
           <button
             data-feature-id="tasks-confirm-cancel"
             onClick={onCancel}
-            className="flex-1 min-h-[48px] px-4 text-sm font-bold text-slate-700 bg-white border border-slate-300 rounded-xl active:bg-slate-100 sm:hover:bg-slate-50 transition-colors"
+            className="flex-1 min-h-control-lg px-4 text-sm font-bold text-slate-700 bg-white border border-slate-300 rounded-xl active:bg-slate-100 sm:hover:bg-slate-50 transition-colors"
           >
             {cancelLabel}
           </button>

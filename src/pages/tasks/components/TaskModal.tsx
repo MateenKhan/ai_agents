@@ -82,13 +82,13 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
         <div className="flex justify-end gap-3 w-full">
           <button
             onClick={onClose}
-            className="px-5 min-h-[48px] text-sm font-semibold text-slate-600 rounded-xl active:bg-slate-200 sm:hover:text-slate-900 sm:hover:bg-slate-100 transition-colors"
+            className="px-5 min-h-control-lg text-sm font-semibold text-slate-600 rounded-xl active:bg-slate-200 sm:hover:text-slate-900 sm:hover:bg-slate-100 transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={() => handleSubmit()}
-            className="flex items-center gap-2 px-6 min-h-[48px] bg-slate-900 active:bg-slate-950 sm:hover:bg-slate-800 text-white text-sm font-bold rounded-xl shadow-lg shadow-accent-500/20 transition-all active:scale-95"
+            className="flex items-center gap-2 px-6 min-h-control-lg bg-slate-900 active:bg-slate-950 sm:hover:bg-slate-800 text-white text-sm font-bold rounded-xl shadow-lg shadow-accent-500/20 transition-all active:scale-95"
           >
             <Save size={16} />
             {editingTask ? 'Update task' : 'Create task'}

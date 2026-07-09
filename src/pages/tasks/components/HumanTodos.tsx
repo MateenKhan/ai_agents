@@ -168,7 +168,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
           </div>
           <button
             onClick={onClose}
-            className="flex items-center justify-center min-w-[44px] min-h-control-lg -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors"
+            className="flex items-center justify-center min-w-control-lg min-h-control-lg -m-2 text-slate-500 active:bg-slate-200 sm:hover:text-slate-900 rounded-lg transition-colors"
           >
             <X size={20} />
           </button>
@@ -361,7 +361,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                         }
                         if (pv?.status === 'building') {
                           return (
-                            <button disabled className="w-full flex items-center justify-center gap-2 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-ai-100 text-ai-700 border border-ai-300 rounded-lg">
+                            <button disabled className="w-full flex items-center justify-center gap-2 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-ai-100 text-ai-700 border border-ai-300 rounded-lg">
                               <Loader2 size={16} className="animate-spin" /> Building preview…
                             </button>
                           );
@@ -370,7 +370,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                           return (
                             <div className="space-y-1.5">
                               <button onClick={() => buildPreview(task.id)}
-                                 className="w-full flex items-center justify-center gap-2 min-h-[46px] text-[12px] font-bold bg-rose-50 text-rose-700 border border-rose-300 rounded-lg active:bg-rose-100">
+                                 className="w-full flex items-center justify-center gap-2 min-h-control-lg text-[12px] font-bold bg-rose-50 text-rose-700 border border-rose-300 rounded-lg active:bg-rose-100">
                                 <AlertCircle size={15} /> Preview failed — retry {pv.error ? `(${pv.error})` : ''}
                               </button>
                               {pv.logTail && (
@@ -382,7 +382,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                         }
                         return (
                           <button onClick={() => buildPreview(task.id)} data-feature-id="human-todo-build-preview"
-                             className="w-full flex items-center justify-center gap-2 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-ai-50 text-ai-700 border border-ai-300 rounded-lg active:bg-ai-100 sm:hover:bg-ai-100 transition-colors">
+                             className="w-full flex items-center justify-center gap-2 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-ai-50 text-ai-700 border border-ai-300 rounded-lg active:bg-ai-100 sm:hover:bg-ai-100 transition-colors">
                             <Eye size={16} /> Build Preview
                           </button>
                         );
@@ -412,13 +412,13 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                           <button
                             onClick={() => submitReject(task.id)}
                             disabled={!feedback.trim()}
-                            className="flex-1 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-rose-600 text-white rounded-lg disabled:opacity-40 active:bg-rose-700 sm:hover:bg-rose-500 transition-colors"
+                            className="flex-1 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-rose-600 text-white rounded-lg disabled:opacity-40 active:bg-rose-700 sm:hover:bg-rose-500 transition-colors"
                           >
                             Send back to agent
                           </button>
                           <button
                             onClick={() => setRejectingId(null)}
-                            className="px-5 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-white text-slate-700 border border-slate-300 rounded-lg active:bg-slate-100 sm:hover:bg-slate-50 transition-colors"
+                            className="px-5 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-white text-slate-700 border border-slate-300 rounded-lg active:bg-slate-100 sm:hover:bg-slate-50 transition-colors"
                           >
                             Cancel
                           </button>
@@ -429,14 +429,14 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                         <button
                           data-feature-id="human-todo-approve"
                           onClick={() => onApprove(task.id)}
-                          className="flex-1 flex items-center justify-center gap-2 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-emerald-600 text-white rounded-lg active:bg-emerald-700 sm:hover:bg-emerald-500 transition-colors"
+                          className="flex-1 flex items-center justify-center gap-2 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-emerald-600 text-white rounded-lg active:bg-emerald-700 sm:hover:bg-emerald-500 transition-colors"
                         >
                           <CheckCircle2 size={16} /> Approve
                         </button>
                         <button
                           data-feature-id="human-todo-reject"
                           onClick={() => startReject(task)}
-                          className="flex-1 flex items-center justify-center gap-2 min-h-[46px] text-[13px] font-bold uppercase tracking-wide bg-white text-rose-600 border border-rose-300 rounded-lg active:bg-rose-600 active:text-white sm:hover:bg-rose-50 transition-colors"
+                          className="flex-1 flex items-center justify-center gap-2 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-white text-rose-600 border border-rose-300 rounded-lg active:bg-rose-600 active:text-white sm:hover:bg-rose-50 transition-colors"
                         >
                           <XCircle size={16} /> Reject
                         </button>

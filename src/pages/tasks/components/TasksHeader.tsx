@@ -63,7 +63,7 @@ function OrchestratorToggle() {
         onClick={toggle}
         disabled={busy}
         aria-label={willPause ? 'Pause orchestrator' : 'Start orchestrator'}
-        className={`flex items-center justify-center min-w-[36px] min-h-control rounded-md transition-colors ${state.text} active:bg-white/70 sm:hover:bg-white/70 ${busy ? 'opacity-60 animate-pulse' : ''}`}
+        className={`flex items-center justify-center min-w-control min-h-control rounded-md transition-colors ${state.text} active:bg-white/70 sm:hover:bg-white/70 ${busy ? 'opacity-60 animate-pulse' : ''}`}
       >
         {willPause ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
       </button></Tooltip>
