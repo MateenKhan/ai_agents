@@ -56,10 +56,10 @@ export function isGitRepo(cwd: string = process.cwd()): boolean {
 /** The git repo a task's worktrees live under. Project-scoped: a task in a project
  *  with a valid repoPath isolates into THAT repo; anything else → the host cwd
  *  (so the default single-project flow is byte-for-byte unchanged). Best-effort. */
-function projectRootFor(taskId: string): string {
+async function projectRootFor(taskId: string): Promise<string> {
   try {
-    const t = getTask(taskId);
-    const proj = getProject(t?.projectId || 'default');
+    const t = await getTask(taskId);
+    const proj = await getProject(t?.projectId || 'default');
     // Honor a configured repoPath for ANY project, including 'default'. The seeded default's
     // repoPath IS the host cwd, so single-project installs stay byte-for-byte unchanged; a
     // default explicitly pointed at another repo (as in a renamed/retargeted project) now
@@ -73,8 +73,8 @@ function projectRootFor(taskId: string): string {
  *  Default project (root === host cwd) → the configured worktreesDir exactly as before;
  *  a project repo elsewhere → <repoPath>/.worktrees. Returns the repo root too, since
  *  `git worktree remove/add` must run inside that repo. Best-effort. */
-function worktreeDirFor(taskId: string): { root: string; dir: string } {
-  const root = projectRootFor(taskId);
+async function worktreeDirFor(taskId: string): Promise<{ root: string; dir: string }> {
+  const root = await projectRootFor(taskId);
   const dir = root === process.cwd() ? getConfig().paths.worktreesDir : join(root, '.worktrees');
   return { root, dir };
 }
@@ -95,8 +95,8 @@ function linkNodeModules(root: string, worktree: string): void {
 }
 
 /** Resolve the working directory for a run, creating a worktree if the mode needs one. */
-function resolveCwd(taskId: string, mode: WorktreeMode): string {
-  const { root, dir } = worktreeDirFor(taskId);
+async function resolveCwd(taskId: string, mode: WorktreeMode): Promise<string> {
+  const { root, dir } = await worktreeDirFor(taskId);
   // No git repo → worktree isolation is impossible; run the agent directly in the
   // repo root (degrade gracefully rather than failing on every `git worktree add`).
   if (mode === 'none' || !isGitRepo(root)) return root;
@@ -124,17 +124,17 @@ function resolveCwd(taskId: string, mode: WorktreeMode): string {
   return path;
 }
 
-export function removeWorktree(taskId: string): void {
+export async function removeWorktree(taskId: string): Promise<void> {
   try {
-    const { root, dir } = worktreeDirFor(taskId);
+    const { root, dir } = await worktreeDirFor(taskId);
     const path = join(dir, taskId);
     if (existsSync(path)) git(`worktree remove "${path}" --force`, root);
   } catch { /* leave for orphan sweep */ }
 }
 
-export function removePlanWorktree(taskId: string): void {
+export async function removePlanWorktree(taskId: string): Promise<void> {
   try {
-    const { root, dir } = worktreeDirFor(taskId);
+    const { root, dir } = await worktreeDirFor(taskId);
     const path = join(dir, `plan-${taskId}`);
     if (existsSync(path)) git(`worktree remove "${path}" --force`, root);
   } catch { /* leave for orphan sweep */ }
@@ -180,7 +180,7 @@ function classify(out: string): FailureKind {
   return 'crash';
 }
 
-export function spawnHeadlessAgent(opts: SpawnOptions): boolean {
+export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   const { agentName, taskId, prompt, model, worktree, onExit } = opts;
   if (running.has(agentName)) return false;
 
@@ -188,7 +188,7 @@ export function spawnHeadlessAgent(opts: SpawnOptions): boolean {
   mkdirSync(logsDir, { recursive: true });
   const logFile = join(logsDir, `${agentName}.log`);
 
-  const cwd = resolveCwd(taskId, worktree);
+  const cwd = await resolveCwd(taskId, worktree);
 
   // FRESH log each run — the Logs tab shows only the current task's run.
   // Durable per-task history lives in logs.db, so overwriting here loses nothing.
@@ -207,8 +207,8 @@ export function spawnHeadlessAgent(opts: SpawnOptions): boolean {
   let gitEnv: Record<string, string> = {};
   try {
     let projectId = 'default';
-    try { const t = getTask(taskId); if (t?.projectId) projectId = t.projectId; } catch { /* default */ }
-    const tok = resolveAgentToken(agentName, projectId);
+    try { const t = await getTask(taskId); if (t?.projectId) projectId = t.projectId; } catch { /* default */ }
+    const tok = await resolveAgentToken(agentName, projectId);
     gitEnv = gitAuthEnv(tok);
     if (tok) log(`🔑 git auth: token "${tok.label}" (${tok.scope}) for ${tok.host}`);
   } catch { /* token lookup is best-effort — never block a run */ }
@@ -222,7 +222,7 @@ export function spawnHeadlessAgent(opts: SpawnOptions): boolean {
     // CODE_INDEX_PROJECT scopes the search to THIS task's project so a multi-project install
     // queries the right per-project index (index-<projectId>.db), not the default one.
     let indexProject = 'default';
-    try { indexProject = getTask(taskId)?.projectId || 'default'; } catch { /* default */ }
+    try { indexProject = (await getTask(taskId))?.projectId || 'default'; } catch { /* default */ }
     proc = spawn(CLAUDE_BIN, args, { cwd, env: { ...process.env, ...gitEnv, AGENT_NAME: agentName, TASK_ID: taskId, CODE_INDEX_ROOT: process.cwd(), CODE_INDEX_PROJECT: indexProject } });
   } catch (e: any) {
     log(`SPAWN FAILED: ${e?.message || e}`);

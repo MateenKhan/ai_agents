@@ -6,6 +6,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { startOrchestrator, buildConfig, setConfig, createOwnedMemory, superpowersMethodology } from '../agentic/index.ts';
+// Datastore backend selection (SQLite default / Postgres opt-in) + schema init.
+import { getBackendConfig } from '../db/backendConfig.ts';
+import { configureBackend } from '../agentic/db/getStore.ts';
+import { initTasksSchema } from '../agentic/db/tasks.ts';
 
 const config = buildConfig(process.cwd());
 
@@ -22,4 +26,12 @@ config.methodology = superpowersMethodology;
 //   config.docStore  = makeMinioStore();
 
 setConfig(config);
-startOrchestrator(config);
+
+// Push the chosen backend into the async Store layer and run schema migrations
+// (portable migrations + legacy dod→scenario + at-rest secret re-encryption) BEFORE
+// the dispatch loop starts, exactly as the db-server does at boot.
+const backend = getBackendConfig();
+configureBackend({ kind: backend.kind, url: backend.url });
+await initTasksSchema();
+
+await startOrchestrator(config);

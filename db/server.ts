@@ -113,7 +113,10 @@ function ragAnswer(question: string, ctx: string, cwd: string): Promise<string> 
 
 import { getAllTasks, getTask, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, setProjectReadiness, setProjectMaxConcurrency, getAgentDefaults, setAgentDefaults, type RunConfig } from './tasks.js';
 // Datastore backend config (Phase 2: config + connection test only; live swap is a TODO).
-import { setBackendConfig, getMaskedBackendConfig } from './backendConfig.ts';
+import { getBackendConfig, setBackendConfig, getMaskedBackendConfig } from './backendConfig.ts';
+// The datastore seam: push the chosen backend (SQLite default / Postgres opt-in) into the
+// async Store layer at boot, BEFORE any schema init or request handling.
+import { configureBackend } from '../agentic/db/getStore.ts';
 
 // ── project scoping helpers ────────────────────────────────────────────────────
 // Every project-scoped route reads ?project=<id> (default 'default'); body routes may
@@ -124,8 +127,8 @@ function projectIdOf(req: IncomingMessage, body?: any): string {
   if (body && body.projectId) return String(body.projectId);
   return 'default';
 }
-function projectRepoPath(projectId: string): string {
-  try { const p = getProject(projectId); if (p?.repoPath) return p.repoPath; } catch { /* no db */ }
+async function projectRepoPath(projectId: string): Promise<string> {
+  try { const p = await getProject(projectId); if (p?.repoPath) return p.repoPath; } catch { /* no db */ }
   return process.cwd();
 }
 
@@ -227,13 +230,17 @@ function killRun(rp: RunProc): void {
   } catch { /* already gone */ }
 }
 
-// Run DB migrations at startup (safe to re-run)
+// Select the datastore backend (SQLite default; Postgres only if the host opted in via
+// db/backend.json), then run migrations at startup (safe to re-run). Both are AWAITED before
+// the server begins handling requests below.
 console.log('[db-server] Running DB migrations...');
 try {
-  const _db = getTasksDb();
-  initTasksSchema(_db);
-  runMigrations(_db);
-  console.log('[db-server] DB ready.');
+  const backend = getBackendConfig();
+  configureBackend({ kind: backend.kind, url: backend.url });
+  // initTasksSchema (== runMigrations) is now async: portable migrations + legacy dod→scenario
+  // + at-rest secret re-encryption. Await it so the schema exists before the first request.
+  await initTasksSchema();
+  console.log(`[db-server] DB ready (backend: ${backend.kind}).`);
 } catch (e) {
   console.error('[db-server] Migration error:', e);
 }
@@ -269,9 +276,9 @@ let boardCorrupt: string | null = null;   // e.g. 'tasks.db' — pauses get/upda
 // Completely purge a project's data: its embeddings DB file, code-index config, tasks, tokens,
 // and the project row (deleteProject cascades the DB rows). Never touches the repo FOLDER — that
 // is deleted separately and only when it lives inside the managed projects/ directory.
-function purgeProjectData(id: string): void {
+async function purgeProjectData(id: string): Promise<void> {
   try { resetDbFor(id); } catch { /* handle already closed */ }
-  try { deleteProject(id); } catch (e: any) { console.warn(`[db-server] purge project rows [${id}]: ${e?.message}`); }
+  try { await deleteProject(id); } catch (e: any) { console.warn(`[db-server] purge project rows [${id}]: ${e?.message}`); }
   for (const suf of ['', '-wal', '-shm']) {
     try { const f = join(process.cwd(), 'db', `index-${id}.db${suf}`); if (existsSync(f)) rmSync(f, { force: true }); } catch { /* file busy/missing */ }
   }
@@ -327,12 +334,12 @@ function indexResponds(projectId: string = 'default'): boolean {
   catch { return false; }
 }
 
-function rebuildIndex(reason: string, projectId: string = 'default'): void {
+async function rebuildIndex(reason: string, projectId: string = 'default'): Promise<void> {
   if (isRebuilding(projectId)) return;
   indexRebuilding.set(projectId, true);
   // Rebuild the project's target repo (its code_index root defaults to its repoPath).
-  const ci = getCodeIndexConfig(projectId);
-  const root = ci.root || projectRepoPath(projectId);
+  const ci = await getCodeIndexConfig(projectId);
+  const root = ci.root || await projectRepoPath(projectId);
   const env: Record<string, string | undefined> = { ...process.env };
   env.CODE_INDEX_ROOT = root;
   env.CODE_INDEX_PROJECT = projectId; // scope the post-build project-brief pass to this project
@@ -399,7 +406,7 @@ function teardownPreview(taskId: string): void {
   console.log(`[db-server] 🧹 preview torn down for ${taskId}`);
 }
 
-function startPreview(taskId: string): void {
+async function startPreview(taskId: string): Promise<void> {
   const existing = previews.get(taskId);
   if (existing && existing.status !== 'error') return; // already building/ready
 
@@ -407,12 +414,12 @@ function startPreview(taskId: string): void {
   // the host. The build/serve commands come from the project's detected run-config (install /
   // build), and the isolated backend is spawned ONLY if the cloned app actually has one — a
   // frontend-only clone (e.g. a Vite SPA) just gets install → build → vite preview.
-  const pid = getTask(taskId)?.projectId || 'default';
-  const root = projectRepoPath(pid);
+  const pid = (await getTask(taskId))?.projectId || 'default';
+  const root = await projectRepoPath(pid);
   const wt = join(root, '.worktrees', taskId);
   if (!existsSync(wt)) { previews.set(taskId, { status: 'error', error: 'worktree not found — is the task in review?', startedAt: Date.now() }); return; }
 
-  const rc = (getProject(pid)?.runConfig || {}) as Partial<RunConfig>;
+  const rc = ((await getProject(pid))?.runConfig || {}) as Partial<RunConfig>;
 
   const rootNm = join(root, 'node_modules');
   // Point the worktree at the PROJECT's real node_modules. Worktrees don't carry their own, and
@@ -465,7 +472,7 @@ function startPreview(taskId: string): void {
     let ready = false;
     const markReady = () => { if (ready) return; ready = true; previews.set(taskId, { status: 'ready', url: previewBase(port), port, apiPort, logName, proc: serve, backendProc: backend, startedAt: Date.now() }); console.log(`[db-server] ✅ preview ready for ${taskId} → ${previewBase(port)}`);
       // A green preview satisfies the "preview verified" leg of the project readiness gate.
-      try { setProjectReadiness(pid, { previewVerifiedAt: new Date().toISOString() }); } catch { /* project gone */ } };
+      setProjectReadiness(pid, { previewVerifiedAt: new Date().toISOString() }).catch(() => { /* project gone */ }); };
     const onData = (d: any) => { try { appendFileSync(previewLog, String(d)); } catch { /* */ } if (/localhost:\d+/.test(String(d))) markReady(); };
     serve.stdout?.on('data', onData); serve.stderr?.on('data', onData);
     serve.on('error', (e: any) => setErr(`vite preview failed to start: ${e?.message}`));
@@ -666,7 +673,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // --- Review preview: build the task's branch & serve it on a free port ---
   if (req.url?.match(/^\/tasks\/[^/]+\/preview$/)) {
     const taskId = decodeURIComponent(req.url.split('/')[2]);
-    if (req.method === 'POST') { startPreview(taskId); const p = previews.get(taskId); res.end(JSON.stringify({ status: p?.status || 'building' })); return; }
+    if (req.method === 'POST') { await startPreview(taskId); const p = previews.get(taskId); res.end(JSON.stringify({ status: p?.status || 'building' })); return; }
     if (req.method === 'GET') { const p = previews.get(taskId); res.end(JSON.stringify(p ? { status: p.status, url: p.url, port: p.port, apiPort: p.apiPort, error: p.error, logTail: p.logTail, logName: p.logName } : { status: 'none' })); return; }
     if (req.method === 'DELETE') { teardownPreview(taskId); res.end(JSON.stringify({ ok: true })); return; }
   }
@@ -676,7 +683,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     const taskId = decodeURIComponent(req.url.split('/')[2]);
     try {
       teardownPreview(taskId);
-      updateTask(taskId, { stage: 'merge', status: 'WORKING', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, reviewNote: null });
+      await updateTask(taskId, { stage: 'merge', status: 'WORKING', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, reviewNote: null });
       res.end(JSON.stringify({ ok: true, status: 'merging' }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -688,7 +695,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const body = JSON.parse((await readBody(req)) || '{}');
       teardownPreview(taskId);
-      updateTask(taskId, { stage: 'build', status: 'WORKING', qaVerdict: null, reviewNote: body.reason || 'rejected by reviewer', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
+      await updateTask(taskId, { stage: 'build', status: 'WORKING', qaVerdict: null, reviewNote: body.reason || 'rejected by reviewer', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
       res.end(JSON.stringify({ ok: true, status: 'rebuilding' }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -699,7 +706,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     const taskId = decodeURIComponent(req.url.split('/')[2] || '');
     try {
       const { purgeTaskLogs } = await import('./tasks.js');
-      res.end(JSON.stringify({ purged: purgeTaskLogs(taskId) }));
+      res.end(JSON.stringify({ purged: await purgeTaskLogs(taskId) }));
     } catch (e: any) {
       res.statusCode = 500;
       res.end(JSON.stringify({ error: e.message }));
@@ -712,7 +719,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     const taskId = decodeURIComponent(req.url.split('/')[2] || '');
     try {
       const { getAgentLogs } = await import('./tasks.js');
-      res.end(JSON.stringify({ logs: getAgentLogs(taskId, 100) }));
+      res.end(JSON.stringify({ logs: await getAgentLogs(taskId, 100) }));
     } catch (e: any) {
       res.statusCode = 500;
       res.end(JSON.stringify({ error: e.message }));
@@ -757,7 +764,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const { getAllTasks, updateTask, getHeartbeat } = await import('./tasks.js');
       const steps: { step: string; status: 'ok' | 'fixed' | 'warn'; detail: string }[] = [];
-      const tasks = getAllTasks();
+      const tasks = await getAllTasks();
 
       // 1 — stuck in-progress tasks. Reset ONLY if the lease is expired/missing (agent dead).
       // A live agent's lease is renewed by the watchdog every ~3s, so a future lease = actively
@@ -766,7 +773,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const isActive = (t: any) => t.leaseExpiresAt && new Date(t.leaseExpiresAt).getTime() >= now;
       const stuck = tasks.filter((t: any) => t.status === 'WORKING' && (t.started || t.claimedBy) && !isActive(t));
       const activeCount = tasks.filter((t: any) => t.status === 'WORKING' && (t.started || t.claimedBy) && isActive(t)).length;
-      for (const t of stuck) updateTask(t.id, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: 'healed: reset to re-dispatch' });
+      for (const t of stuck) await updateTask(t.id, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: 'healed: reset to re-dispatch' });
       steps.push({
         step: 'Stuck in-progress tasks',
         status: stuck.length ? 'fixed' : 'ok',
@@ -778,7 +785,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // 2 — dead-lettered tasks (retries exhausted) → fresh budget
       // Dead-lettered tasks now sit in BLOCKED (with the reason); revive them to WORKING with a fresh budget.
       const dead = tasks.filter((t: any) => (t.status === 'WORKING' || t.status === 'BLOCKED') && t.nextRetryAt && new Date(t.nextRetryAt).getFullYear() > 3000);
-      for (const t of dead) updateTask(t.id, { status: 'WORKING', nextRetryAt: null, attempts: 0, lastError: 'healed: retry budget reset' });
+      for (const t of dead) await updateTask(t.id, { status: 'WORKING', nextRetryAt: null, attempts: 0, lastError: 'healed: retry budget reset' });
       steps.push({ step: 'Dead-lettered tasks', status: dead.length ? 'fixed' : 'ok', detail: dead.length ? `revived ${dead.length}` : 'none' });
 
       // 3 — orphan git worktrees / branches from deleted tasks
@@ -818,8 +825,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // 6 — orchestrator liveness — heal can reset jobs but CANNOT spawn agents
       // (that's the orchestrator's job, a separate process). Be honest if it's down.
       let hbAge = Infinity; let hbDetail = 'never started';
-      try { const h: any = getHeartbeat(); if (h?.lastBeatAt) { hbAge = Math.round((Date.now() - new Date(h.lastBeatAt).getTime()) / 1000); hbDetail = `last beat ${hbAge}s ago · circuit ${h.circuit}`; } } catch { /* optional */ }
-      try { const s = getBoardSettings() || {}; updateBoardSettings({ ...s, agentStatus: 'STARTED' }); } catch { /* non-fatal */ }
+      try { const h: any = await getHeartbeat(); if (h?.lastBeatAt) { hbAge = Math.round((Date.now() - new Date(h.lastBeatAt).getTime()) / 1000); hbDetail = `last beat ${hbAge}s ago · circuit ${h.circuit}`; } } catch { /* optional */ }
+      try { const s = await getBoardSettings() || {}; await updateBoardSettings({ ...s, agentStatus: 'STARTED' }); } catch { /* non-fatal */ }
       const orchDown = hbAge > 90;
       steps.push({
         step: 'Orchestrator',
@@ -850,7 +857,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const { readdirSync, statSync } = await import('fs');
       const { getAllTasks } = await import('./tasks.js');
-      const live = getAllTasks().filter((t: any) => t.status === 'WORKING' && t.claimedBy);
+      const live = (await getAllTasks()).filter((t: any) => t.status === 'WORKING' && t.claimedBy);
       // Derive the role from the task's live STAGE (authoritative, from the DB) rather than
       // parsing the log header — the parse could go stale and stick on the first stage.
       const STAGE_ROLE: Record<string, string> = { plan: 'architect', build: 'dev', qa: 'qa', review: 'review', merge: 'merge' };
@@ -885,7 +892,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.url === '/agents' && req.method === 'GET') {
     try {
       const { getAgents } = await import('../agentic/index.ts');
-      res.end(JSON.stringify({ agents: getAgents().map((a: any) => ({ ...a, enabled: a.enabled ? 1 : 0, isSystem: a.isSystem ? 1 : 0 })) }));
+      res.end(JSON.stringify({ agents: (await getAgents()).map((a: any) => ({ ...a, enabled: a.enabled ? 1 : 0, isSystem: a.isSystem ? 1 : 0 })) }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
@@ -893,32 +900,32 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const body = JSON.parse(await readBody(req));
       const { upsertAgent } = await import('../agentic/index.ts');
-      upsertAgent({ ...body, enabled: !!body.enabled, isSystem: !!body.isSystem });
+      await upsertAgent({ ...body, enabled: !!body.enabled, isSystem: !!body.isSystem });
       res.end(JSON.stringify({ ok: true }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
   if (req.url === '/agents/reset' && req.method === 'POST') {
-    try { const { resetAgents } = await import('../agentic/index.ts'); resetAgents(); res.end(JSON.stringify({ ok: true })); }
+    try { const { resetAgents } = await import('../agentic/index.ts'); await resetAgents(); res.end(JSON.stringify({ ok: true })); }
     catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
   // Global agent defaults (the fallback each project inherits). maxConcurrency 0 = unlimited.
   if (req.url === '/agent-defaults' && req.method === 'GET') {
-    try { res.end(JSON.stringify(getAgentDefaults())); }
+    try { res.end(JSON.stringify(await getAgentDefaults())); }
     catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
   if (req.url === '/agent-defaults' && req.method === 'PUT') {
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
-      res.end(JSON.stringify(setAgentDefaults({ maxConcurrency: b.maxConcurrency != null ? Number(b.maxConcurrency) : undefined })));
+      res.end(JSON.stringify(await setAgentDefaults({ maxConcurrency: b.maxConcurrency != null ? Number(b.maxConcurrency) : undefined })));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
   const agentDel = req.url?.match(/^\/agents\/([^/]+)$/);
   if (agentDel && req.method === 'DELETE') {
-    try { const { deleteAgent } = await import('../agentic/index.ts'); deleteAgent(decodeURIComponent(agentDel[1])); res.end(JSON.stringify({ ok: true })); }
+    try { const { deleteAgent } = await import('../agentic/index.ts'); await deleteAgent(decodeURIComponent(agentDel[1])); res.end(JSON.stringify({ ok: true })); }
     catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
@@ -927,7 +934,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // File tree for the project's repo (git-tracked files; respects .gitignore).
   if (req.method === 'GET' && req.url?.startsWith('/files')) {
     try {
-      const root = projectRepoPath(projectIdOf(req));
+      const root = await projectRepoPath(projectIdOf(req));
       // The 'default' project's repoPath is the orchestrator's own repo (the host cwd).
       // Context is for USER projects (one per git repo) — never expose the host's files here.
       if (root === process.cwd()) { res.end(JSON.stringify({ root, files: [], isHost: true })); return; }
@@ -942,7 +949,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const { estimateTokens } = await import('../agentic/index.ts');
       const u = new URL(req.url, 'http://x');
       const rel = u.searchParams.get('path') || '';
-      const root = projectRepoPath(projectIdOf(req));
+      const root = await projectRepoPath(projectIdOf(req));
       const abs = join(root, rel);
       if (!abs.startsWith(root) || rel.includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
       const bytes = statSync(abs).size;
@@ -976,7 +983,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         // GC = reconcile against disk truth (drop files deleted/renamed since last kept),
         // THEN age-out + enforce cap. The disk reconcile is what a manual Sweep adds over
         // the automatic merge-time sync — it catches deletes made outside the merge flow.
-        const root = projectRepoPath(project);
+        const root = await projectRepoPath(project);
         const deleted = root === process.cwd() ? [] : ctx.reconcileContext(project, ctx.listRepoFiles(root));
         const result = ctx.sweepContext(project, { cap });
         res.end(JSON.stringify({ result: {
@@ -994,7 +1001,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (req.method === 'POST' && /^\/context(\?.*)?$/.test(req.url)) {
         const t0 = Date.now();
         const b = JSON.parse(await readBody(req));
-        const root = projectRepoPath(project);
+        const root = await projectRepoPath(project);
         const abs = join(root, b.path);
         if (!abs.startsWith(root) || String(b.path).includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
         const bytes = statSync(abs).size;                 // read cost is timed into durationMs
@@ -1093,13 +1100,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
     try {
       if (req.method === 'GET' && req.url?.match(/^\/tasks(\?.*)?$/)) {
-        const tasks = getAllTasks(projectIdOf(req));
+        const tasks = await getAllTasks(projectIdOf(req));
         res.end(JSON.stringify(tasks));
         return;
       }
       if (req.method === 'PUT' && req.url === '/tasks/bulk-priority') {
         const body = JSON.parse(await readBody(req));
-        bulkUpdatePriorities(body);
+        await bulkUpdatePriorities(body);
         res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -1121,16 +1128,16 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const taskId = decodeURIComponent(lifecycleMatch[1]);
         const action = lifecycleMatch[2];
         if (action === 'start') {
-          updateTask(taskId, { status: 'WORKING', control: null, started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0 });
+          await updateTask(taskId, { status: 'WORKING', control: null, started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0 });
           res.end(JSON.stringify({ ok: true }));
         } else if (action === 'pause') {
-          updateTask(taskId, { control: 'paused' });
+          await updateTask(taskId, { control: 'paused' });
           res.end(JSON.stringify({ ok: true }));
         } else if (action === 'resume') {
-          updateTask(taskId, { control: null, status: 'WORKING', started: null, claimedBy: null });
+          await updateTask(taskId, { control: null, status: 'WORKING', started: null, claimedBy: null });
           res.end(JSON.stringify({ ok: true }));
         } else { // stop — orchestrator kills the agent + halts the task
-          updateTask(taskId, { control: 'stop' });
+          await updateTask(taskId, { control: 'stop' });
           res.end(JSON.stringify({ ok: true, stopping: true }));
         }
         return;
@@ -1139,9 +1146,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (triggerMatch) {
         const taskId = triggerMatch[1];
         if (req.method === 'POST') {
-          const task = getAllTasks().find(t => t.id === taskId);
+          const task = (await getAllTasks()).find(t => t.id === taskId);
           if (task) {
-            updateTask(taskId, { status: 'WORKING', claimedBy: 'dev', started: new Date().toISOString() });
+            await updateTask(taskId, { status: 'WORKING', claimedBy: 'dev', started: new Date().toISOString() });
             console.log(`[db-server] Task triggered: ${task.title}`);
 
             // Build a rich agent prompt from the task
@@ -1167,7 +1174,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // Generic POST /tasks — create new task (must come after triggerMatch)
       if (req.method === 'POST' && req.url?.match(/^\/tasks(\?.*)?$/)) {
         const body = JSON.parse(await readBody(req));
-        createTask({ ...body, projectId: projectIdOf(req, body) });
+        await createTask({ ...body, projectId: projectIdOf(req, body) });
         res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -1184,13 +1191,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             body.etcSetAt = new Date().toISOString();
             delete body.etc;
           }
-          updateTask(taskId, body);
+          await updateTask(taskId, body);
           res.end(JSON.stringify({ ok: true }));
           return;
         }
         if (req.method === 'DELETE') {
           console.log(`[db-server] Deleting task: ${taskId}`);
-          deleteTask(taskId);
+          await deleteTask(taskId);
           res.end(JSON.stringify({ ok: true }));
           return;
         }
@@ -1205,13 +1212,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.url === '/settings') {
     try {
       if (req.method === 'GET') {
-        const settings = getBoardSettings();
+        const settings = await getBoardSettings();
         res.end(JSON.stringify(settings || {}));
         return;
       }
       if (req.method === 'PUT') {
         const body = JSON.parse(await readBody(req));
-        updateBoardSettings(body);
+        await updateBoardSettings(body);
         res.end(JSON.stringify({ ok: true }));
         return;
       }
@@ -1226,7 +1233,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url === '/db-usage') {
     try {
       const { getDbUsageSummary } = await import('./tasks.js');
-      res.end(JSON.stringify({ usage: getDbUsageSummary() }));
+      res.end(JSON.stringify({ usage: await getDbUsageSummary() }));
     } catch (e: any) {
       res.statusCode = 500;
       res.end(JSON.stringify({ error: e.message }));
@@ -1241,7 +1248,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (body.agentName) {
         try {
           const { recordDbUsage } = await import('./tasks.js');
-          recordDbUsage(body.agentName, body.taskId ?? null, body.query ?? '');
+          await recordDbUsage(body.agentName, body.taskId ?? null, body.query ?? '');
         } catch { /* audit must never break search */ }
       }
       const results = await semanticSearch(body.query, body.topK ?? 10, projectIdOf(req, body));
@@ -1266,7 +1273,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     const pid = projectIdOf(req);
     try {
       const { generateProjectBrief } = await import('./brief.js');
-      const root = projectRepoPath(pid);
+      const root = await projectRepoPath(pid);
       // Fire-and-forget: the LLM pass can take ~15–120s; the UI polls GET for the result.
       generateProjectBrief(pid, root).catch(e => console.warn(`[db-server] brief rebuild [${pid}]: ${e?.message || e}`));
       res.end(JSON.stringify({ ok: true, started: true }));
@@ -1284,7 +1291,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (!q) { res.statusCode = 400; res.end(JSON.stringify({ error: 'query is required' })); return; }
       const topK = Math.min(Math.max(Number(body.topK) || 8, 1), 20);
       const results = await semanticSearch(q, topK, pid);
-      const root = projectRepoPath(pid);
+      const root = await projectRepoPath(pid);
       // Pull a small window of real source around each hit so the answer is grounded in code.
       const snippets = results.map(r => {
         try {
@@ -1352,7 +1359,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const base = Date.now();
       const intakeProject = projectIdOf(req, body);
       const autoStart = body.autoStart !== false; // default: start agents immediately
-      tasks.forEach((t: any, i: number) => {
+      for (let i = 0; i < tasks.length; i++) {
+        const t: any = tasks[i];
         const id = 'CHAT-' + (base + i).toString(36).toUpperCase().slice(-5) + Math.random().toString(36).slice(2, 4).toUpperCase();
         const scenarios: string[] = Array.isArray(t.scenarios) ? t.scenarios.map(String) : [];
         const description = (String(t.description || '') +
@@ -1369,9 +1377,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
           attempts: 0,
           projectId: intakeProject,
         };
-        createTask(task as any);
+        await createTask(task as any);
         created.push({ id, title: task.title, status: task.status });
-      });
+      }
 
       console.log(`[db-server] Intake: created ${created.length} task(s) from chat`);
       res.end(JSON.stringify({ ok: true, created }));
@@ -1395,7 +1403,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
   if (req.method === 'GET' && req.url === '/git/config') {
     try {
-      const cfg = getGitConfig();
+      const cfg = await getGitConfig();
       res.end(JSON.stringify({
         configured: !!cfg.token,
         username: cfg.username || '',
@@ -1414,7 +1422,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const b = body ? JSON.parse(body) : {};
       // Blank/absent token → coerce to undefined so setGitConfig PRESERVES the stored one.
       const token = (typeof b.token === 'string' && b.token.trim() !== '') ? b.token.trim() : undefined;
-      setGitConfig({ token, username: b.username, host: b.host });
+      await setGitConfig({ token, username: b.username, host: b.host });
       res.end(JSON.stringify({ ok: true }));
     } catch (e: any) {
       res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
@@ -1424,7 +1432,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
   if (req.method === 'DELETE' && req.url === '/git/config') {
     try {
-      setGitConfig({ token: '' }); // '' → explicit clear of the token
+      await setGitConfig({ token: '' }); // '' → explicit clear of the token
       res.end(JSON.stringify({ ok: true }));
     } catch (e: any) {
       res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
@@ -1435,7 +1443,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url?.startsWith('/git/status')) {
     try {
       const url = new URL(req.url, 'http://x');
-      const repo = url.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const repo = url.searchParams.get('repo') || await projectRepoPath(projectIdOf(req));
       const r = spawnSync('git', ['status', '--porcelain=v1', '-b'], { cwd: repo, encoding: 'utf8' });
       if (r.error || r.status !== 0) {
         res.end(JSON.stringify({ ok: false, error: (r.stderr || r.error?.message || 'git error').trim(), repo }));
@@ -1486,7 +1494,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url?.startsWith('/git/diff')) {
     try {
       const url = new URL(req.url, 'http://x');
-      const repo = url.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const repo = url.searchParams.get('repo') || await projectRepoPath(projectIdOf(req));
       const file = url.searchParams.get('file') || '';
       const r = spawnSync('git', ['diff', 'HEAD', '--', file], { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
       let diff = r.stdout || '';
@@ -1521,8 +1529,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         if (!minted) { res.statusCode = 400; res.end(JSON.stringify({ error: 'could not mint GitHub App installation token — is the app installed?' })); return; }
         cfg = { token: minted.token, username: minted.username, host: minted.host };
       } else {
-        const tok = tokenId ? getGitTokenRaw(tokenId) : null;
-        cfg = tok ? { token: tok.token, username: tok.username, host: tok.host } : getGitConfig();
+        const tok = tokenId ? await getGitTokenRaw(tokenId) : null;
+        cfg = tok ? { token: tok.token, username: tok.username, host: tok.host } : await getGitConfig();
       }
       let authUrl = url;
       if (cfg.token && url.startsWith('https://')) {
@@ -1565,12 +1573,12 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         try {
           const name = (dir.replace(/[\\/]+$/, '').split(/[\\/]+/).pop() || 'repo');
           const branchName = branch || (spawnSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim() || undefined;
-          const existing = listProjects().find(p => p.repoPath && resolve(p.repoPath) === resolve(dir));
-          const projs = listProjects();
-          const onlyDefault = projs.length === 1 && projs[0].id === 'default';
-          if (existing) { updateProject(existing.id, { repoPath: dir, branch: branchName, cloneUrl: url }); project = getProject(existing.id); }
-          else if (onlyDefault) { updateProject('default', { name, repoPath: dir, branch: branchName, cloneUrl: url }); project = getProject('default'); }
-          else { project = createProject({ name, repoPath: dir, branch: branchName, cloneUrl: url }); }
+          const allProjs = await listProjects();
+          const existing = allProjs.find(p => p.repoPath && resolve(p.repoPath) === resolve(dir));
+          const onlyDefault = allProjs.length === 1 && allProjs[0].id === 'default';
+          if (existing) { await updateProject(existing.id, { repoPath: dir, branch: branchName, cloneUrl: url }); project = await getProject(existing.id); }
+          else if (onlyDefault) { await updateProject('default', { name, repoPath: dir, branch: branchName, cloneUrl: url }); project = await getProject('default'); }
+          else { project = await createProject({ name, repoPath: dir, branch: branchName, cloneUrl: url }); }
         } catch (e: any) { console.warn(`[db-server] clone→project persist: ${e?.message}`); }
       }
       res.end(JSON.stringify({ ok: r.status === 0, dir, output: output.trim(), project }));
@@ -1610,10 +1618,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // record — except the un-deletable 'default' (its repo is reset to the host).
       let removedProject: string | null = null;
       try {
-        const owner = listProjects().find(p => p.repoPath && key(p.repoPath) === key(abs));
+        const owner = (await listProjects()).find(p => p.repoPath && key(p.repoPath) === key(abs));
         if (owner) {
-          if (owner.id === 'default') updateProject('default', { name: 'Default', repoPath: process.cwd(), branch: '', cloneUrl: '' });
-          else { purgeProjectData(owner.id); removedProject = owner.id; }
+          if (owner.id === 'default') await updateProject('default', { name: 'Default', repoPath: process.cwd(), branch: '', cloneUrl: '' });
+          else { await purgeProjectData(owner.id); removedProject = owner.id; }
         }
       } catch (e: any) { console.warn(`[db-server] delete-repo project purge: ${e?.message}`); }
       res.end(JSON.stringify({ ok: true, folderDeleted, deleted: folderDeleted ? abs : null, folderKept: !inside, removedProject }));
@@ -1648,8 +1656,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
           if (!minted) { res.statusCode = 400; res.end(JSON.stringify({ error: 'could not mint GitHub App installation token' })); return; }
           cfg = { token: minted.token, username: minted.username, host: minted.host };
         } else {
-          const tok = tokenId ? getGitTokenRaw(tokenId) : null;
-          cfg = tok ? { token: tok.token, username: tok.username, host: tok.host } : getGitConfig();
+          const tok = tokenId ? await getGitTokenRaw(tokenId) : null;
+          cfg = tok ? { token: tok.token, username: tok.username, host: tok.host } : await getGitConfig();
         }
         let authUrl = url;
         if (cfg.token && url.startsWith('https://')) authUrl = url.replace('https://', `https://${encodeURIComponent(cfg.username || 'x-access-token')}:${encodeURIComponent(cfg.token)}@`);
@@ -1666,11 +1674,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
 
       // First import reuses the seeded Default slot; else a new project.
-      const projects = listProjects();
+      const projects = await listProjects();
       const onlyDefault = projects.length === 1 && projects[0].id === 'default';
       let project;
-      if (onlyDefault) { updateProject('default', { name, repoPath: dir, emoji: b.emoji }); project = getProject('default'); }
-      else { project = createProject({ name, repoPath: dir, emoji: b.emoji }); }
+      if (onlyDefault) { await updateProject('default', { name, repoPath: dir, emoji: b.emoji }); project = await getProject('default'); }
+      else { project = await createProject({ name, repoPath: dir, emoji: b.emoji }); }
       res.end(JSON.stringify({ ok: true, project, cloned, dir, output: output.trim() }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -1686,8 +1694,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         res.end(JSON.stringify({ error: 'repo creation via GitHub App not supported yet — use a PAT' }));
         return;
       }
-      const tokC = b.tokenId ? getGitTokenRaw(String(b.tokenId)) : null;
-      const cfg = tokC ? { token: tokC.token } : getGitConfig();
+      const tokC = b.tokenId ? await getGitTokenRaw(String(b.tokenId)) : null;
+      const cfg = tokC ? { token: tokC.token } : await getGitConfig();
       if (!cfg.token) { res.statusCode = 400; res.end(JSON.stringify({ error: 'No GitHub token configured' })); return; }
       const name = String(b.name || '');
       if (!name) { res.statusCode = 400; res.end(JSON.stringify({ error: 'name is required' })); return; }
@@ -1719,7 +1727,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/commit') {
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
-      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      const repo = String(b.repo || await projectRepoPath(projectIdOf(req, b)));
       const message = String(b.message || '').trim();
       if (!message) { res.statusCode = 400; res.end(JSON.stringify({ error: 'commit message is required' })); return; }
       if (b.addAll !== false) spawnSync('git', ['add', '-A'], { cwd: repo, encoding: 'utf8' });
@@ -1736,7 +1744,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/push') {
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
-      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      const repo = String(b.repo || await projectRepoPath(projectIdOf(req, b)));
       // 'app:'<recordId> → mint a GitHub App installation token; else PAT/global config.
       let cfg: { token?: string; username?: string; host?: string };
       const pushTokenId = b.tokenId ? String(b.tokenId) : '';
@@ -1745,8 +1753,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         if (!minted) { res.statusCode = 400; res.end(JSON.stringify({ error: 'could not mint GitHub App installation token — is the app installed?' })); return; }
         cfg = { token: minted.token, username: minted.username, host: minted.host };
       } else {
-        const tokP = pushTokenId ? getGitTokenRaw(pushTokenId) : null;
-        cfg = tokP ? { token: tokP.token, username: tokP.username, host: tokP.host } : getGitConfig();
+        const tokP = pushTokenId ? await getGitTokenRaw(pushTokenId) : null;
+        cfg = tokP ? { token: tokP.token, username: tokP.username, host: tokP.host } : await getGitConfig();
       }
       const cur = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' });
       const branch = String(b.branch || (cur.stdout || '').trim() || 'HEAD');
@@ -1771,11 +1779,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/pull') {
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
-      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      const repo = String(b.repo || await projectRepoPath(projectIdOf(req, b)));
       let cfg: { token?: string; username?: string; host?: string };
       const tid = b.tokenId ? String(b.tokenId) : '';
       if (tid.startsWith('app:')) { const m = await mintInstallationToken(tid.slice(4)); if (!m) { res.statusCode = 400; res.end(JSON.stringify({ error: 'could not mint GitHub App token' })); return; } cfg = { token: m.token, username: m.username, host: m.host }; }
-      else { const t = tid ? getGitTokenRaw(tid) : null; cfg = t ? { token: t.token, username: t.username, host: t.host } : getGitConfig(); }
+      else { const t = tid ? await getGitTokenRaw(tid) : null; cfg = t ? { token: t.token, username: t.username, host: t.host } : await getGitConfig(); }
       const cur = (spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout || '').trim();
       const origin = (spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: repo, encoding: 'utf8' }).stdout || '').trim();
       if (!origin) { res.statusCode = 400; res.end(JSON.stringify({ error: 'no origin remote' })); return; }
@@ -1798,7 +1806,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       let cfg: { token?: string; username?: string };
       const tid = b.tokenId ? String(b.tokenId) : '';
       if (tid.startsWith('app:')) { const m = await mintInstallationToken(tid.slice(4)); cfg = m ? { token: m.token, username: m.username } : {}; }
-      else { const t = tid ? getGitTokenRaw(tid) : null; cfg = t ? { token: t.token, username: t.username } : getGitConfig(); }
+      else { const t = tid ? await getGitTokenRaw(tid) : null; cfg = t ? { token: t.token, username: t.username } : await getGitConfig(); }
       let authUrl = url;
       if (cfg.token && url.startsWith('https://')) authUrl = url.replace('https://', `https://${encodeURIComponent(cfg.username || 'x-access-token')}:${encodeURIComponent(cfg.token)}@`);
       const r = spawnSync('git', ['-c', 'credential.helper=', 'ls-remote', '--heads', '--symref', authUrl], { encoding: 'utf8', timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
@@ -1818,7 +1826,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && (req.url || '').split('?')[0] === '/git/branches') {
     try {
       const u = new URL(req.url!, 'http://x');
-      const repo = u.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const repo = u.searchParams.get('repo') || await projectRepoPath(projectIdOf(req));
       const cur = (spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout || '').trim();
       const local = (spawnSync('git', ['branch', '--format=%(refname:short)'], { cwd: repo, encoding: 'utf8' }).stdout || '').split('\n').map(s => s.trim()).filter(Boolean);
       const remote = (spawnSync('git', ['branch', '-r', '--format=%(refname:short)'], { cwd: repo, encoding: 'utf8' }).stdout || '').split('\n').map(s => s.trim()).filter(b => b && !b.includes('HEAD ->')).map(b => b.replace(/^origin\//, ''));
@@ -1832,7 +1840,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/checkout') {
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
-      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      const repo = String(b.repo || await projectRepoPath(projectIdOf(req, b)));
       const branch = String(b.branch || '').trim();
       if (!branch) { res.statusCode = 400; res.end(JSON.stringify({ error: 'branch is required' })); return; }
       const r = spawnSync('git', ['checkout', branch], { cwd: repo, encoding: 'utf8' });
@@ -1847,10 +1855,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url?.startsWith('/git/worktrees')) {
     try {
       const wtProject = projectIdOf(req);
-      const repoRoot = projectRepoPath(wtProject);
+      const repoRoot = await projectRepoPath(wtProject);
       const list = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
       const wtDir = join(repoRoot, '.worktrees');
-      const tasks = getAllTasks(wtProject);
+      const tasks = await getAllTasks(wtProject);
       const byId = new Map(tasks.map((t: any) => [t.id, t]));
       const out: any[] = [];
       for (const block of (list.stdout || '').split('\n\n')) {
@@ -1891,7 +1899,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url?.startsWith('/git/log')) {
     try {
       const url = new URL(req.url, 'http://x');
-      const repo = url.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const repo = url.searchParams.get('repo') || await projectRepoPath(projectIdOf(req));
       const ref = url.searchParams.get('ref') || '';
       const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 300);
       const args = ['log', `-n${limit}`, '--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%P%x1f%s', '--date=iso'];
@@ -1912,7 +1920,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url?.startsWith('/git/show')) {
     try {
       const url = new URL(req.url, 'http://x');
-      const repo = url.searchParams.get('repo') || projectRepoPath(projectIdOf(req));
+      const repo = url.searchParams.get('repo') || await projectRepoPath(projectIdOf(req));
       const hash = url.searchParams.get('hash') || '';
       if (!hash) { res.statusCode = 400; res.end(JSON.stringify({ error: 'hash is required' })); return; }
       const ns = spawnSync('git', ['show', '--no-color', '--name-status', '--pretty=format:%an%x1f%ae%x1f%ad%x1f%s', '--date=iso', hash], { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
@@ -1932,13 +1940,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url?.startsWith('/git/tokens') && !/^\/git\/tokens\/[^/?]+/.test(req.url)) {
     try {
       const pid = projectIdOf(req);
-      const toks: any[] = listGitTokensRaw(pid).map(t => ({
+      const toks: any[] = (await listGitTokensRaw(pid)).map(t => ({
         id: t.id, label: t.label, scope: t.scope, username: t.username || '', host: t.host,
         createdAt: t.createdAt, tokenMasked: maskToken(t.token), source: 'pat',
       }));
       // Append INSTALLED GitHub Apps as pseudo-tokens so the pickers can offer them.
       // Their id is 'app:'+recordId; git ops mint an installation token on demand.
-      for (const a of listGithubAppsRaw(pid)) {
+      for (const a of await listGithubAppsRaw(pid)) {
         if (!a.installationId) continue;
         toks.push({
           id: 'app:' + a.id, label: 'GitHub App: ' + (a.name || a.slug || a.id),
@@ -1954,7 +1962,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
       if (!b.token || !String(b.token).trim()) { res.statusCode = 400; res.end(JSON.stringify({ error: 'token is required' })); return; }
-      const row = addGitToken({ label: b.label, token: String(b.token).trim(), scope: b.scope, username: b.username, host: b.host }, projectIdOf(req, b));
+      const row = await addGitToken({ label: b.label, token: String(b.token).trim(), scope: b.scope, username: b.username, host: b.host }, projectIdOf(req, b));
       res.end(JSON.stringify({ ok: true, id: row.id }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -1964,13 +1972,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (m && req.method === 'PUT') {
       try {
         const b = JSON.parse((await readBody(req)) || '{}');
-        updateGitToken(decodeURIComponent(m[1]), { label: b.label, token: b.token, scope: b.scope, username: b.username, host: b.host });
+        await updateGitToken(decodeURIComponent(m[1]), { label: b.label, token: b.token, scope: b.scope, username: b.username, host: b.host });
         res.end(JSON.stringify({ ok: true }));
       } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
       return;
     }
     if (m && req.method === 'DELETE') {
-      try { deleteGitToken(decodeURIComponent(m[1])); res.end(JSON.stringify({ ok: true })); }
+      try { await deleteGitToken(decodeURIComponent(m[1])); res.end(JSON.stringify({ ok: true })); }
       catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
       return;
     }
@@ -1979,9 +1987,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // ── per-agent token assignment ── which PAT each agent authenticates git with.
   if (req.method === 'GET' && req.url?.startsWith('/git/assignments')) {
     try {
-      const assignments = getTokenAssignments(projectIdOf(req));
+      const assignments = await getTokenAssignments(projectIdOf(req));
       let agents: any[] = [];
-      try { const { getAgents } = await import('../agentic/index.ts'); agents = getAgents().map((a: any) => ({ role: a.role, label: a.label })); }
+      try { const { getAgents } = await import('../agentic/index.ts'); agents = (await getAgents()).map((a: any) => ({ role: a.role, label: a.label })); }
       catch { /* agents optional */ }
       res.end(JSON.stringify({ ok: true, assignments, agents }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
@@ -1991,7 +1999,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
       if (!b.agent) { res.statusCode = 400; res.end(JSON.stringify({ error: 'agent is required' })); return; }
-      setTokenAssignment(String(b.agent), b.tokenId ? String(b.tokenId) : null, projectIdOf(req, b));
+      await setTokenAssignment(String(b.agent), b.tokenId ? String(b.tokenId) : null, projectIdOf(req, b));
       res.end(JSON.stringify({ ok: true }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2001,7 +2009,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'POST' && (req.url || '').split('?')[0] === '/git/branch') {
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
-      const repo = String(b.repo || projectRepoPath(projectIdOf(req, b)));
+      const repo = String(b.repo || await projectRepoPath(projectIdOf(req, b)));
       const name = String(b.name || '').trim();
       if (!name) { res.statusCode = 400; res.end(JSON.stringify({ error: 'branch name is required' })); return; }
       const args = ['checkout', '-b', name];
@@ -2031,7 +2039,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const pid = projectIdOf(req, b);
       const short = Math.random().toString(36).slice(2, 8);
       const name = (b.name && String(b.name).trim()) || `ai-agents-${short}`;
-      const { id } = createPendingGithubApp(pid, name);
+      const { id } = await createPendingGithubApp(pid, name);
       const org = b.org ? String(b.org).trim() : '';
       const postUrl = org
         ? `https://github.com/organizations/${encodeURIComponent(org)}/settings/apps/new?state=${encodeURIComponent(id)}`
@@ -2076,8 +2084,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const slug = b.slug ? String(b.slug).trim() : undefined;
       if (!/^\d+$/.test(appId)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'App ID must be numeric (find it on the app\'s settings page).' })); return; }
       if (!/BEGIN[\s\S]*PRIVATE KEY[\s\S]*END/.test(privateKey)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'Private key must be a full PEM (-----BEGIN ... PRIVATE KEY-----).' })); return; }
-      const { id } = createPendingGithubApp(pid, name);
-      updateGithubApp(id, { appId, privateKey, name, slug, state: 'created' });
+      const { id } = await createPendingGithubApp(pid, name);
+      await updateGithubApp(id, { appId, privateKey, name, slug, state: 'created' });
       // Best-effort auto-detect: sign a JWT with the key and look up installations.
       let installed = false; let account: string | null = null; let detectError: string | null = null;
       try {
@@ -2085,7 +2093,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         if (installs.length) {
           const inst = installs.sort((a: any, c: any) => new Date(c.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
           account = inst?.account?.login || null;
-          updateGithubApp(id, { installationId: String(inst.id), account, state: 'installed' });
+          await updateGithubApp(id, { installationId: String(inst.id), account, state: 'installed' });
           installed = true;
         }
       } catch (e: any) { detectError = e?.message || 'could not reach GitHub to detect installation'; }
@@ -2104,7 +2112,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const u = new URL(req.url, 'http://x');
       const code = u.searchParams.get('code') || '';
       const state = u.searchParams.get('state') || '';
-      const rec = state ? getGithubApp(state) : null;
+      const rec = state ? await getGithubApp(state) : null;
       if (!code || !rec) {
         res.statusCode = 400;
         res.end(htmlPage('GitHub App error', `<h2>Could not complete setup</h2><p>${!code ? 'Missing code from GitHub.' : 'Unknown or expired setup session.'}</p><p><a href="${APP_UI_URL}">Return to the app</a></p>`));
@@ -2120,7 +2128,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         res.end(htmlPage('GitHub App error', `<h2>GitHub App conversion failed</h2><p>${(data?.message || `GitHub API error ${gh.status}`)}</p><p><a href="${APP_UI_URL}">Return to the app</a></p>`));
         return;
       }
-      updateGithubApp(rec.id, {
+      await updateGithubApp(rec.id, {
         appId: String(data.id),
         slug: data.slug,
         name: data.name || rec.name,
@@ -2154,7 +2162,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const u = new URL(req.url!, 'http://x');
         const state = decodeURIComponent(m[1]);
         const installationId = u.searchParams.get('installation_id') || '';
-        const rec = getGithubApp(state);
+        const rec = await getGithubApp(state);
         if (!rec?.appId || !rec.privateKey) {
           res.statusCode = 400;
           res.end(bounce('Setup session expired', 'Could not match this install to a pending app. Open the app and click Detect installation.'));
@@ -2168,13 +2176,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             ? installs.find((i: any) => String(i.id) === String(installationId))
             : installs.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
           if (inst) {
-            updateGithubApp(rec.id, { installationId: String(inst.id), account: inst.account?.login || account, state: 'installed' });
+            await updateGithubApp(rec.id, { installationId: String(inst.id), account: inst.account?.login || account, state: 'installed' });
             account = inst.account?.login || account;
           } else if (installationId) {
-            updateGithubApp(rec.id, { installationId, state: 'installed' });
+            await updateGithubApp(rec.id, { installationId, state: 'installed' });
           }
         } catch { /* keep going — installation_id from the redirect is enough to mint tokens */
-          if (installationId) updateGithubApp(rec.id, { installationId, state: 'installed' });
+          if (installationId) await updateGithubApp(rec.id, { installationId, state: 'installed' });
         }
         res.end(bounce('Installed ✓', `<b>${rec.name}</b> is connected${account ? ` on ${account}` : ''}. It's now available as a token in Clone/Push.`));
       } catch (e: any) {
@@ -2188,7 +2196,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // GET /git/github-apps?project=<id> → masked list (never secrets).
   if (req.method === 'GET' && req.url?.startsWith('/git/github-apps') && !/^\/git\/github-apps\/[^/?]+/.test(req.url)) {
     try {
-      res.end(JSON.stringify({ ok: true, apps: listGithubApps(projectIdOf(req)) }));
+      res.end(JSON.stringify({ ok: true, apps: await listGithubApps(projectIdOf(req)) }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
@@ -2198,14 +2206,14 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     const m = req.url?.match(/^\/git\/github-apps\/([^/?]+)\/detect-installation(?:\?.*)?$/);
     if (m && req.method === 'POST') {
       try {
-        const rec = getGithubApp(decodeURIComponent(m[1]));
+        const rec = await getGithubApp(decodeURIComponent(m[1]));
         if (!rec?.appId || !rec.privateKey) { res.statusCode = 400; res.end(JSON.stringify({ error: 'app not created yet' })); return; }
         const installs = await listAppInstallations(rec.appId, rec.privateKey);
         if (!installs.length) { res.end(JSON.stringify({ ok: true, installed: false, account: null })); return; }
         // Newest/first installation wins.
         const inst = installs.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
         const account = inst?.account?.login || null;
-        updateGithubApp(rec.id, { installationId: String(inst.id), account, state: 'installed' });
+        await updateGithubApp(rec.id, { installationId: String(inst.id), account, state: 'installed' });
         res.end(JSON.stringify({ ok: true, installed: true, account }));
       } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
       return;
@@ -2218,7 +2226,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (m && req.method === 'GET') {
       try {
         const id = decodeURIComponent(m[1]);
-        const rec = getGithubApp(id);
+        const rec = await getGithubApp(id);
         if (!rec?.installationId) { res.statusCode = 400; res.end(JSON.stringify({ error: 'app not installed yet — click Detect installation first' })); return; }
         const repos = await listInstallationRepos(id);
         res.end(JSON.stringify({ ok: true, repos }));
@@ -2236,8 +2244,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const id = decodeURIComponent(m[1]);
         const name = String(b.name ?? '').trim();
         if (!name) { res.statusCode = 400; res.end(JSON.stringify({ error: 'name is required' })); return; }
-        if (!getGithubApp(id)) { res.statusCode = 404; res.end(JSON.stringify({ error: 'app not found' })); return; }
-        updateGithubApp(id, { name });
+        if (!await getGithubApp(id)) { res.statusCode = 404; res.end(JSON.stringify({ error: 'app not found' })); return; }
+        await updateGithubApp(id, { name });
         res.end(JSON.stringify({ ok: true }));
       } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
       return;
@@ -2248,7 +2256,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   {
     const m = req.url?.match(/^\/git\/github-apps\/([^/?]+)(?:\?.*)?$/);
     if (m && req.method === 'DELETE') {
-      try { deleteGithubApp(decodeURIComponent(m[1])); res.end(JSON.stringify({ ok: true })); }
+      try { await deleteGithubApp(decodeURIComponent(m[1])); res.end(JSON.stringify({ ok: true })); }
       catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
       return;
     }
@@ -2259,8 +2267,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url?.startsWith('/project/run-config')) {
     try {
       const pid = projectIdOf(req);
-      const proj = getProject(pid);
-      res.end(JSON.stringify({ ok: true, config: proj?.runConfig || {}, repoPath: proj?.repoPath || projectRepoPath(pid) }));
+      const proj = await getProject(pid);
+      res.end(JSON.stringify({ ok: true, config: proj?.runConfig || {}, repoPath: proj?.repoPath || await projectRepoPath(pid) }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
@@ -2278,7 +2286,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // A manual PUT is a user action → mark the run-config confirmed (readiness gate leg 2).
       // Callers that only cache an auto-detection should pass {confirm:false}.
       const confirm = b.confirm !== false;
-      setProjectRunConfig(pid, clean, confirm);
+      await setProjectRunConfig(pid, clean, confirm);
       res.end(JSON.stringify({ ok: true, config: clean, confirmed: confirm }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2288,7 +2296,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url?.startsWith('/project/readiness')) {
     try {
       const pid = projectIdOf(req);
-      const p = getProject(pid);
+      const p = await getProject(pid);
       const repo = !!p?.repoPath && existsSync(p.repoPath) && existsSync(join(p.repoPath, '.git'));
       const runConfig = !!p?.runConfigConfirmed;
       const preview = !!p?.previewVerifiedAt;
@@ -2314,7 +2322,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         res.end(JSON.stringify({ error: 'bypass requires confirming BOTH: noExistingProject=true AND notExecutable=true' }));
         return;
       }
-      setProjectReadiness(pid, { readinessBypass: true });
+      await setProjectReadiness(pid, { readinessBypass: true });
       res.end(JSON.stringify({ ok: true, bypass: true }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2324,7 +2332,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
       const pid = projectIdOf(req, b);
-      const root = getProject(pid)?.repoPath || projectRepoPath(pid);
+      const root = (await getProject(pid))?.repoPath || await projectRepoPath(pid);
       if (!existsSync(root)) { res.statusCode = 400; res.end(JSON.stringify({ error: `repo path not found: ${root} — clone a repo first` })); return; }
       const det = await detectRunConfig(root);
       res.end(JSON.stringify({ ok: true, config: det.config, source: det.source, repoPath: root }));
@@ -2338,11 +2346,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const pid = projectIdOf(req, b);
       const which = String(b.which || '') as RunKey;
       if (!['install', 'run', 'build', 'test'].includes(which)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'which must be install|run|build|test' })); return; }
-      const proj = getProject(pid);
+      const proj = await getProject(pid);
       const cfg = proj?.runConfig || {};
       const cmd = String((cfg as any)[which] || '').trim();
       if (!cmd) { res.statusCode = 400; res.end(JSON.stringify({ error: `no ${which} command set — detect or enter one first` })); return; }
-      const root = proj?.repoPath || projectRepoPath(pid);
+      const root = proj?.repoPath || await projectRepoPath(pid);
       const cwd = cfg.cwd ? join(root, cfg.cwd) : root;
       if (!existsSync(cwd)) { res.statusCode = 400; res.end(JSON.stringify({ error: `working dir not found: ${cwd}` })); return; }
       const id = 'run_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -2404,8 +2412,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'GET' && req.url?.startsWith('/code-index/status')) {
     try {
       const pid = projectIdOf(req);
-      const ci = getCodeIndexConfig(pid);
-      const root = ci.root || projectRepoPath(pid);
+      const ci = await getCodeIndexConfig(pid);
+      const root = ci.root || await projectRepoPath(pid);
       let files = 0, nodes = 0, embedded = 0;
       try {
         const d = getDbFor(pid);
@@ -2439,7 +2447,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const b = JSON.parse((await readBody(req)) || '{}');
       const pid = projectIdOf(req, b);
       // root '' resets to the project's repoPath (default). glob optional.
-      setCodeIndexConfig({ root: b.root !== undefined ? String(b.root).trim() : undefined, glob: b.glob !== undefined ? String(b.glob).trim() : undefined }, pid);
+      await setCodeIndexConfig({ root: b.root !== undefined ? String(b.root).trim() : undefined, glob: b.glob !== undefined ? String(b.glob).trim() : undefined }, pid);
       rebuildIndex('code index retargeted', pid);
       res.end(JSON.stringify({ ok: true, rebuilding: true }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
@@ -2449,7 +2457,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // ── projects CRUD ─────────────────────────────────────────────────────────────
   if (req.method === 'GET' && req.url?.startsWith('/projects') && !/^\/projects\/[^/?]+/.test(req.url)) {
     try {
-      const projects = listProjects();
+      const projects = await listProjects();
       res.end(JSON.stringify({ ok: true, projects, activeCount: ACTIVE_AGENTS.size }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2458,7 +2466,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const b = JSON.parse((await readBody(req)) || '{}');
       if (!b.name || !String(b.name).trim()) { res.statusCode = 400; res.end(JSON.stringify({ error: 'name is required' })); return; }
-      const project = createProject({ name: String(b.name).trim(), repoPath: b.repoPath ? String(b.repoPath).trim() : undefined, emoji: b.emoji ? String(b.emoji) : undefined, branch: b.branch, cloneUrl: b.cloneUrl });
+      const project = await createProject({ name: String(b.name).trim(), repoPath: b.repoPath ? String(b.repoPath).trim() : undefined, emoji: b.emoji ? String(b.emoji) : undefined, branch: b.branch, cloneUrl: b.cloneUrl });
       res.end(JSON.stringify({ ok: true, project }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2469,11 +2477,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       try {
         const id = decodeURIComponent(m[1]);
         const b = JSON.parse((await readBody(req)) || '{}');
-        updateProject(id, { name: b.name, repoPath: b.repoPath, emoji: b.emoji, branch: b.branch, cloneUrl: b.cloneUrl });
+        await updateProject(id, { name: b.name, repoPath: b.repoPath, emoji: b.emoji, branch: b.branch, cloneUrl: b.cloneUrl });
         // Per-project concurrency: null/'' → inherit global default; a number → cap (0 = unlimited).
         if ('maxConcurrency' in b) {
           const v = b.maxConcurrency;
-          setProjectMaxConcurrency(id, (v === null || v === '' || v === undefined) ? null : Number(v));
+          await setProjectMaxConcurrency(id, (v === null || v === '' || v === undefined) ? null : Number(v));
         }
         res.end(JSON.stringify({ ok: true }));
       } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
@@ -2482,7 +2490,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (m && req.method === 'DELETE') {
       const id = decodeURIComponent(m[1]);
       if (id === 'default') { res.statusCode = 400; res.end(JSON.stringify({ error: 'cannot delete the default project' })); return; }
-      try { purgeProjectData(id); res.end(JSON.stringify({ ok: true })); }
+      try { await purgeProjectData(id); res.end(JSON.stringify({ ok: true })); }
       catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
       return;
     }
@@ -2493,9 +2501,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // dispatching new work; STARTED resumes. (Separate process — this only sets the flag.)
   if (req.method === 'POST' && (req.url === '/orchestrator/pause' || req.url === '/orchestrator/start')) {
     try {
-      const s = getBoardSettings() || {};
+      const s = await getBoardSettings() || {};
       const agentStatus = req.url === '/orchestrator/pause' ? 'PAUSED' : 'STARTED';
-      updateBoardSettings({ ...s, agentStatus });
+      await updateBoardSettings({ ...s, agentStatus });
       res.end(JSON.stringify({ ok: true }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2508,7 +2516,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (req.method === 'DELETE' && m) {
       try {
         const { deleteAgentLog } = await import('../agentic/db/logs.js');
-        const removed = deleteAgentLog(Number(m[1]));
+        const removed = await deleteAgentLog(Number(m[1]));
         res.end(JSON.stringify({ ok: true, removed }));
       } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
       return;
@@ -2518,7 +2526,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (req.method === 'DELETE' && (req.url || '').split('?')[0] === '/system-status/events') {
     try {
       const { clearAgentLogs } = await import('../agentic/db/logs.js');
-      const removed = clearAgentLogs();
+      const removed = await clearAgentLogs();
       res.end(JSON.stringify({ ok: true, removed }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2528,9 +2536,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const pid = projectIdOf(req);
       let hb: any = null;
-      try { hb = getHeartbeat(); } catch { /* optional */ }
-      const ci = getCodeIndexConfig(pid);
-      const root = ci.root || projectRepoPath(pid);
+      try { hb = await getHeartbeat(); } catch { /* optional */ }
+      const ci = await getCodeIndexConfig(pid);
+      const root = ci.root || await projectRepoPath(pid);
       // Highest-priority current activity: explicit op → index rebuild → agents → idle.
       let activity: Activity | undefined = systemActivity.get(pid);
       if (!activity && isRebuilding(pid)) activity = { kind: 'indexing', label: 'Reading & remembering repo', detail: root, since: Date.now() };
@@ -2538,7 +2546,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
       // Orchestrator liveness + always-on human-readable status line (from the heartbeat).
       let settings: any = {};
-      try { settings = getBoardSettings() || {}; } catch { /* optional */ }
+      try { settings = await getBoardSettings() || {}; } catch { /* optional */ }
       const lastBeatAt = hb?.lastBeatAt || null;
       const ageSec = lastBeatAt ? Math.round((Date.now() - new Date(lastBeatAt).getTime()) / 1000) : null;
       const orchestrator = {
@@ -2552,7 +2560,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // Per-project task counts for the board summary.
       let counts = { pending: 0, working: 0, testing: 0, done: 0 };
       try {
-        const tasks = getAllTasks(pid);
+        const tasks = await getAllTasks(pid);
         counts = {
           pending: tasks.filter((t: any) => t.status === 'WORKING' && !t.started).length,
           working: tasks.filter((t: any) => t.status === 'WORKING' && t.started).length,
@@ -2563,7 +2571,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
       // Most recent orchestrator/system log rows (newest-first) for the live event feed.
       let events: Array<{ id: number; ts: string; taskId: string; msg: string; type: string }> = [];
-      try { events = getRecentLogs(15); } catch { /* logs.db optional */ }
+      try { events = await getRecentLogs(15); } catch { /* logs.db optional */ }
 
       res.end(JSON.stringify({
         ok: true,

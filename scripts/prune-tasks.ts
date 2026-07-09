@@ -11,7 +11,7 @@ import { getAllTasks, deleteTask } from '../db/tasks';
 setConfig(buildConfig(process.cwd()));
 
 const apply = process.argv.includes('--apply');
-const tasks = getAllTasks();
+const tasks = await getAllTasks();
 const hasScenarios = (t: any) => Array.isArray(t.scenarios) && t.scenarios.length > 0;
 const keep = tasks.filter(hasScenarios);
 const drop = tasks.filter(t => !hasScenarios(t));
@@ -25,6 +25,6 @@ for (const t of drop) console.log(`  ✗ ${t.id.slice(-6)}  [${t.status}]  ${t.t
 if (!apply) {
   console.log(`\nDry run — nothing deleted. Re-run with --apply to remove the ${drop.length} task(s) above.`);
 } else {
-  for (const t of drop) deleteTask(t.id);
+  for (const t of drop) await deleteTask(t.id);
   console.log(`\n✅ Deleted ${drop.length} task(s). ${keep.length} kept.`);
 }

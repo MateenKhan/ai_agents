@@ -16,27 +16,27 @@ import { execSync, spawn } from 'node:child_process';
 /** The git repo a task's merge/ancestry checks run in. Project-scoped: a task in a
  *  project with a valid repoPath uses THAT repo; anything else → the host cwd (so the
  *  default single-project flow is byte-for-byte unchanged). Mirrors runner.projectRootFor. */
-function repoCwdFor(taskId: string): string {
+async function repoCwdFor(taskId: string): Promise<string> {
   try {
-    const tk = getTask(taskId);
+    const tk = await getTask(taskId);
     // Honor a configured repoPath for ANY project, including 'default' (its seeded repoPath is
     // the host cwd, so normal installs are unchanged). Keeps merge/ancestry checks in the SAME
     // repo the runner builds worktrees in, and matches the index's projectRepoPath resolution.
-    const proj = getProject(tk?.projectId || 'default');
+    const proj = await getProject(tk?.projectId || 'default');
     if (proj?.repoPath && existsSync(proj.repoPath)) return proj.repoPath;
   } catch { /* missing project/db → host cwd */ }
   return process.cwd();
 }
 
 /** True if the task's branch is already merged into the current HEAD (in its project repo). */
-function isMergedIntoHead(taskId: string): boolean {
-  try { execSync(`git merge-base --is-ancestor task/${taskId} HEAD`, { stdio: 'pipe', cwd: repoCwdFor(taskId) }); return true; }
+async function isMergedIntoHead(taskId: string): Promise<boolean> {
+  try { execSync(`git merge-base --is-ancestor task/${taskId} HEAD`, { stdio: 'pipe', cwd: await repoCwdFor(taskId) }); return true; }
   catch { return false; }
 }
 
 /** Current branch name in a task's project repo (for readable "Merging into <branch>"). */
-function currentBranch(taskId: string): string {
-  try { return execSync('git rev-parse --abbrev-ref HEAD', { stdio: 'pipe', cwd: repoCwdFor(taskId) }).toString().trim() || 'HEAD'; }
+async function currentBranch(taskId: string): Promise<string> {
+  try { return execSync('git rev-parse --abbrev-ref HEAD', { stdio: 'pipe', cwd: await repoCwdFor(taskId) }).toString().trim() || 'HEAD'; }
   catch { return 'HEAD'; }
 }
 
@@ -45,10 +45,10 @@ function currentBranch(taskId: string): string {
  *  merge keeps the Context panel truthful without a manual Sweep. Keyed on the same
  *  `projectId || 'default'` the API/agents use so it matches the stored rows. Best-effort —
  *  a git/db hiccup here must never taint a completed merge. */
-function reconcileContextAfterMerge(taskId: string): void {
+async function reconcileContextAfterMerge(taskId: string): Promise<void> {
   try {
-    const pid = getTask(taskId)?.projectId || 'default';
-    const removed = reconcileContext(pid, listRepoFiles(repoCwdFor(taskId)));
+    const pid = (await getTask(taskId))?.projectId || 'default';
+    const removed = reconcileContext(pid, listRepoFiles(await repoCwdFor(taskId)));
     if (removed.length) log(taskId, `🧹 context: dropped ${removed.length} file(s) deleted by the merge`, 'info');
   } catch { /* context reconcile is best-effort — never block a merge */ }
 }
@@ -251,11 +251,11 @@ function canSpawn(active: number): boolean {
 /** The steady-state status line, derived from the current snapshot (breaker, resource
  *  gate, live agents, pending queue). Transient lines (Dispatching/Merging) are set
  *  directly during those actions and get overwritten by this on the next quiet tick. */
-function computeSteadyStatus(): string {
+async function computeSteadyStatus(): Promise<string> {
   if (breaker.state === 'open') return '⛔ Anthropic API unreachable — dispatch paused, retrying every 15s';
   if (dbBreaker.state === 'open') return '⛔ db-server offline — healing, dispatch paused';
   const working = agentTaskMap.size;
-  const pending = allTasks().filter(
+  const pending = (await allTasks()).filter(
     x => x.status === 'WORKING' && !x.started && x.control !== 'paused' && x.control !== 'stop'
       && (!x.nextRetryAt || Date.parse(x.nextRetryAt) <= Date.now())
   ).length;
@@ -302,9 +302,9 @@ function nextRoute(task: Task): Routed | null {
   return null; // 'merged' / unknown → not dispatchable
 }
 
-function agentMap(): Record<string, AgentConfig> {
+async function agentMap(): Promise<Record<string, AgentConfig>> {
   const m: Record<string, AgentConfig> = {};
-  for (const a of getAgents()) m[a.role] = a;
+  for (const a of await getAgents()) m[a.role] = a;
   return m;
 }
 function modelFor(role: AgentRole, a: AgentConfig): string { return getConfig().models?.[role] || a.model; }
@@ -319,9 +319,9 @@ function getAvailableAgent(): string | null {
 /** True if a merge is currently running. Only ONE merge may touch the shared repo root
  *  at a time — `git merge` mutates the working tree/index, so two concurrent merges in
  *  the same checkout corrupt each other. A second approved task waits its turn. */
-function mergeInFlight(): boolean {
+async function mergeInFlight(): Promise<boolean> {
   for (const id of agentTaskMap.values()) {
-    if (getTask(id)?.stage === 'merge') return true;
+    if ((await getTask(id))?.stage === 'merge') return true;
   }
   return false;
 }
@@ -333,44 +333,44 @@ const projectOf = (task: Task): string => task.projectId || 'default';
 
 /** All tasks across all projects (NULL projectId rows belong to 'default'; no dup — a task
  *  is returned under exactly one project). */
-function allTasks(): Task[] {
+async function allTasks(): Promise<Task[]> {
   const out: Task[] = [];
-  for (const p of listProjects()) for (const tk of getAllTasks(p.id)) out.push(tk);
+  for (const p of await listProjects()) for (const tk of await getAllTasks(p.id)) out.push(tk);
   return out;
 }
 
 /** How many agents are currently running for a project (by the live agentTaskMap). */
-function activeForProject(pid: string): number {
+async function activeForProject(pid: string): Promise<number> {
   let n = 0;
-  for (const id of agentTaskMap.values()) { const tk = getTask(id); if (tk && projectOf(tk) === pid) n++; }
+  for (const id of agentTaskMap.values()) { const tk = await getTask(id); if (tk && projectOf(tk) === pid) n++; }
   return n;
 }
 
 /** A project's max concurrent agents: its own override, else the global default; 0 = unlimited. */
-function projectCap(pid: string): number {
+async function projectCap(pid: string): Promise<number> {
   try {
-    const p = getProject(pid);
+    const p = await getProject(pid);
     if (p && p.maxConcurrency != null) return Math.max(0, p.maxConcurrency);
   } catch { /* fall through to global default */ }
-  return Math.max(0, getAgentDefaults().maxConcurrency || 0);
+  return Math.max(0, (await getAgentDefaults()).maxConcurrency || 0);
 }
 
 // ── retry / dead-letter ──────────────────────────────────────────────────────
-function scheduleRetry(id: string, attempts: number, note: string): void {
+async function scheduleRetry(id: string, attempts: number, note: string): Promise<void> {
   const backoff = Math.min(5 * 60 * 1000, 5000 * 2 ** attempts);
-  updateTask(id, { nextRetryAt: new Date(Date.now() + backoff).toISOString(), started: null, claimedBy: null, lastError: note });
+  await updateTask(id, { nextRetryAt: new Date(Date.now() + backoff).toISOString(), started: null, claimedBy: null, lastError: note });
   log(id, `↻ retry in ${Math.round(backoff / 1000)}s (attempt ${attempts}) — ${note}`, 'warning');
 }
-function deadLetter(id: string, note: string): void {
+async function deadLetter(id: string, note: string): Promise<void> {
   // Move to BLOCKED (not left in WORKING) so the failure is VISIBLE on the board with
   // its reason, instead of a stuck task masquerading as active. Heal/human can revive.
-  updateTask(id, { status: 'BLOCKED', started: null, claimedBy: null, nextRetryAt: DEAD_LETTER_AT, lastError: note });
+  await updateTask(id, { status: 'BLOCKED', started: null, claimedBy: null, nextRetryAt: DEAD_LETTER_AT, lastError: note });
   log(id, `☠ dead-letter → BLOCKED — ${note}. Fix the cause and re-trigger, or Heal to retry.`, 'error');
 }
-function failTask(task: Task, kind: FailureKind, note: string): void {
+async function failTask(task: Task, kind: FailureKind, note: string): Promise<void> {
   breakerFailure(kind);
   const attempts = task.attempts || 0;
-  if (attempts < maxAttempts()) { scheduleRetry(task.id, attempts, note); return; }
+  if (attempts < maxAttempts()) { await scheduleRetry(task.id, attempts, note); return; }
   // Retries exhausted. A genuine dev/qa failure gets ONE architect rescue (re-plan) before we
   // give up — the architect diagnoses and hands a fresh brief back to the dev. Architect-stage
   // failures (plan/rescue/merge) and rescue-budget exhaustion dead-letter straight to BLOCKED.
@@ -379,20 +379,20 @@ function failTask(task: Task, kind: FailureKind, note: string): void {
     && (task.rescueCount || 0) < MAX_RESCUE
     && t().enableArchitect !== false; // no architect enabled → nobody to re-plan
   if (canRescue) {
-    escalateToArchitect(task, `${maxAttempts()} attempts exhausted (${note})`);
+    await escalateToArchitect(task, `${maxAttempts()} attempts exhausted (${note})`);
   } else {
-    deadLetter(task.id, `${maxAttempts()} attempts exhausted (${note})`);
+    await deadLetter(task.id, `${maxAttempts()} attempts exhausted (${note})`);
   }
 }
 
 /** Route a repeatedly-failing dev/qa task to the architect for a re-plan, then back to the dev.
  *  Resets the per-stage retry budget (attempts) and records the rescue so a task that keeps
  *  failing even after re-planning eventually dead-letters instead of looping. */
-function escalateToArchitect(task: Task, note: string): void {
+async function escalateToArchitect(task: Task, note: string): Promise<void> {
   const failedStage = task.stage;
   // rescueCount is incremented at DISPATCH (see dispatchPending) so the cap applies uniformly
   // whether the rescue was triggered here OR by a dev/qa self-reporting that it's blocked.
-  updateTask(task.id, {
+  await updateTask(task.id, {
     stage: 'rescue', status: 'WORKING',
     started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
     attempts: 0, lastError: note,
@@ -432,16 +432,16 @@ function triagePromptFor(pid: string, tasks: Task[]): string {
 async function triagePass(): Promise<void> {
   if (TRIAGE_MS <= 0 || t().enableArchitect === false) return;
   if (isAgentBusy('triage')) return; // one triage at a time
-  const arch = agentMap()['architect'];
+  const arch = (await agentMap())['architect'];
   if (!arch || !arch.enabled) return;
 
   // Round-robin the projects so a busy project doesn't starve the others of oversight.
-  const projects = listProjects();
+  const projects = await listProjects();
   if (!projects.length) return;
   let picked: { pid: string; tasks: Task[] } | null = null;
   for (let i = 0; i < projects.length; i++) {
     const pid = projects[(triageCursor + i) % projects.length].id;
-    const cands = getAllTasks(pid).filter(x =>
+    const cands = (await getAllTasks(pid)).filter(x =>
       (x.status === 'WORKING' || x.status === 'TESTING')
       && !!x.stage && ['build', 'qa', 'review', 'rescue'].includes(x.stage)
       && !isTaskRunning(x.id)               // never race a live worker
@@ -456,7 +456,7 @@ async function triagePass(): Promise<void> {
   const anchor = tasks[0];
   for (const x of tasks) triaging.add(x.id); // freeze from dispatch for the run
   const release = () => { for (const x of tasks) triaging.delete(x.id); };
-  const ok = spawnHeadlessAgent({
+  const ok = await spawnHeadlessAgent({
     agentName: 'triage', taskId: anchor.id, role: 'architect',
     prompt: triagePromptFor(pid, tasks), model: modelFor('architect', arch), worktree: 'none',
     onExit: (r) => { release(); log('__system__', `🔭 architect triage done (${pid}, ${tasks.length} task(s), ${r.failure})`, r.failure === 'none' ? 'success' : 'warning'); },
@@ -472,26 +472,26 @@ async function dispatch(task: Task, route: Routed, ac: AgentConfig, name: string
   const wt = worktreeFor(route.role, route.stage, ac);
   let prompt: string;
   try { prompt = await renderPrompt(ac, task, route.stage); }
-  catch (e: any) { scheduleRetry(task.id, attempts, `prompt render failed: ${e?.message || e}`); return; }
+  catch (e: any) { await scheduleRetry(task.id, attempts, `prompt render failed: ${e?.message || e}`); return; }
 
-  updateTask(task.id, {
+  await updateTask(task.id, {
     claimedBy: name, started: new Date().toISOString(), attempts,
     leaseExpiresAt: new Date(Date.now() + leaseMs()).toISOString(),
     nextRetryAt: null, lastError: null, model,
   });
   agentTaskMap.set(name, task.id);
 
-  const ok = spawnHeadlessAgent({
+  const ok = await spawnHeadlessAgent({
     agentName: name, taskId: task.id, role: route.role, prompt, model, worktree: wt,
     onExit: (r) => { handleAgentExit(name, task.id, route, r).catch(e => log(task.id, `exit handler error: ${e?.message || e}`, 'error')); },
   });
   if (ok) log(task.id, `🚀 ${route.role} (${model}) as ${name} — stage ${route.stage}, attempt ${attempts}/${maxAttempts()}`, 'success');
-  else { agentTaskMap.delete(name); scheduleRetry(task.id, attempts, 'spawn failed'); }
+  else { agentTaskMap.delete(name); await scheduleRetry(task.id, attempts, 'spawn failed'); }
 }
 
 async function dispatchPending(): Promise<void> {
   const now = Date.now();
-  const pending = allTasks().filter(
+  const pending = (await allTasks()).filter(
     // 'paused' holds a task out of dispatch; 'stop' is a kill-now request handled by the
     // watchdog — neither should be dispatched here.
     x => x.status === 'WORKING' && !x.started && x.control !== 'paused' && x.control !== 'stop'
@@ -500,12 +500,12 @@ async function dispatchPending(): Promise<void> {
   );
   if (!pending.length || !breakerAllows() || !dbBreakerAllows()) return;
 
-  const agents = agentMap();
+  const agents = await agentMap();
   for (const task of pending) {
     // QA passed → human review gate (PRE-merge). Park it in Human Review, keep the
     // worktree so a preview can be built, and don't dispatch until the human approves.
     if (task.stage === 'review') {
-      updateTask(task.id, { status: 'TESTING', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
+      await updateTask(task.id, { status: 'TESTING', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
       log(task.id, '🧑‍⚖️ QA passed — awaiting your review (build a preview, then approve to merge)', 'success');
       continue;
     }
@@ -516,53 +516,53 @@ async function dispatchPending(): Promise<void> {
     // Bypassable ONLY when the user has confirmed BOTH "no existing project" and "not executable"
     // (readinessBypass). Otherwise block loudly so uninstalled/unbuildable projects can't silently
     // run agents on the wrong tree or burn runs that can never be verified.
-    const proj = getProject(pid);
+    const proj = await getProject(pid);
     if (!proj?.readinessBypass) {
       const reasons: string[] = [];
       if (!proj?.repoPath || !existsSync(proj.repoPath) || !isGitRepo(proj.repoPath)) reasons.push('no cloned git repo');
       if (!proj?.runConfigConfirmed) reasons.push('run-config not confirmed');
       if (!proj?.previewVerifiedAt) reasons.push('preview not verified');
       if (reasons.length) {
-        deadLetter(task.id, `project "${pid}" not ready — ${reasons.join(', ')}. Finish setup (clone → confirm run-config → verify preview), or bypass by confirming BOTH: no existing project AND not executable.`);
+        await deadLetter(task.id, `project "${pid}" not ready — ${reasons.join(', ')}. Finish setup (clone → confirm run-config → verify preview), or bypass by confirming BOTH: no existing project AND not executable.`);
         continue;
       }
     }
     // Per-project concurrency cap: skip (don't break) so OTHER projects with headroom still
     // dispatch this tick. cap 0 = unlimited (resource-gated only).
-    const cap = projectCap(pid);
-    if (cap > 0 && activeForProject(pid) >= cap) continue;
+    const cap = await projectCap(pid);
+    if (cap > 0 && await activeForProject(pid) >= cap) continue;
     const route = nextRoute(task);
     if (!route) continue;
     // Already merged? Don't re-run the merge agent — it's approved, mark it done.
-    if (route.role === 'architect' && route.stage === 'merge' && isMergedIntoHead(task.id)) {
-      removeWorktree(task.id);
-      reconcileContextAfterMerge(task.id);
-      updateTask(task.id, { status: 'DONE', stage: 'merged', completed: new Date().toISOString(), started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
+    if (route.role === 'architect' && route.stage === 'merge' && await isMergedIntoHead(task.id)) {
+      await removeWorktree(task.id);
+      await reconcileContextAfterMerge(task.id);
+      await updateTask(task.id, { status: 'DONE', stage: 'merged', completed: new Date().toISOString(), started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
       log(task.id, '🔀 already merged — approved & done', 'success');
       continue;
     }
     // MERGE LOCK — serialize merges into the shared repo root. If one is already running,
     // leave this approved task pending and pick it up on a later tick (order preserved).
-    if (route.role === 'architect' && route.stage === 'merge' && mergeInFlight()) continue;
+    if (route.role === 'architect' && route.stage === 'merge' && await mergeInFlight()) continue;
     // RESCUE BUDGET — enforced here so it covers BOTH triggers: the orchestrator's own
     // auto-escalation AND a dev/qa self-reporting it's blocked (PUT stage="rescue"). Cap the
     // number of architect re-plans so a task can't loop rescue→build→rescue forever.
     if (route.stage === 'rescue') {
       const rc = task.rescueCount || 0;
       if (rc >= MAX_RESCUE) {
-        deadLetter(task.id, `rescue budget exhausted (${MAX_RESCUE} re-plan${MAX_RESCUE === 1 ? '' : 's'}) — still blocked, needs a human`);
+        await deadLetter(task.id, `rescue budget exhausted (${MAX_RESCUE} re-plan${MAX_RESCUE === 1 ? '' : 's'}) — still blocked, needs a human`);
         continue;
       }
-      updateTask(task.id, { rescueCount: rc + 1 });
+      await updateTask(task.id, { rescueCount: rc + 1 });
       log(task.id, `🩺 architect rescue pass ${rc + 1}/${MAX_RESCUE} — re-planning`, 'warning');
     }
-    if (task.stage !== route.stage) { updateTask(task.id, { stage: route.stage }); task.stage = route.stage; }
+    if (task.stage !== route.stage) { await updateTask(task.id, { stage: route.stage }); task.stage = route.stage; }
     const ac = agents[route.role];
     if (!ac || !ac.enabled) continue;
     const name = getAvailableAgent();
     if (!name) break;
     // Live status: name the work about to start (merge reads its target branch).
-    if (route.role === 'architect' && route.stage === 'merge') setStatus(`Merging "${task.title}" into ${currentBranch(task.id)}`, true);
+    if (route.role === 'architect' && route.stage === 'merge') setStatus(`Merging "${task.title}" into ${await currentBranch(task.id)}`, true);
     else setStatus(`Dispatching ${route.stage.toUpperCase()} for "${task.title}" → ${route.role}`, true);
     await dispatch(task, route, ac, name);
   }
@@ -576,16 +576,16 @@ function refreshIndex(): void {
 async function handleAgentExit(name: string, taskId: string, route: Routed, r: RunResult): Promise<void> {
   agentTaskMap.delete(name);
   // plan + rescue both run the architect in a throwaway read-only worktree — drop it on exit.
-  if (route.role === 'architect' && (route.stage === 'plan' || route.stage === 'rescue')) removePlanWorktree(taskId);
+  if (route.role === 'architect' && (route.stage === 'plan' || route.stage === 'rescue')) await removePlanWorktree(taskId);
 
-  const fresh = getTask(taskId);
+  const fresh = await getTask(taskId);
   if (!fresh) return;
 
   // Record actual time THIS run took, accumulated per role (for Analytics: who took how long).
   if (r.durationMs) {
     const timings: Record<string, number> = { ...(fresh.stageTimings || {}) };
     timings[route.role] = (timings[route.role] || 0) + r.durationMs;
-    updateTask(taskId, { stageTimings: timings });
+    await updateTask(taskId, { stageTimings: timings });
     fresh.stageTimings = timings;
   }
 
@@ -598,7 +598,7 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
     // advanced the `stage` field, and dispatch only picks up WORKING && !started.
     // Reset attempts to 0 so maxAttempts counts RETRIES PER STAGE, not cumulative
     // dispatches across stages (which used to dead-letter every task at the merge stage).
-    updateTask(taskId, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null, attempts: 0 });
+    await updateTask(taskId, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null, attempts: 0 });
 
     if (route.role === 'qa' && fresh.qaVerdict === 'fail' && fresh.reviewNote) {
       getConfig().memory?.remember({ taskId, role: 'qa', kind: 'gotcha', text: `QA failed: ${fresh.reviewNote}` }).catch(() => {});
@@ -608,29 +608,29 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
     // previews the branch and approves; only /approve advances it to merge. This makes the
     // gate independent of the agent prompt, so it can't be skipped by a stale qa template.
     if (route.role === 'qa' && fresh.qaVerdict === 'pass' && fresh.stage !== 'review') {
-      updateTask(taskId, { stage: 'review' });
+      await updateTask(taskId, { stage: 'review' });
       log(taskId, '🔎 QA passed → Human Review (preview + approve before merge)', 'info');
     }
     if (route.role === 'architect' && route.stage === 'merge') {
-      removeWorktree(taskId);            // merged → drop the dev worktree
-      reconcileContextAfterMerge(taskId); // merged → drop context entries for files the merge deleted
+      await removeWorktree(taskId);            // merged → drop the dev worktree
+      await reconcileContextAfterMerge(taskId); // merged → drop context entries for files the merge deleted
       refreshIndex();
-      updateTask(taskId, { status: 'DONE', completed: new Date().toISOString() }); // human already approved pre-merge
+      await updateTask(taskId, { status: 'DONE', completed: new Date().toISOString() }); // human already approved pre-merge
       log(taskId, '🔀 merged into current branch — approved & done', 'success');
       setStatus(`Merged "${fresh.title}" — done`, true);
     } else if (route.stage === 'rescue') {
       // Architect re-planned and handed back to the dev — clear the stale RESCUE note so the
       // dev works from the fresh {{plan}}, not the old failure feedback.
-      updateTask(taskId, { reviewNote: null });
-      log(taskId, `✅ architect re-planned (rescue) → back to dev at stage ${getTask(taskId)?.stage}`, 'success');
+      await updateTask(taskId, { reviewNote: null });
+      log(taskId, `✅ architect re-planned (rescue) → back to dev at stage ${(await getTask(taskId))?.stage}`, 'success');
     } else {
-      const newStage = getTask(taskId)?.stage;
+      const newStage = (await getTask(taskId))?.stage;
       const ROUTABLE = ['plan', 'build', 'qa', 'review', 'merge', 'merged', 'rescue'];
       if (!newStage || !ROUTABLE.includes(newStage)) {
         // The agent advanced to an unknown/non-pipeline stage (e.g. an architect declaring a
         // task impossible by inventing stage="blocked"). Left alone it sits un-dispatchable in
         // WORKING forever — surface it as a real BLOCKED so it's visible and can be healed.
-        deadLetter(taskId, `agent set an unroutable stage "${newStage}" at ${route.stage} — task cannot proceed as briefed (see its summary/note)`);
+        await deadLetter(taskId, `agent set an unroutable stage "${newStage}" at ${route.stage} — task cannot proceed as briefed (see its summary/note)`);
       } else {
         log(taskId, `✅ ${route.role} finished ${route.stage} → stage ${newStage}`, 'success');
       }
@@ -644,18 +644,18 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
   // "one merge active; on conflict the dev rebases" policy, enforced in the control plane
   // so it holds even with a stale merge prompt. Network failures are NOT conflicts — let
   // those retry the merge via the breaker/backoff instead of forcing a full dev cycle.
-  if (route.role === 'architect' && route.stage === 'merge' && r.failure !== 'network' && !isMergedIntoHead(taskId)) {
+  if (route.role === 'architect' && route.stage === 'merge' && r.failure !== 'network' && !(await isMergedIntoHead(taskId))) {
     // Abort any half-applied merge so the working tree is clean for the next task.
-    try { execSync('git merge --abort', { stdio: 'pipe', cwd: repoCwdFor(taskId) }); } catch { /* nothing to abort */ }
+    try { execSync('git merge --abort', { stdio: 'pipe', cwd: await repoCwdFor(taskId) }); } catch { /* nothing to abort */ }
     const MAX_MERGE_BOUNCES = 3;
     const bounces = (fresh.mergeBounces || 0) + 1;
     if (bounces > MAX_MERGE_BOUNCES) {
-      deadLetter(taskId, `merge still conflicts after ${MAX_MERGE_BOUNCES} rebase attempts — needs a human`);
+      await deadLetter(taskId, `merge still conflicts after ${MAX_MERGE_BOUNCES} rebase attempts — needs a human`);
       return;
     }
     breakerSuccess(); // a merge conflict is not an API outage
-    const base = currentBranch(taskId);
-    updateTask(taskId, {
+    const base = await currentBranch(taskId);
+    await updateTask(taskId, {
       stage: 'build', qaVerdict: null, status: 'WORKING',
       started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null,
       attempts: 0, mergeBounces: bounces,
@@ -674,7 +674,7 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
     const dbUp = await probeDbServer();
     if (!dbUp) {
       openDbBreaker('an agent finished but its stage-advance callback could not reach the db-server');
-      updateTask(taskId, {
+      await updateTask(taskId, {
         started: null, claimedBy: null, leaseExpiresAt: null,
         nextRetryAt: new Date(Date.now() + 8000).toISOString(),
         attempts: Math.max(0, (fresh.attempts || 1) - 1), // do NOT count an infra fault against the budget
@@ -688,13 +688,13 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
   // Genuine failure (crash, timeout, stall, or finished-but-skipped-callback with db healthy).
   const note = r.failure === 'none' ? 'exited without advancing the stage (missing callback)' : `${r.failure}: ${r.outputTail.slice(-200)}`;
   log(taskId, `❌ ${name} failed at ${route.stage} — ${note}`, 'error');
-  failTask(getTask(taskId) || fresh, r.failure === 'none' ? 'crash' : r.failure, note);
+  await failTask((await getTask(taskId)) || fresh, r.failure === 'none' ? 'crash' : r.failure, note);
 }
 
 // ── watchdog + stall ─────────────────────────────────────────────────────────
-function watchdog(): void {
+async function watchdog(): Promise<void> {
   const now = Date.now();
-  for (const task of allTasks()) {
+  for (const task of await allTasks()) {
     // ── stop request (set by the server, a separate process) ── kill any live agent NOW
     // and park the task out of dispatch (AVAILABLE + control 'paused') until the user resumes.
     // This is how a stop crosses the process boundary: server writes control='stop' to the
@@ -705,7 +705,7 @@ function watchdog(): void {
       if (isTaskRunning(task.id)) {
         if (sname) { killAgent(sname); agentTaskMap.delete(sname); }
       }
-      updateTask(task.id, { status: 'AVAILABLE', control: 'paused', started: null, claimedBy: null, leaseExpiresAt: null });
+      await updateTask(task.id, { status: 'AVAILABLE', control: 'paused', started: null, claimedBy: null, leaseExpiresAt: null });
       log(task.id, '⏹ stopped by user', 'warning');
       setStatus(`Stopped "${task.title}" by user request`, true);
       continue;
@@ -720,27 +720,27 @@ function watchdog(): void {
         // Hard wall-clock cap: still producing output, but running far too long → looping.
         log(task.id, `⏱ hard timeout — ${name} ran ${Math.round(runMs / 60000)}min (cap ${Math.round(maxRunMs() / 60000)}min), killing (likely stuck in a loop)`, 'warning');
         killAgent(name); agentTaskMap.delete(name);
-        failTask(task, 'timeout', `exceeded ${Math.round(maxRunMs() / 60000)}min max runtime (likely looping)`);
+        await failTask(task, 'timeout', `exceeded ${Math.round(maxRunMs() / 60000)}min max runtime (likely looping)`);
       } else if (name && stallMs() > 0 && agentIdleMs(name) > stallMs()) {
         log(task.id, `🛑 stall — ${name} produced no output for ${Math.round(agentIdleMs(name) / 1000)}s, killing`, 'warning');
         killAgent(name); agentTaskMap.delete(name);
-        failTask(task, 'stall', 'agent stalled (no output)');
+        await failTask(task, 'stall', 'agent stalled (no output)');
       } else {
-        updateTask(task.id, { leaseExpiresAt: new Date(now + leaseMs()).toISOString() }); // renew
+        await updateTask(task.id, { leaseExpiresAt: new Date(now + leaseMs()).toISOString() }); // renew
       }
       continue;
     }
     if (Date.parse(task.leaseExpiresAt) > now) continue; // lease still valid
     if (name) { killAgent(name); agentTaskMap.delete(name); }
-    failTask(task, 'crash', 'watchdog: lease expired, no live agent');
+    await failTask(task, 'crash', 'watchdog: lease expired, no live agent');
   }
 }
 
 // ── main loop ──────────────────────────────────────────────────────────────────
-export function startOrchestrator(config?: AgenticConfig): void {
+export async function startOrchestrator(config?: AgenticConfig): Promise<void> {
   if (config) setConfig(config);
   try { mkdirSync(getConfig().paths.logsDir, { recursive: true }); writeFileSync(sysLogFile(), `── ORCHESTRATOR START ${new Date().toISOString()} ──\n`); } catch { /* disk */ }
-  getAgents(); // triggers agent-table seed
+  await getAgents(); // triggers agent-table seed
   log('__system__', `🚀 orchestrator started — up to ${MAX_AGENTS > 0 ? MAX_AGENTS : AGENT_POOL.length} agents, gated at ${CPU_HIGH_PCT}% CPU / ${MEM_HIGH_PCT}% RAM, lease ${Math.round(leaseMs() / 60000)}min, maxRun ${Math.round(maxRunMs() / 60000)}min, autoMerge ${t().autoMergeOnQaPass !== false}`, 'success');
 
   // Host repo not git-init'd? The default project then runs WITHOUT worktree isolation
@@ -753,9 +753,9 @@ export function startOrchestrator(config?: AgenticConfig): void {
   // Reset it (fresh attempts) so it re-dispatches cleanly instead of the watchdog
   // dead-lettering it 15 min later. This makes restarts safe for in-flight work.
   try {
-    for (const task of allTasks()) {
+    for (const task of await allTasks()) {
       if (task.status === 'WORKING' && task.started) {
-        updateTask(task.id, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0, lastError: 'reconciled on restart' });
+        await updateTask(task.id, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0, lastError: 'reconciled on restart' });
         log(task.id, '↻ reconciled on restart — previous agent died with the old process; re-dispatching from its last committed state', 'warning');
       }
     }
@@ -768,18 +768,18 @@ async function loop(): Promise<void> {
   let n = 0;
   while (true) {
     try {
-      const settings = getBoardSettings();
+      const settings = await getBoardSettings();
       if (settings?.agentStatus === 'STARTING') {
-        updateBoardSettings({ ...settings, agentStatus: 'STARTED' });
+        await updateBoardSettings({ ...settings, agentStatus: 'STARTED' });
         log('__system__', '▶ STARTED — watching for WORKING tasks', 'success');
       }
       // PAUSED keeps the orchestrator ALIVE (heartbeat + watchdog: stop requests, stalls,
       // lease reclaim still enforced) but stops handing out NEW work. STARTED resumes dispatch.
       const status = settings?.agentStatus;
       if (status === 'STARTED' || status === 'PAUSED') {
-        watchdog();
+        await watchdog();
         if (n % 10 === 0) {
-          const removed = pruneOrphans(new Set(allTasks().map(x => x.id)));
+          const removed = pruneOrphans(new Set((await allTasks()).map(x => x.id)));
           if (removed.length) log('__system__', `🧹 pruned orphan worktrees: ${removed.join(', ')}`, 'info');
           dbHealthCheck(log); // SQLite integrity check every ~30s
         }
@@ -788,9 +788,9 @@ async function loop(): Promise<void> {
         // never pruned while sweeping another (ids are globally unique).
         if (n > 0 && n % CLEANER_EVERY_TICKS === 0) {
           try {
-            const projects = listProjects();
+            const projects = await listProjects();
             const liveIds = new Set<string>();
-            for (const p of projects) for (const tk of getAllTasks(p.id)) liveIds.add(tk.id);
+            for (const p of projects) for (const tk of await getAllTasks(p.id)) liveIds.add(tk.id);
             const roots = projects.map(p => p.repoPath).filter((r): r is string => !!r);
             const removed = pruneOrphansAll(liveIds, roots);
             if (removed.length) log('__system__', `🧹 deep clean — pruned orphan worktrees across projects: ${removed.join(', ')}`, 'info');
@@ -804,7 +804,7 @@ async function loop(): Promise<void> {
           // Periodic architect triage: wake one architect to review a project's in-flight tasks
           // and re-plan/nudge the stuck ones (only while actively STARTED, not while paused).
           if (TRIAGE_EVERY_TICKS > 0 && n > 0 && n % TRIAGE_EVERY_TICKS === 0) await triagePass();
-          setStatus(computeSteadyStatus()); // steady line unless a transition already set one this tick
+          setStatus(await computeSteadyStatus()); // steady line unless a transition already set one this tick
         }
         // Beat the human-readable status line OFTEN (~every 9s) so the UI feels live…
         if (n % 3 === 0) beatHeartbeat({ statusLine });

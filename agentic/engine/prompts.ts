@@ -23,9 +23,9 @@ const RULE_FILES = [
 
 /** Find project rule files present in the repo, and pin them into the project's context so
  *  they persist by default. Returns a prompt block instructing the agent to read + follow them. */
-function rulesBlock(task: Task): string {
+async function rulesBlock(task: Task): Promise<string> {
   let root = process.cwd();
-  try { const p = getProject((task as any).projectId || 'default'); if (p?.repoPath) root = p.repoPath; } catch { /* default */ }
+  try { const p = await getProject((task as any).projectId || 'default'); if (p?.repoPath) root = p.repoPath; } catch { /* default */ }
   const found = RULE_FILES.filter(f => { try { return existsSync(join(root, f)) && statSync(join(root, f)).isFile(); } catch { return false; } });
   if (found.length === 0) return '';
   // Auto-keep (pinned) in the project context so the rules stay in memory across the pipeline.
@@ -150,7 +150,7 @@ export async function renderPrompt(agent: AgentConfig, task: Task, stage: string
   if (brief) out = brief + '\n\n' + out;
   // Project rules (CLAUDE.md / AGENTS.md / functionality index …) — prepended so every role
   // gets them without editing templates; also pinned into the project context as a side effect.
-  const rules = rulesBlock(task);
+  const rules = await rulesBlock(task);
   if (rules) out = rules + '\n\n' + out;
   const preamble = cfg.methodology?.preambleFor(agent.role as AgentRole);
   if (preamble) out = preamble + '\n\n' + out;
