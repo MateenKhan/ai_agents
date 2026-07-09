@@ -33,14 +33,22 @@ export default {
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', '"Liberation Mono"', 'monospace'],
       },
       // Micro ramp for the app's dense labels/eyebrows — replaces ad-hoc text-[10px]/[11px].
+      //
+      // Declared in px, NOT rem, and that is deliberate: `html` is pinned to font-size:15px,
+      // so a rem here resolves against 15 rather than Tailwind's assumed 16. `0.625rem` is
+      // 10px only at a 16px root; here it silently rendered 9.375px. These four values are
+      // the ones every raw text-[10px]/min-h-[44px] in the app is being folded into, so they
+      // have to mean exactly what they say. Browser zoom scales px and rem identically, and
+      // the pinned root already prevents rem from tracking the user's font-size preference,
+      // so nothing is lost by being literal.
       fontSize: {
-        micro: ['0.625rem', { lineHeight: '0.875rem' }], // 10px
-        '2xs': ['0.6875rem', { lineHeight: '1rem' }],     // 11px
+        micro: ['10px', { lineHeight: '14px' }],
+        '2xs': ['11px', { lineHeight: '16px' }],
       },
       // Two canonical control heights: compact (toolbars) and touch (forms/CTAs, ≥44px = HIG).
       minHeight: {
-        control: '2.25rem',      // 36px
-        'control-lg': '2.75rem', // 44px
+        control: '36px',
+        'control-lg': '44px', // the HIG minimum — must not be a rem, see above
       },
     },
   },
