@@ -4,9 +4,10 @@ import {
   GitBranch, Github, Gitlab, KeyRound, X, Eye, EyeOff, RefreshCw, FileDiff,
   Copy, Check, ChevronDown, Trash2, Plus, DownloadCloud, GitCommit,
   Upload, Users, History, FolderGit2, Bot, Database, HeartPulse,
-  ExternalLink, Radar, CheckCircle2, Play, Square, Wand2, Save, Pencil,
+  ExternalLink, Radar, CheckCircle2, Play, Square, Wand2, Save, Pencil, Server,
 } from 'lucide-react';
 import { API_BASE, withProject } from '../../../apiBase';
+import DbBackendTab from './DbBackendTab';
 import { useToast } from './Toast';
 import { useConfirm } from './ConfirmProvider';
 import { useProjects } from '../projectContext';
@@ -79,7 +80,7 @@ interface GitStatus { ok: boolean; repo?: string; branch?: string; ahead?: numbe
 interface Worktree { path: string; name: string; taskId: string; branch: string; isPlan: boolean; head: string; lastCommit: { sha: string; author: string; date: string; subject: string }; merged: boolean; agent: string | null; title: string | null; status: string | null; stage: string | null; }
 interface Commit { hash: string; shortHash: string; author: string; email: string; date: string; subject: string; merge: boolean; }
 
-type Tab = 'repo' | 'clone' | 'run' | 'tokens' | 'agents' | 'worktrees' | 'history' | 'index';
+type Tab = 'repo' | 'clone' | 'run' | 'tokens' | 'agents' | 'worktrees' | 'history' | 'index' | 'backend';
 interface IndexStatus { root: string; glob: string; isDefault: boolean; files: number; nodes: number; embedded: number; coverage: number; healthy: boolean; rebuilding: boolean; }
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
@@ -814,6 +815,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
     { id: 'worktrees', label: 'Worktrees', icon: FolderGit2 },
     { id: 'history', label: 'History', icon: History },
     { id: 'index', label: 'Index', icon: Database },
+    { id: 'backend', label: 'Backend', icon: Server },
   ];
 
   // GitHub Apps are surfaced as pseudo-tokens (source==='github-app') so they show up in the
@@ -856,6 +858,9 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
 
         {/* Body */}
         <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar space-y-5 flex-1">
+
+          {/* ===== BACKEND (datastore config) ===== */}
+          {tab === 'backend' && <DbBackendTab />}
 
           {/* ===== REPO ===== */}
           {tab === 'repo' && (
