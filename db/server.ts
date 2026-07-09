@@ -333,6 +333,7 @@ function rebuildIndex(reason: string, projectId: string = 'default'): void {
   const root = ci.root || projectRepoPath(projectId);
   const env: Record<string, string | undefined> = { ...process.env };
   env.CODE_INDEX_ROOT = root;
+  env.CODE_INDEX_PROJECT = projectId; // scope the post-build project-brief pass to this project
   if (ci.glob) env.CODE_INDEX_GLOB = ci.glob;
   // The builder writes into the project's own index file via DB_FILE (getDb honors it).
   env.DB_FILE = projectId === 'default' ? (process.env.DB_FILE ?? 'local.db') : `index-${projectId}.db`;
