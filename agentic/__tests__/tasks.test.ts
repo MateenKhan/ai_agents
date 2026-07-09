@@ -83,8 +83,11 @@ describe('projects', () => {
   });
 });
 
-describe('git token project isolation', () => {
-  it('lists a token only under its own project', async () => {
+// Git credentials are ACCOUNT-owned, not project-owned: one GitHub account, many projects.
+// Scoping them per project made the user re-paste the same token for every project and
+// multiplied the places to rotate it. These tests pin the global semantics.
+describe('git credentials are global (not project-scoped)', () => {
+  it('a token added under one project is visible from every project', async () => {
     const p1 = await createProject({ name: 'P1' });
     const p2 = await createProject({ name: 'P2' });
     const added = await addGitToken({ label: 'ci', token: 'ghp_iso', scope: 'readonly' }, p1.id);
@@ -95,7 +98,9 @@ describe('git token project isolation', () => {
     // raw rows carry the plaintext token (internal getter)
     expect(inP1.find(t => t.id === added.id)!.token).toBe('ghp_iso');
 
-    expect((await listGitTokensRaw(p2.id)).map(t => t.id)).not.toContain(added.id);
+    // …and the SAME credential resolves from another project, and with no project at all.
+    expect((await listGitTokensRaw(p2.id)).map(t => t.id)).toContain(added.id);
+    expect((await listGitTokensRaw()).map(t => t.id)).toContain(added.id);
   });
 });
 
@@ -105,29 +110,36 @@ describe('resolveAgentToken', () => {
     const devTok = await addGitToken({ label: 'dev', token: 'ghp_dev', scope: 'readwrite' }, p.id);
     const defTok = await addGitToken({ label: 'def', token: 'ghp_def', scope: 'readonly' }, p.id);
 
-    await setTokenAssignment('dev', devTok.id, p.id);
-    await setTokenAssignment('*', defTok.id, p.id);
+    await setTokenAssignment('dev', devTok.id);
+    await setTokenAssignment('*', defTok.id);
 
-    expect((await resolveAgentToken('dev', p.id))!.id).toBe(devTok.id);   // explicit
-    expect((await resolveAgentToken('qa', p.id))!.id).toBe(defTok.id);    // falls back to '*'
+    expect((await resolveAgentToken('dev'))!.id).toBe(devTok.id);   // explicit
+    expect((await resolveAgentToken('qa'))!.id).toBe(defTok.id);    // falls back to '*'
+    // assignments are account-wide: the same answer from any project
+    expect((await resolveAgentToken('dev', p.id))!.id).toBe(devTok.id);
   });
 
   it('returns null when neither an assignment nor a "*" default exists', async () => {
-    const p = await createProject({ name: 'NoTokens' });
-    expect(await resolveAgentToken('dev', p.id)).toBeNull();
+    // Assignments are global now, so clear the ones the previous case created — a project id
+    // no longer isolates them (that is the point of the change).
+    await setTokenAssignment('dev', null);
+    await setTokenAssignment('*', null);
+    expect(await resolveAgentToken('dev')).toBeNull();
   });
 });
 
 describe('deleteProject', () => {
-  it('removes the project and its tokens', async () => {
+  it('removes the project but PRESERVES account-wide git credentials', async () => {
     const p = await createProject({ name: 'Doomed' });
-    await addGitToken({ label: 'x', token: 'ghp_del', scope: 'readonly' }, p.id);
-    expect((await listGitTokensRaw(p.id)).length).toBeGreaterThan(0);
+    const tok = await addGitToken({ label: 'x', token: 'ghp_del', scope: 'readonly' }, p.id);
+    expect((await listGitTokensRaw()).map(t => t.id)).toContain(tok.id);
 
     await deleteProject(p.id);
 
-    expect(await listGitTokensRaw(p.id)).toEqual([]);
+    // The project is gone; the credential is NOT — deleting one project must never destroy
+    // the GitHub access every other project shares.
     expect((await listProjects()).map(x => x.id)).not.toContain(p.id);
+    expect((await listGitTokensRaw()).map(t => t.id)).toContain(tok.id);
   });
 
   it('refuses to delete the default project', async () => {

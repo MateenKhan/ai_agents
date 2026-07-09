@@ -134,7 +134,7 @@ function rowToTask(r: any): Task {
   };
 }
 
-const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount';
+const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath';
 
 function toRow(t: Partial<Task>): any[] {
   return [
@@ -146,6 +146,7 @@ function toRow(t: Partial<Task>): any[] {
     t.attempts ?? 0, t.nextRetryAt ?? null, t.lastError ?? null, t.model ?? null, t.summary ?? null,
     t.etcMinutes ?? null, t.etcSetAt ?? null, JSON.stringify(t.stageTimings ?? {}),
     t.projectId ?? 'default', t.control ?? null, t.mergeBounces ?? 0, t.rescueCount ?? 0,
+    t.logPath ?? null,
   ];
 }
 
@@ -349,15 +350,23 @@ export async function setGitConfig(cfg: GitConfig): Promise<void> {
 export type GitScope = 'readonly' | 'readwrite';
 export interface GitToken { id: string; label: string; token: string; scope: GitScope; username?: string; host: string; createdAt: string }
 
-/** Full rows INCLUDING the raw token — internal use only (git ops, agent auth). Never send over HTTP.
- *  Scoped to a project; NULL-projectId rows belong to 'default'. */
-export async function listGitTokensRaw(projectId: string = 'default'): Promise<GitToken[]> {
+/**
+ * GIT CREDENTIALS ARE GLOBAL, not project-scoped.
+ *
+ * Scope follows ownership: a PAT or GitHub App belongs to the ACCOUNT, not to one repo. A user
+ * has one GitHub account and many projects in it. Scoping credentials per project forced them to
+ * re-paste the same token for every project and multiplied the places to rotate — and to leak — it.
+ *
+ * The `projectId` column and the `projectId` parameters are retained for provenance and for
+ * source compatibility, but they are IGNORED by every read path below. Do not reintroduce a
+ * `WHERE projectId = ?` filter here.
+ */
+
+/** Full rows INCLUDING the raw token — internal use only (git ops, agent auth). Never send over HTTP. */
+export async function listGitTokensRaw(_projectId?: string): Promise<GitToken[]> {
   const s = await store();
   // Decrypt `token` so callers (git ops, HTTP masking) receive the real PAT.
-  const rows = await s.all(
-    `SELECT * FROM git_tokens WHERE (projectId = ? OR (projectId IS NULL AND ? = 'default')) ORDER BY createdAt ASC`,
-    [projectId, projectId],
-  ) as GitToken[];
+  const rows = await s.all(`SELECT * FROM git_tokens ORDER BY createdAt ASC`) as GitToken[];
   return rows.map(t => ({ ...t, token: decrypt(t.token) }));
 }
 export async function getGitTokenRaw(id: string): Promise<GitToken | null> {
@@ -366,11 +375,11 @@ export async function getGitTokenRaw(id: string): Promise<GitToken | null> {
   if (!r) return null;
   return { ...r, token: decrypt(r.token) }; // decrypt so callers get the real token
 }
-export async function addGitToken(t: { label: string; token: string; scope?: GitScope; username?: string; host?: string }, projectId: string = 'default'): Promise<GitToken> {
+export async function addGitToken(t: { label: string; token: string; scope?: GitScope; username?: string; host?: string }, _projectId?: string): Promise<GitToken> {
   const s = await store();
-  // Token labels must be unique within a project (a user may hold several PATs / GitHub
+  // Token labels must be unique across the account (a user may hold several PATs / GitHub
   // apps with different scopes) — auto-suffix a duplicate rather than reject it.
-  const existing = new Set((await listGitTokensRaw(projectId)).map(x => x.label));
+  const existing = new Set((await listGitTokensRaw()).map(x => x.label));
   const base = (t.label || 'token').trim() || 'token';
   let label = base;
   for (let n = 2; existing.has(label); n++) label = `${base} (${n})`;
@@ -384,8 +393,9 @@ export async function addGitToken(t: { label: string; token: string; scope?: Git
     createdAt: new Date().toISOString(),
   };
   // Encrypt the token at rest; `row` returned to the caller keeps the plaintext token.
-  await s.run(`INSERT INTO git_tokens (id,label,token,scope,username,host,createdAt,projectId) VALUES (?,?,?,?,?,?,?,?)`,
-    [row.id, row.label, encrypt(row.token), row.scope, row.username, row.host, row.createdAt, projectId]);
+  // projectId is left NULL — credentials are account-owned, not project-owned.
+  await s.run(`INSERT INTO git_tokens (id,label,token,scope,username,host,createdAt,projectId) VALUES (?,?,?,?,?,?,?,NULL)`,
+    [row.id, row.label, encrypt(row.token), row.scope, row.username, row.host, row.createdAt]);
   return row;
 }
 export async function updateGitToken(id: string, patch: { label?: string; token?: string; scope?: GitScope; username?: string; host?: string }): Promise<void> {
@@ -410,31 +420,28 @@ export async function deleteGitToken(id: string): Promise<void> {
   await s.run(`DELETE FROM git_token_assignments WHERE tokenId = ?`, [id]); // drop dangling assignments
 }
 
-export async function getTokenAssignments(projectId: string = 'default'): Promise<Record<string, string>> {
+/** Agent → token assignments. GLOBAL: the PK is `agent`, so an agent holds ONE assignment,
+ *  and credentials are account-owned. `projectId` is ignored (see the note above). */
+export async function getTokenAssignments(_projectId?: string): Promise<Record<string, string>> {
   const s = await store();
-  const rows = await s.all(
-    `SELECT agent, tokenId FROM git_token_assignments WHERE (projectId = ? OR (projectId IS NULL AND ? = 'default'))`,
-    [projectId, projectId],
-  ) as any[];
+  const rows = await s.all(`SELECT agent, tokenId FROM git_token_assignments`) as any[];
   const out: Record<string, string> = {};
   for (const r of rows) out[r.agent] = r.tokenId;
   return out;
 }
-export async function setTokenAssignment(agent: string, tokenId: string | null, projectId: string = 'default'): Promise<void> {
+export async function setTokenAssignment(agent: string, tokenId: string | null, _projectId?: string): Promise<void> {
   const s = await store();
-  // NOTE: git_token_assignments PK is `agent` (additive projectId column). An agent
-  // therefore holds one assignment at a time; setting it stamps the active project.
+  // git_token_assignments PK is `agent`: one assignment per agent, account-wide.
   if (!tokenId) {
-    await s.run(`DELETE FROM git_token_assignments WHERE agent = ? AND (projectId = ? OR (projectId IS NULL AND ? = 'default'))`,
-      [agent, projectId, projectId]);
+    await s.run(`DELETE FROM git_token_assignments WHERE agent = ?`, [agent]);
     return;
   }
-  await upsert(s, 'git_token_assignments', { agent, tokenId, projectId }, ['agent']);
+  await upsert(s, 'git_token_assignments', { agent, tokenId }, ['agent']);
 }
 
 /** Resolve the token an agent should authenticate git with: explicit assignment, else the '*' default. */
-export async function resolveAgentToken(agentName: string, projectId: string = 'default'): Promise<GitToken | null> {
-  const a = await getTokenAssignments(projectId);
+export async function resolveAgentToken(agentName: string, _projectId?: string): Promise<GitToken | null> {
+  const a = await getTokenAssignments();
   const id = a[agentName] || a['*'];
   return id ? getGitTokenRaw(id) : null;
 }
@@ -592,8 +599,9 @@ export async function deleteProject(id: string): Promise<void> {
   if (id === 'default') throw new Error('cannot delete the default project');
   const s = await store();
   await s.run(`DELETE FROM tasks WHERE projectId = ?`, [id]);
-  await s.run(`DELETE FROM git_tokens WHERE projectId = ?`, [id]);
-  await s.run(`DELETE FROM git_token_assignments WHERE projectId = ?`, [id]);
+  // Deleting a project must NOT delete git credentials. Tokens and GitHub Apps are
+  // account-owned and shared by every project — dropping them here used to destroy the
+  // user's GitHub access for all their other projects.
   await s.run(`DELETE FROM board_settings WHERE id = ?`, [`code_index:${id}`]);
   await s.run(`DELETE FROM projects WHERE id = ?`, [id]);
 }
@@ -680,18 +688,17 @@ export async function getGithubApp(id: string): Promise<GithubApp | null> {
 }
 
 /** Full rows INCLUDING secrets — internal use only (JWT signing, token minting). Never send over HTTP. */
-export async function listGithubAppsRaw(projectId: string = 'default'): Promise<GithubApp[]> {
+/** GLOBAL, like git_tokens: a GitHub App belongs to the account and is installed on repos.
+ *  `projectId` is retained as provenance only and is ignored here. */
+export async function listGithubAppsRaw(_projectId?: string): Promise<GithubApp[]> {
   const s = await store();
-  const rows = await s.all(
-    `SELECT * FROM github_apps WHERE (projectId = ? OR (projectId IS NULL AND ? = 'default')) ORDER BY createdAt ASC`,
-    [projectId, projectId],
-  ) as GithubApp[];
+  const rows = await s.all(`SELECT * FROM github_apps ORDER BY createdAt ASC`) as GithubApp[];
   return rows.map(decryptAppSecrets);
 }
 
 /** Masked list for HTTP — NEVER returns privateKey / clientSecret / webhookSecret. */
-export async function listGithubApps(projectId: string = 'default'): Promise<GithubAppPublic[]> {
-  return (await listGithubAppsRaw(projectId)).map(a => ({
+export async function listGithubApps(_projectId?: string): Promise<GithubAppPublic[]> {
+  return (await listGithubAppsRaw()).map(a => ({
     id: a.id, name: a.name, slug: a.slug, appId: a.appId, htmlUrl: a.htmlUrl,
     state: a.state, account: a.account, installed: !!a.installationId, createdAt: a.createdAt,
   }));

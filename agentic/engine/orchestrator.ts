@@ -84,6 +84,9 @@ const AGENT_POOL = (() => {
 const DEAD_LETTER_AT = '9999-01-01T00:00:00.000Z';
 
 const agentTaskMap = new Map<string, string>(); // agentName → taskId
+// taskId → projectId, refreshed every tick from allTasks(). Log rows are project-scoped, and
+// log() is on the hot path, so the project is read from here rather than from tasks.db per line.
+const taskProjects = new Map<string, string>();
 const sysLogFile = () => join(getConfig().paths.logsDir, 'orchestrator.log');
 const log = (taskId: string, msg: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
   const line = `[${new Date().toISOString()}] ${taskId === '__system__' ? '' : `[${taskId}] `}${msg}`;
@@ -91,7 +94,17 @@ const log = (taskId: string, msg: string, type: 'info' | 'success' | 'warning' |
   // addAgentLog is async: a sync try/catch would NOT catch its rejection, so a transient
   // logs.db lock would surface as an unhandled rejection (fatal on modern Node). Swallow it
   // on the promise itself — logging is best-effort and must never take the orchestrator down.
-  addAgentLog(taskId, msg, type).catch(() => { /* logs.db busy */ });
+  // '__system__' lines belong to the engine, not to a project, and stay unscoped.
+  const write = (pid: string | null) => addAgentLog(taskId, msg, type, pid).catch(() => { /* logs.db busy */ });
+  const known = taskProjects.get(taskId);
+  if (known !== undefined || taskId === '__system__') write(known ?? null);
+  else {
+    // A task logged before the first allTasks() tick (e.g. created and dispatched in the same
+    // moment) is not in the map yet. Resolve it once, off the hot path, and memoise.
+    getTask(taskId)
+      .then(t => { const pid = t?.projectId || null; if (pid) taskProjects.set(taskId, pid); return write(pid); })
+      .catch(() => write(null));
+  }
   try { appendFileSync(sysLogFile(), line + '\n'); } catch { /* disk */ }
 };
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -380,6 +393,9 @@ const projectOf = (task: Task): string => task.projectId || 'default';
 async function allTasks(): Promise<Task[]> {
   const out: Task[] = [];
   for (const p of await listProjects()) for (const tk of await getAllTasks(p.id)) out.push(tk);
+  // Rebuilt (not merged) so tasks deleted from the board stop pinning an entry here.
+  taskProjects.clear();
+  for (const tk of out) taskProjects.set(tk.id, projectOf(tk));
   return out;
 }
 

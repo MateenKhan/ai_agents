@@ -10,10 +10,11 @@
 
 import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { mkdirSync, existsSync, writeFileSync, appendFileSync, symlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import type { RunResult, FailureKind, WorktreeMode, AgentRole } from '../types';
 import { getConfig } from '../runtime-context';
-import { resolveAgentToken, gitAuthEnv, getTask, getProject } from '../db/tasks';
+import { resolveAgentToken, gitAuthEnv, getTask, getProject, updateTask } from '../db/tasks';
+import { taskLogPath } from './task-log-file';
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 // An explicit CLAUDE_FLAGS env var still wins (power users / CI). Otherwise the flags are
@@ -202,16 +203,36 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   mkdirSync(logsDir, { recursive: true });
   const logFile = join(logsDir, `${agentName}.log`);
 
+  // Read the task ONCE: its project drives the log file location, the git token lookup and
+  // the code-index scope. Three separate getTask() calls used to disagree under a concurrent
+  // project move, and each one paid a db round-trip on the spawn path.
+  const task = await getTask(taskId).catch(() => null);
+  const projectId = task?.projectId || 'default';
+
+  // The task's own append-only log, one file per task for the whole pipeline. Its absolute
+  // path is persisted on the row so the UI can reopen it after a reload or a server crash —
+  // the per-slot file above is truncated every run and shared between unrelated tasks.
+  const taskFile = taskLogPath(projectId, taskId);
+  if (taskFile) {
+    try { mkdirSync(dirname(taskFile), { recursive: true }); } catch { /* disk */ }
+    if (task && task.logPath !== taskFile) {
+      updateTask(taskId, { logPath: taskFile }).catch(() => { /* best-effort: never block a spawn */ });
+    }
+  }
+
   const cwd = await resolveCwd(taskId, worktree);
 
-  // FRESH log each run — the Logs tab shows only the current task's run.
-  // Durable per-task history lives in logs.db, so overwriting here loses nothing.
-  // Each line is stamped with HH:MM:SS so the Logs tab can show/hide per-line time.
+  // Every line goes to BOTH files: the per-slot file is truncated per run (the Logs tab tails
+  // the current run), the per-task file only ever grows (the task's full history).
   // Full ISO stamp (date + time) so the Logs tab can show either date+time or just time.
-  const log = (line: string) => { try { appendFileSync(logFile, `[${new Date().toISOString()}] ${line}\n`); } catch { /* disk */ } };
-  try {
-    writeFileSync(logFile, `── RUN START ${new Date().toISOString()} · ${agentName} · task=${taskId} · ${worktree} (${model}) ──\n`);
-  } catch { /* disk */ }
+  const log = (line: string) => {
+    const stamped = `[${new Date().toISOString()}] ${line}\n`;
+    try { appendFileSync(logFile, stamped); } catch { /* disk */ }
+    if (taskFile) { try { appendFileSync(taskFile, stamped); } catch { /* disk */ } }
+  };
+  const header = `── RUN START ${new Date().toISOString()} · ${agentName} · task=${taskId} · ${worktree} (${model}) ──\n`;
+  try { writeFileSync(logFile, header); } catch { /* disk */ }
+  if (taskFile) { try { appendFileSync(taskFile, header); } catch { /* disk */ } }
 
   const modelArgs = model ? ['--model', model] : [];
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...modelArgs, ...claudeFlags(opts.skipPermissions !== false)];
@@ -220,9 +241,8 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   // per-process Authorization header scoped to the token's host. No token → no git auth env.
   let gitEnv: Record<string, string> = {};
   try {
-    let projectId = 'default';
-    try { const t = await getTask(taskId); if (t?.projectId) projectId = t.projectId; } catch { /* default */ }
-    const tok = await resolveAgentToken(agentName, projectId);
+    // Credentials are account-wide, so the project is not part of the lookup any more.
+    const tok = await resolveAgentToken(agentName);
     gitEnv = gitAuthEnv(tok);
     if (tok) log(`🔑 git auth: token "${tok.label}" (${tok.scope}) for ${tok.host}`);
   } catch { /* token lookup is best-effort — never block a run */ }
@@ -235,9 +255,7 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
     // :6952/search) already works from any cwd; this makes the fallback work too.
     // CODE_INDEX_PROJECT scopes the search to THIS task's project so a multi-project install
     // queries the right per-project index (index-<projectId>.db), not the default one.
-    let indexProject = 'default';
-    try { indexProject = (await getTask(taskId))?.projectId || 'default'; } catch { /* default */ }
-    proc = spawn(CLAUDE_BIN, args, { cwd, env: { ...process.env, ...gitEnv, AGENT_NAME: agentName, TASK_ID: taskId, CODE_INDEX_ROOT: process.cwd(), CODE_INDEX_PROJECT: indexProject } });
+    proc = spawn(CLAUDE_BIN, args, { cwd, env: { ...process.env, ...gitEnv, AGENT_NAME: agentName, TASK_ID: taskId, CODE_INDEX_ROOT: process.cwd(), CODE_INDEX_PROJECT: projectId } });
   } catch (e: any) {
     log(`SPAWN FAILED: ${e?.message || e}`);
     return false;

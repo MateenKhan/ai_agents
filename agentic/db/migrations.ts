@@ -31,6 +31,10 @@ import type { Store } from './store';
 
 type Dialect = 'sqlite' | 'postgres';
 
+/** The two SQLite files the schema is split across. Postgres uses ONE database for both.
+ *  Declared here (next to TABLE_GROUP) so getStore can import it without a cycle. */
+export type DbGroup = 'tasks' | 'logs';
+
 // Semantic column types → concrete per-dialect SQL types.
 const TYPE: Record<'text' | 'int' | 'bool' | 'ts', Record<Dialect, string>> = {
   text: { sqlite: 'TEXT', postgres: 'TEXT' },
@@ -128,6 +132,10 @@ const TASKS: Col[] = [
   { name: 'control', type: 'text' },
   { name: 'mergeBounces', type: 'int' },
   { name: 'rescueCount', type: 'int' },
+  // Fully-qualified path of this task's own log file. Persisted so the log survives a
+  // db-server restart, an orchestrator crash, or an agent-slot being reused by another task:
+  // the file is found by TASK, not by whichever pool slot happened to run it.
+  { name: 'logPath', type: 'text' },
 ];
 
 const BOARD_SETTINGS: Col[] = [
@@ -210,6 +218,9 @@ const AGENT_LOGS: Col[] = [
   { name: 'message', type: 'text', notNull: true },
   { name: 'type', type: 'text', notNull: true, default: 'info' },
   { name: 'timestamp', type: 'ts', notNull: true },
+  // Logs belong to the WORK, so they are scoped to the project that owns the task. Without
+  // this, getRecentLogs() returns rows across every project (cross-project bleed).
+  { name: 'projectId', type: 'text' }, // additive
 ];
 
 const AGENT_DB_USAGE: Col[] = [
@@ -308,6 +319,9 @@ const ADDITIVE: Array<[string, Col]> = [
   ['projects', { name: 'runConfigConfirmed', type: 'bool' }],
   ['projects', { name: 'previewVerifiedAt', type: 'ts' }],
   ['projects', { name: 'readinessBypass', type: 'bool' }],
+  // Logs are work-owned: scope them to the project, and remember each task's own log file.
+  ['agent_logs', { name: 'projectId', type: 'text' }],
+  ['tasks', { name: 'logPath', type: 'text' }],
   ['agents', { name: 'rescuePromptTemplate', type: 'text' }],
 ];
 
@@ -336,47 +350,78 @@ export const ALL_COLUMN_NAMES: readonly string[] = Array.from(new Set(
  * and every additive ALTER is wrapped so "already exists" is ignored. Safe to
  * re-run on every boot and safe to run against a fresh Postgres to "create tables".
  */
-export async function runMigrations(store: Store): Promise<void> {
-  const d = store.dialect;
+/** Which SQLite file owns each table. Postgres keeps every table in ONE database, so this
+ *  mapping only constrains the SQLite layout — where `tasks.db` and `logs.db` are distinct
+ *  files. Without it, running the full schema against both files gives each one a complete
+ *  set of empty shadow tables (a phantom `projects`, `git_tokens`, … in logs.db), and a
+ *  mis-grouped query then silently reads an EMPTY table instead of failing loudly. */
+const TABLE_GROUP: Record<string, DbGroup> = {
+  tasks: 'tasks', board_settings: 'tasks', git_tokens: 'tasks', git_token_assignments: 'tasks',
+  github_apps: 'tasks', projects: 'tasks', agents: 'tasks', agent_meta: 'tasks', memory: 'tasks',
+  workers: 'tasks', locks: 'tasks',
+  agent_logs: 'logs', agent_db_usage: 'logs', context_files: 'logs', context_ops: 'logs',
+};
 
-  // 1 — base tables ------------------------------------------------------------
-  await store.exec(createTable(d, 'tasks', TASKS));
-  await store.exec(createTable(d, 'board_settings', BOARD_SETTINGS));
-  await store.exec(createTable(d, 'git_tokens', GIT_TOKENS));
-  await store.exec(createTable(d, 'git_token_assignments', GIT_TOKEN_ASSIGNMENTS));
-  await store.exec(createTable(d, 'github_apps', GITHUB_APPS));
-  await store.exec(createTable(d, 'projects', PROJECTS));
-  await store.exec(createTable(d, 'agents', AGENTS));
-  await store.exec(createTable(d, 'agent_meta', AGENT_META));
-  await store.exec(createTable(d, 'agent_logs', AGENT_LOGS));
-  await store.exec(createTable(d, 'agent_db_usage', AGENT_DB_USAGE));
-  await store.exec(createTable(d, 'memory', MEMORY));
-  // Phase 3 — multi-orchestrator coordination (workers heartbeat + advisory locks).
-  await store.exec(createTable(d, 'workers', WORKERS));
-  await store.exec(createTable(d, 'locks', LOCKS));
-  // Project context memory (logs group).
-  await store.exec(createTable(d, 'context_files', CONTEXT_FILES));
-  await store.exec(createTable(d, 'context_ops', CONTEXT_OPS));
+const BASE_TABLES: Array<[string, Col[]]> = [
+  ['tasks', TASKS], ['board_settings', BOARD_SETTINGS], ['git_tokens', GIT_TOKENS],
+  ['git_token_assignments', GIT_TOKEN_ASSIGNMENTS], ['github_apps', GITHUB_APPS],
+  ['projects', PROJECTS], ['agents', AGENTS], ['agent_meta', AGENT_META],
+  ['memory', MEMORY], ['workers', WORKERS], ['locks', LOCKS],
+  ['agent_logs', AGENT_LOGS], ['agent_db_usage', AGENT_DB_USAGE],
+  ['context_files', CONTEXT_FILES], ['context_ops', CONTEXT_OPS],
+];
 
-  // 2 — additive ALTERs (no-op on fresh DBs; upgrade old SQLite DBs) -----------
-  for (const [table, col] of ADDITIVE) await tryStep(store, addColumn(d, table, col));
-
-  // 3 — indexes (created AFTER their columns are guaranteed to exist) ----------
-  await store.exec('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
-  await store.exec('CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage)');
-  await store.exec('CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(projectId)');
-  await store.exec('CREATE INDEX IF NOT EXISTS idx_agent_logs_task ON agent_logs(taskId)');
-  await store.exec('CREATE INDEX IF NOT EXISTS idx_db_usage_agent ON agent_db_usage(agentName)');
-  await store.exec('CREATE INDEX IF NOT EXISTS idx_db_usage_task ON agent_db_usage(taskId)');
-  await store.exec('CREATE INDEX IF NOT EXISTS idx_memory_kind ON memory(kind)');
+/** [owning table, index SQL] — an index is created only when its table is. */
+const INDEXES: Array<[string, string]> = [
+  ['tasks', 'CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)'],
+  ['tasks', 'CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage)'],
+  ['tasks', 'CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(projectId)'],
+  ['agent_logs', 'CREATE INDEX IF NOT EXISTS idx_agent_logs_task ON agent_logs(taskId)'],
+  ['agent_logs', 'CREATE INDEX IF NOT EXISTS idx_agent_logs_project ON agent_logs(projectId)'],
+  ['agent_db_usage', 'CREATE INDEX IF NOT EXISTS idx_db_usage_agent ON agent_db_usage(agentName)'],
+  ['agent_db_usage', 'CREATE INDEX IF NOT EXISTS idx_db_usage_task ON agent_db_usage(taskId)'],
+  ['memory', 'CREATE INDEX IF NOT EXISTS idx_memory_kind ON memory(kind)'],
   // context_files: (projectId, path) MUST be unique — it is the ON CONFLICT target the
   // keepInContext upsert relies on. The plain projectId index serves the list/stats reads.
-  await store.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_ctx_files_proj_path ON context_files(projectId, path)');
-  await store.exec('CREATE INDEX IF NOT EXISTS idx_ctx_files_proj ON context_files(projectId)');
-  await store.exec('CREATE INDEX IF NOT EXISTS idx_ctx_ops_proj ON context_ops(projectId)');
+  ['context_files', 'CREATE UNIQUE INDEX IF NOT EXISTS idx_ctx_files_proj_path ON context_files(projectId, path)'],
+  ['context_files', 'CREATE INDEX IF NOT EXISTS idx_ctx_files_proj ON context_files(projectId)'],
+  ['context_ops', 'CREATE INDEX IF NOT EXISTS idx_ctx_ops_proj ON context_ops(projectId)'],
+];
+
+/**
+ * Run the schema against `store`. Pass `group` to restrict it to the tables that live in that
+ * SQLite file; omit it (or run against Postgres, which is a single database) to create
+ * everything. Idempotent either way.
+ *
+ * NOTE: existing SQLite files created before this became group-aware still carry the empty
+ * shadow tables. They are harmless and are deliberately NOT dropped here — dropping tables is
+ * destructive and this function must stay safe to re-run.
+ */
+export async function runMigrations(store: Store, group?: DbGroup): Promise<void> {
+  const d = store.dialect;
+  // Postgres = one database, so every table belongs. SQLite without a group = create all
+  // (used by POST /backend/migrate and by callers that want the full schema).
+  const wanted = (table: string): boolean =>
+    d === 'postgres' || !group || TABLE_GROUP[table] === group;
+
+  // 1 — base tables ------------------------------------------------------------
+  for (const [name, cols] of BASE_TABLES) {
+    if (wanted(name)) await store.exec(createTable(d, name, cols));
+  }
+
+  // 2 — additive ALTERs (no-op on fresh DBs; upgrade old SQLite DBs) -----------
+  for (const [table, col] of ADDITIVE) {
+    if (wanted(table)) await tryStep(store, addColumn(d, table, col));
+  }
+
+  // 3 — indexes (created AFTER their columns are guaranteed to exist) ----------
+  for (const [table, sql] of INDEXES) {
+    if (wanted(table)) await store.exec(sql);
+  }
 
   // 4 — seed the always-present 'default' project (idempotent) -----------------
-  // Matches migrate()'s INSERT OR IGNORE; the app assumes 'default' always exists.
+  // Only where `projects` actually lives; the app assumes 'default' always exists.
+  if (!wanted('projects')) return;
   const now = new Date().toISOString();
   const cwd = process.cwd();
   if (d === 'sqlite') {

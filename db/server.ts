@@ -124,6 +124,7 @@ import { getBackendConfig, setBackendConfig, getMaskedBackendConfig } from './ba
 // The datastore seam: push the chosen backend (SQLite default / Postgres opt-in) into the
 // async Store layer at boot, BEFORE any schema init or request handling.
 import { configureBackend } from '../agentic/db/getStore.ts';
+import { isInsideLogsRoot } from '../agentic/engine/task-log-file.ts';
 
 // ── project scoping helpers ────────────────────────────────────────────────────
 // Every project-scoped route reads ?project=<id> (default 'default'); body routes may
@@ -720,6 +721,29 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const { purgeTaskLogs } = await import('./tasks.js');
       res.end(JSON.stringify({ purged: await purgeTaskLogs(taskId) }));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // --- Per-task log FILE (GET /task-logs/<id>/file) ---
+  // The task's own append-only log, spanning every stage. Its absolute path is read back from
+  // `tasks.logPath`, never recomputed, so it survives a UI reload, a db-server restart, and the
+  // agent slot being handed to another task. Must be matched before the DB-rows route below.
+  if (req.method === 'GET' && /^\/task-logs\/[^/]+\/file(?:[?#]|$)/.test(req.url || '')) {
+    const taskId = decodeURIComponent(req.url!.split('/')[2] || '');
+    try {
+      const task = await getTask(taskId);
+      if (!task) { res.statusCode = 404; res.end(JSON.stringify({ error: 'task not found' })); return; }
+      const p = task.logPath;
+      // The path is stored data. A row written by an older build, a restored DB, or a hand-edit
+      // must not be able to make the server read outside the logs root.
+      if (p && !isInsideLogsRoot(p)) { res.statusCode = 400; res.end(JSON.stringify({ error: 'log path outside logs root' })); return; }
+      if (!p || !existsSync(p)) { res.end(JSON.stringify({ path: p ?? null, exists: false, lines: [] })); return; }
+      const lines = readFileSync(p, 'utf8').split('\n').filter(Boolean);
+      res.end(JSON.stringify({ path: p, exists: true, lines }));
     } catch (e: any) {
       res.statusCode = 500;
       res.end(JSON.stringify({ error: e.message }));
@@ -2566,11 +2590,12 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       return;
     }
   }
-  // Clear the whole event feed (all logs.db rows).
+  // Clear the event feed for the project the board is showing (plus the engine-wide
+  // '__system__' lines it displays). Other projects' history is not touched.
   if (req.method === 'DELETE' && (req.url || '').split('?')[0] === '/system-status/events') {
     try {
       const { clearAgentLogs } = await import('../agentic/db/logs.js');
-      const removed = await clearAgentLogs();
+      const removed = await clearAgentLogs(projectIdOf(req));
       res.end(JSON.stringify({ ok: true, removed }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2613,9 +2638,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         };
       } catch { /* optional */ }
 
-      // Most recent orchestrator/system log rows (newest-first) for the live event feed.
-      let events: Array<{ id: number; ts: string; taskId: string; msg: string; type: string }> = [];
-      try { events = await getRecentLogs(15); } catch { /* logs.db optional */ }
+      // Most recent log rows (newest-first) for the live event feed, scoped to the project the
+      // board is showing. Unscoped, one project's failures scrolled through another's feed.
+      // Engine-wide '__system__' lines are still included by getRecentLogs.
+      let events: Array<{ id: number; ts: string; taskId: string; msg: string; type: string; projectId: string | null }> = [];
+      try { events = await getRecentLogs(15, pid); } catch { /* logs.db optional */ }
 
       res.end(JSON.stringify({
         ok: true,

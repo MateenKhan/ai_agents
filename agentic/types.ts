@@ -63,6 +63,10 @@ export interface Task {
   reviewNote?: string | null;
   /** ISO timestamp — while WORKING, the watchdog reclaims the task if this expires. */
   leaseExpiresAt?: string | null;
+  /** Absolute path to THIS task's own append-only log file (`<logsDir>/<projectId>/<id>.log`).
+   *  Persisted rather than recomputed so the file is still findable after a UI reload or a
+   *  db-server crash, and after the agent slot that wrote it has been reused by another task. */
+  logPath?: string | null;
   /** How many times this task has been dispatched to an agent. */
   attempts?: number;
   /** ISO timestamp — do not re-dispatch before this (exponential backoff). */

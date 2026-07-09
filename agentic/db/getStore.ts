@@ -9,10 +9,11 @@
 import type { Store } from './store';
 import { openSqliteStore } from './sqliteStore';
 import { openPgStore } from './pgStore';
-import { runMigrations } from './migrations';
+import { runMigrations, type DbGroup } from './migrations';
 import { getConfig } from '../runtime-context';
 
-export type DbGroup = 'tasks' | 'logs';
+// Owned by migrations.ts (it holds the table→group map); re-exported for existing importers.
+export type { DbGroup };
 interface Backend { kind: 'sqlite' | 'postgres'; url?: string }
 
 // Default: SQLite, no config. Never Postgres unless the host opts in.
@@ -63,7 +64,8 @@ export async function ensureMigrated(group: DbGroup): Promise<void> {
   if (migrated.has(key)) return;
   let p = inFlight.get(key);
   if (!p) {
-    p = runMigrations(getStore(group))
+    // Pass the group so SQLite creates ONLY this file's tables (Postgres = one DB, gets all).
+    p = runMigrations(getStore(group), group)
       .then(() => { migrated.add(key); })
       .finally(() => { inFlight.delete(key); });
     inFlight.set(key, p);
