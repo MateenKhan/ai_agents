@@ -307,7 +307,7 @@ export async function getBoardSettings(): Promise<any> {
 
 export async function updateBoardSettings(settings: any): Promise<void> {
   const s = await store();
-  await s.run(`INSERT OR REPLACE INTO board_settings (id, data) VALUES ('default', ?)`, [JSON.stringify(settings)]);
+  await upsert(s, 'board_settings', { id: 'default', data: JSON.stringify(settings) }, ['id']);
 }
 
 // ── git config (GitHub token storage in board_settings id='git_config') ────────
@@ -342,7 +342,7 @@ export async function setGitConfig(cfg: GitConfig): Promise<void> {
   if (token) merged.token = token;
   if (username) merged.username = username;
   if (host) merged.host = host;
-  await s.run(`INSERT OR REPLACE INTO board_settings (id, data) VALUES ('git_config', ?)`, [JSON.stringify(merged)]);
+  await upsert(s, 'board_settings', { id: 'git_config', data: JSON.stringify(merged) }, ['id']);
 }
 
 // ── Multiple labeled PAT tokens + per-agent assignment ────────────────────────
@@ -429,8 +429,7 @@ export async function setTokenAssignment(agent: string, tokenId: string | null, 
       [agent, projectId, projectId]);
     return;
   }
-  await s.run(`INSERT OR REPLACE INTO git_token_assignments (agent, tokenId, projectId) VALUES (?, ?, ?)`,
-    [agent, tokenId, projectId]);
+  await upsert(s, 'git_token_assignments', { agent, tokenId, projectId }, ['agent']);
 }
 
 /** Resolve the token an agent should authenticate git with: explicit assignment, else the '*' default. */
@@ -475,7 +474,7 @@ export async function setCodeIndexConfig(cfg: CodeIndexConfig, projectId: string
     root: cfg.root !== undefined ? cfg.root : prev.root,
     glob: cfg.glob !== undefined ? cfg.glob : prev.glob,
   };
-  await s.run(`INSERT OR REPLACE INTO board_settings (id, data) VALUES (?, ?)`, [`code_index:${projectId}`, JSON.stringify(merged)]);
+  await upsert(s, 'board_settings', { id: `code_index:${projectId}`, data: JSON.stringify(merged) }, ['id']);
 }
 
 // ── Projects ── every task/token/index is scoped to one; 'default' always exists.
@@ -544,7 +543,7 @@ export async function setAgentDefaults(d: Partial<AgentDefaults>): Promise<Agent
   const s = await store();
   const cur = await getAgentDefaults();
   const next: AgentDefaults = { maxConcurrency: d.maxConcurrency != null ? Math.max(0, Math.floor(d.maxConcurrency)) : cur.maxConcurrency };
-  await s.run(`INSERT OR REPLACE INTO board_settings (id, data) VALUES ('agent_defaults', ?)`, [JSON.stringify(next)]);
+  await upsert(s, 'board_settings', { id: 'agent_defaults', data: JSON.stringify(next) }, ['id']);
   return next;
 }
 export async function createProject(p: { name: string; repoPath?: string; emoji?: string; branch?: string; cloneUrl?: string }): Promise<Project> {
@@ -609,7 +608,7 @@ export async function beatHeartbeat(partial: Partial<Omit<Heartbeat, 'count' | '
     ...partial,
     count: (prev?.count ?? 0) + 1, lastBeatAt: new Date().toISOString(),
   };
-  await s.run(`INSERT OR REPLACE INTO board_settings (id, data) VALUES ('heartbeat', ?)`, [JSON.stringify(hb)]);
+  await upsert(s, 'board_settings', { id: 'heartbeat', data: JSON.stringify(hb) }, ['id']);
 }
 
 export async function getHeartbeat(): Promise<Heartbeat | null> {

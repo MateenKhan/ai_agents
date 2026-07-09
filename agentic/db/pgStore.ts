@@ -11,10 +11,17 @@
 // and runs runMigrations against it to "create tables").
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Pool, type PoolClient, type PoolConfig } from 'pg';
+import { Pool, types, type PoolClient, type PoolConfig } from 'pg';
 import type { Store } from './store';
 import { toPg } from './store';
 import { ALL_COLUMN_NAMES } from './migrations';
+
+// node-pg returns int8/BIGINT as a STRING (it refuses to silently lose precision past
+// 2^53). SQLite hands back numbers, and the callers rely on that: `COUNT(*) c` is compared
+// with `count === 0`, and the BIGINT IDENTITY `id` columns (agent_logs, agent_db_usage,
+// memory) are used as numbers. Parse int8 as a number so both dialects agree. Our counts
+// and surrogate ids are far below 2^53, so no precision is at risk.
+types.setTypeParser(20 /* int8 */, (v: string) => parseInt(v, 10));
 
 // ── Identifier-case reconciliation (Postgres only) ────────────────────────────
 // Columns are created + queried UNQUOTED, so Postgres folds them to lower-case

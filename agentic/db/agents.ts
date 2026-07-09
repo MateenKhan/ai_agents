@@ -6,6 +6,7 @@
 
 import type { AgentConfig, AgentRole, WorktreeMode } from '../types';
 import type { Store } from './store';
+import { upsert } from './store';
 import { getStore, ensureMigrated } from './getStore';
 import { DEFAULT_AGENTS } from './defaults';
 
@@ -42,7 +43,7 @@ async function refreshSystemTemplates(s: Store): Promise<void> {
     await s.run(`UPDATE agents SET promptTemplate = ?, mergePromptTemplate = ?, rescuePromptTemplate = ? WHERE role = ? AND isSystem = 1`,
       [a.promptTemplate, a.mergePromptTemplate ?? null, a.rescuePromptTemplate ?? null, a.role]);
   }
-  await s.run(`INSERT OR REPLACE INTO agent_meta (k, v) VALUES ('templateVersion', ?)`, [String(SYSTEM_TEMPLATE_VERSION)]);
+  await upsert(s, 'agent_meta', { k: 'templateVersion', v: String(SYSTEM_TEMPLATE_VERSION) }, ['k']);
 }
 
 function rowToAgent(r: any): AgentConfig {
@@ -61,11 +62,13 @@ function rowToAgent(r: any): AgentConfig {
 }
 
 async function insert(s: Store, a: AgentConfig): Promise<void> {
-  await s.run(`INSERT OR REPLACE INTO agents
-    (role,label,enabled,model,worktreeMode,ord,isSystem,promptTemplate,mergePromptTemplate,rescuePromptTemplate)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [a.role, a.label, a.enabled ? 1 : 0, a.model, a.worktreeMode, a.ord, a.isSystem ? 1 : 0,
-      a.promptTemplate, a.mergePromptTemplate ?? null, a.rescuePromptTemplate ?? null]);
+  await upsert(s, 'agents', {
+    role: a.role, label: a.label, enabled: a.enabled ? 1 : 0, model: a.model,
+    worktreeMode: a.worktreeMode, ord: a.ord, isSystem: a.isSystem ? 1 : 0,
+    promptTemplate: a.promptTemplate,
+    mergePromptTemplate: a.mergePromptTemplate ?? null,
+    rescuePromptTemplate: a.rescuePromptTemplate ?? null,
+  }, ['role']);
 }
 
 /** Seed defaults on first run; self-heal a missing architect merge template. */
