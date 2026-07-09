@@ -349,6 +349,16 @@
           <h3>Scale across machines</h3>
           <p class="mech"><b>Run the swarm on many boxes.</b> Atomic task claim, a DB merge-lock, worker heartbeats — and a dead machine&rsquo;s tasks get reclaimed automatically.</p>
         </div>
+        <div class="card reveal">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="7" ry="2.6"/><path d="M5 5v14c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V5M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></svg></div>
+          <h3>SQLite or Postgres</h3>
+          <p class="mech"><b>One file, or one shared database.</b> Point the whole swarm at Postgres — tasks, logs and a pgvector code index. Connection string encrypted at rest.</p>
+        </div>
+        <div class="card reveal">
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 12 6-3.5v11L15 16"/><circle cx="7" cy="12" r="2"/></svg></div>
+          <h3>Record the board</h3>
+          <p class="mech"><b>Capture the swarm working.</b> One click, browser-native screen capture, saved as a WebM — for demos, bug reports, or proving what happened.</p>
+        </div>
       </div>
 
       <div class="micro reveal">
@@ -422,22 +432,22 @@
       </div>
       <div class="grid-rest">
         <div class="card reveal">
-          <span class="tag">beta</span>
-          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="7" ry="2.6"/><path d="M5 5v14c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V5M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></svg></div>
-          <h3>Postgres + pgvector</h3>
-          <p class="mech">A shared team datastore and code index. Backend seam is in; connection string encrypted at rest. Not yet verified against a live cluster.</p>
-        </div>
-        <div class="card reveal">
           <span class="tag">planned</span>
           <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 12 6-3.5v11L15 16"/><circle cx="7" cy="12" r="2"/></svg></div>
-          <h3>Screen recording</h3>
-          <p class="mech">Watch a replay of exactly what each agent did — every click, every check — attached to the task for review.</p>
+          <h3>Per-agent replay</h3>
+          <p class="mech">Recording is manual today. Next: each agent&rsquo;s run captured automatically and attached to its task, so review means watching what happened.</p>
         </div>
         <div class="card reveal">
           <span class="tag">planned</span>
           <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-4 3v-3H4z"/><path d="M8 10h8"/></svg></div>
           <h3>Phone notifications</h3>
           <p class="mech">Get pinged when a task lands in review — approve the merge from your pocket.</p>
+        </div>
+        <div class="card reveal">
+          <span class="tag">planned</span>
+          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="3.2"/><path d="M6.2 6.2 9 9M15 15l2.8 2.8M17.8 6.2 15 9M9 15l-2.8 2.8"/></svg></div>
+          <h3>Beyond code, natively</h3>
+          <p class="mech">The engine is task-agnostic. Next: first-class non-coding workflows — job hunting, content + social posting, research pipelines.</p>
         </div>
       </div>
     </div>
