@@ -35,11 +35,17 @@ type Dialect = 'sqlite' | 'postgres';
 const TYPE: Record<'text' | 'int' | 'bool' | 'ts', Record<Dialect, string>> = {
   text: { sqlite: 'TEXT', postgres: 'TEXT' },
   int: { sqlite: 'INTEGER', postgres: 'BIGINT' },
-  // Booleans are stored as 0/1 on SQLite today; native BOOLEAN on Postgres. The
-  // Phase 1b caller conversion coerces 0/1 ↔ true/false when writing/reading pg.
-  bool: { sqlite: 'INTEGER', postgres: 'BOOLEAN' },
-  // Timestamps are ISO-8601 TEXT today; TIMESTAMPTZ on Postgres (accepts ISO input).
-  ts: { sqlite: 'TEXT', postgres: 'TIMESTAMPTZ' },
+  // Booleans: the entire codebase writes 0/1 (`enabled ? 1 : 0`) and reads truthiness.
+  // A native pg BOOLEAN would reject an integer param ("column is of type boolean but
+  // expression is of type integer"), so pg stores SMALLINT and behaves exactly like
+  // SQLite. No coercion layer, no caller changes.
+  bool: { sqlite: 'INTEGER', postgres: 'SMALLINT' },
+  // Timestamps: stored as ISO-8601 strings everywhere. A pg TIMESTAMPTZ would hand back
+  // JS Date objects, but callers treat these as strings (Date.parse, lexicographic
+  // `expiresAt < ?` compares, JSON to the UI). ISO-8601 UTC sorts lexicographically ==
+  // chronologically, so TEXT keeps both dialects byte-identical. We never use SQL date
+  // functions on these columns; if that ever changes, revisit this.
+  ts: { sqlite: 'TEXT', postgres: 'TEXT' },
 };
 
 /** Auto-increment surrogate PK. */
@@ -65,7 +71,9 @@ function colSql(d: Dialect, c: Col): string {
   if (c.notNull) s += ' NOT NULL';
   if (c.default !== undefined) {
     let def: string;
-    if (c.type === 'bool') def = (d === 'sqlite') ? (c.default ? '1' : '0') : (c.default ? 'true' : 'false');
+    // bool is INTEGER/SMALLINT on both dialects (see TYPE) — always emit 0/1, never
+    // a `true`/`false` literal, which SMALLINT would reject.
+    if (c.type === 'bool') def = c.default ? '1' : '0';
     else if (typeof c.default === 'string') def = `'${c.default}'`;
     else def = String(c.default);
     s += ` DEFAULT ${def}`;
