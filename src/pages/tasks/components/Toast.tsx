@@ -85,6 +85,12 @@ function ToastRow({ t, onDismiss }: { t: Toast; onDismiss: (id: number) => void 
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       data-feature-id="toast"
+      // A11Y (safety, not polish): agents autonomously edit and merge a git repo, and this
+      // is the only channel that says so. Errors interrupt (assertive); success/info wait for
+      // a pause (polite). Announced on insert, so the 4.2s auto-dismiss doesn't matter to AT.
+      role={t.kind === 'error' ? 'alert' : 'status'}
+      aria-live={t.kind === 'error' ? 'assertive' : 'polite'}
+      aria-atomic="true"
       className={`pointer-events-auto w-full sm:w-auto sm:min-w-[320px] sm:max-w-md bg-white border ${s.ring} rounded-xl shadow-lg shadow-slate-500/15 overflow-hidden flex`}
     >
       <div className={`w-1 shrink-0 ${s.bar}`} />
@@ -148,7 +154,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastCtx.Provider value={api}>
       {children}
       {/* Stack: bottom-right. Newest at the bottom; older ones move up as new arrive. */}
-      <div className="fixed z-[85] bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 left-4 sm:left-auto sm:right-6 flex flex-col gap-2 items-stretch sm:items-end pointer-events-none">
+      <div
+        role="region"
+        aria-label="Notifications"
+        className="fixed z-[85] bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 left-4 sm:left-auto sm:right-6 flex flex-col gap-2 items-stretch sm:items-end pointer-events-none"
+      >
         <AnimatePresence initial={false}>
           {toasts.map(t => <ToastRow key={t.id} t={t} onDismiss={dismiss} />)}
         </AnimatePresence>

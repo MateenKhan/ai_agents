@@ -7,7 +7,39 @@
      matching dev-tool density (Linear/Vercel/GitHub) without touching individual components. */
   html { font-size: 15px; }
   html, body, #root { height: 100%; }
-  body { margin: 0; font-family: theme('fontFamily.sans'); }
+  /* Body defaults to NORMAL weight. Bold must be earned: if every label is bold, boldness
+     carries no information and the eye finds no entry point. See the weight ramp below. */
+  body { margin: 0; font-family: theme('fontFamily.sans'); font-weight: 400; }
+
+  /* ── Focus is a safety feature ──────────────────────────────────────────────
+     In a tool where the wrong keystroke deletes a repo, "where am I?" must never be
+     ambiguous. Every interactive element gets one consistent, high-contrast focus ring
+     on keyboard focus only (never on mouse click). This is the single rule that replaces
+     the app's 24 bare `focus:outline-none` declarations. */
+  :where(a, button, [role='button'], input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid theme('colors.slate.900');
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+  /* On dark surfaces the ink ring disappears — invert it there. */
+  .bg-surface-terminal :focus-visible,
+  .bg-surface-console :focus-visible,
+  .bg-surface-panel :focus-visible {
+    outline-color: theme('colors.white');
+  }
+
+  /* ── Motion: dread is quiet ─────────────────────────────────────────────────
+     WCAG 2.2.2 — anything that moves indefinitely needs an escape hatch. Beyond the
+     standard: a screen where a dozen dots pulse forever reads as panic, not care.
+     Steady-state motion is suppressed for users who ask; transient feedback survives. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
   /* Mobile safety net: never let the page body scroll sideways. Surfaces that need
      horizontal scrolling (the kanban board, tab strips, tables) own an overflow-x-auto
      container, so clipping stray overflow here can't hurt them. */
@@ -33,10 +65,6 @@
    │ colour-vision-deficient users still see the difference (WCAG 1.4.1).          │
    └──────────────────────────────────────────────────────────────────────────────┘ */
 @layer components {
-  .btn {
-    @apply min-h-control px-4 text-sm font-bold rounded-xl transition-colors
-           disabled:opacity-50 inline-flex items-center justify-center gap-2;
-  }
   /* Tier 2 — routine primary. Neutral ink: confident, never alarming. */
   .btn-primary {
     @apply min-h-control-lg px-5 text-sm font-bold text-white bg-slate-900 rounded-xl

@@ -4,9 +4,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Piranha brand accent (red #FF3B1D). `accent-*` is the brand ramp used across the app;
-        // `brand-*` is an alias of it. A future re-theme is one edit here. Semantic status/error
-        // colors (rose for errors, the board lane hues) stay separate and are NOT this red.
+        // Piranha brand accent (red #FF3B1D). `accent-*` IS the brand ramp — there is no
+        // separate `brand-*` alias (it was a byte-identical duplicate and was removed).
+        // A re-theme is one edit here. Semantic status/error colours (rose for errors, the
+        // board lane hues, `ai-*`) stay separate and are deliberately NOT this red.
         accent: {
           50: '#fff1ee', 100: '#ffe0d9', 200: '#ffc2b3', 300: '#ff9a83', 400: '#ff6a4d',
           500: '#ff3b1d', 600: '#e62e12', 700: '#bf2410', 800: '#991f13', 900: '#7e1d15', 950: '#450a05',
