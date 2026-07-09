@@ -31,7 +31,7 @@ export function TerminalMonitor({
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed z-[100] transition-all duration-300 ease-in-out ${minimized ? 'bottom-6 right-6' : 'bottom-6 right-6 w-full max-w-2xl'}`} style={{ pointerEvents: 'none' }}>
+    <div className={`fixed z-[100] transition-all duration-300 ease-in-out ${minimized ? 'bottom-4 sm:bottom-6 right-2 sm:right-6' : 'bottom-4 sm:bottom-6 inset-x-2 sm:inset-x-auto sm:right-6 w-auto sm:w-full max-w-2xl'}`} style={{ pointerEvents: 'none' }}>
       <motion.div
         layout
         drag

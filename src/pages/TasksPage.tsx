@@ -90,7 +90,11 @@ const TasksPage: React.FC = () => {
   // Hiding the tab you're on falls back to the Board.
   useEffect(() => { if (hiddenTabs.has(activeTab)) setActiveTab('board'); }, [hiddenTabs, activeTab]);
   const visibleTabs = TAB_META.filter(t => !hiddenTabs.has(t.id));
-  const [actionsOpen, setActionsOpen] = useState(true);
+  // Collapse the action cluster by default on phones so the tab strip keeps its room;
+  // expanded from sm+ up to preserve the desktop header. Tap the chevron to reveal it.
+  const [actionsOpen, setActionsOpen] = useState(
+    () => typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(min-width: 640px)').matches
+  );
   const [chatOpen, setChatOpen] = useState(false);
   const [logsAgent, setLogsAgent] = useState<string | null>(null);
   const [healReport, setHealReport] = useState<{ healed: number; steps: any[] } | null>(null);
