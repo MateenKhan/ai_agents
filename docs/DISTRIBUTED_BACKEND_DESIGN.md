@@ -147,6 +147,23 @@ they will double-run and corrupt merges.
 
 ---
 
+## 6a. Access model (mobile control-plane) + auth
+
+- **iPhone / any phone = CONTROL PLANE, not a worker.** The UI is a web app; a phone can create
+  tasks, watch plan→build→qa→review, open the preview, and Approve/Reject. The agent *compute*
+  (claude CLI + Node + git worktrees + pnpm) runs on real workers (VPS / Linux / Windows / Mac) —
+  iOS is sandboxed and can never be a worker.
+- **Mobile-responsive UI — REQUIRED.** Board, task detail, review/preview panel, and Git Control must
+  work on a phone screen (desktop-first panels get a responsive pass). Prioritised now.
+- **Auth + TLS — DEFERRED, but a HARD prerequisite before ANY public/internet exposure.**
+  There is currently NO authentication and secrets live in the DB. Running on a public VPS or
+  reaching it from mobile-over-internet without auth = anyone can drive your agents and read your
+  tokens. Acceptable to defer ONLY while access stays local/LAN (or over a private tunnel/VPN).
+  Before the VPS+mobile mode ships publicly: add login on the UI **and** the db-server (6952), plus
+  HTTPS. Do not treat "later" as "never" here.
+
+---
+
 ## 7. Work split (parallel agents)
 - **Agent A — Secrets at rest**: wire `secretbox` into `git_tokens` + `github_apps` persistence + boot
   re-encryption + SECURITY.md. Files: `agentic/db/tasks.ts` (token/app fns), SECURITY.md.
