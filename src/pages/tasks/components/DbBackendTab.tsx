@@ -5,11 +5,11 @@ import { API_BASE } from '../../../apiBase';
 import { btnPrimary, btnGhost, inputCls } from '../ui';
 
 /**
- * Datastore backend config (Phase 2) — pick SQLite (default) or Postgres, test a
- * Postgres connection, and save the choice. The Postgres URL is a credential: it is
- * stored ENCRYPTED server-side and the API only ever returns a masked target, so the
- * password is never shown here. Switching the live datastore is a server-side TODO
- * (adapter swap) that takes effect on db-server restart.
+ * Datastore backend config — pick SQLite (default) or Postgres, test a Postgres
+ * connection, and save the choice. The Postgres URL is a credential: it is stored
+ * ENCRYPTED server-side and the API only ever returns a masked target, so the password
+ * is never shown here. Saving records the choice; the db-server opens the matching
+ * Store (and runs its migrations) at boot, so the switch needs a restart.
  *
  * Rendered as a tab inside GitPanel. Talks only to the db-server (/backend*).
  */
@@ -161,8 +161,9 @@ export default function DbBackendTab() {
       <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-1.5">
         <Info size={13} className="mt-px shrink-0" />
         <span>
-          Saving records the choice and (for Postgres) the encrypted URL. Switching the live datastore
-          takes effect on <strong>db-server restart</strong>; the query-layer adapter swap + migrations are still a TODO.
+          Saving records the choice and (for Postgres) the encrypted URL. It takes effect on{' '}
+          <strong>db-server restart</strong>, which opens the new datastore and runs its migrations.
+          The Database tab stays SQLite-only; inspect Postgres with your own client.
         </span>
       </div>
     </div>

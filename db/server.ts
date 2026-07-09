@@ -119,11 +119,11 @@ function ragAnswer(question: string, ctx: string, cwd: string): Promise<string> 
 }
 
 import { getAllTasks, getTask, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, setProjectReadiness, setProjectMaxConcurrency, getAgentDefaults, setAgentDefaults, type RunConfig } from './tasks.js';
-// Datastore backend config (Phase 2: config + connection test only; live swap is a TODO).
+// Datastore backend config — the persisted choice + its encrypted URL. Applied at boot.
 import { getBackendConfig, setBackendConfig, getMaskedBackendConfig } from './backendConfig.ts';
 // The datastore seam: push the chosen backend (SQLite default / Postgres opt-in) into the
 // async Store layer at boot, BEFORE any schema init or request handling.
-import { configureBackend } from '../agentic/db/getStore.ts';
+import { configureBackend, isPostgres, getStore } from '../agentic/db/getStore.ts';
 import { isInsideLogsRoot } from '../agentic/engine/task-log-file.ts';
 
 // ── project scoping helpers ────────────────────────────────────────────────────
@@ -371,26 +371,42 @@ async function rebuildIndex(reason: string, projectId: string = 'default'): Prom
   p.on('error', (err: any) => done(`⚠ db:build failed to start [${projectId}]: ${err?.message} — /search resumed`, false));
 }
 
-function runDbIntegrityCheck(): void {
-  // Durable board DBs — corruption pauses get/update; never auto-rebuilt.
-  let bad: string | null = null;
+/** Probe the LIVE board datastore. Must follow the configured backend: on Postgres the
+ *  local tasks.db/logs.db files are stale-or-absent, so quick_check'ing them would report
+ *  "healthy" while the real database is down — a monitor that can never see the outage. */
+async function probeBoardStore(): Promise<string | null> {
+  if (isPostgres()) {
+    // No quick_check equivalent: pg has no single-file image to corrupt. Reachability of
+    // the board table IS the health signal (down/unreachable/schema-missing all surface).
+    try { await getStore('tasks').get('SELECT 1 AS n'); } catch { return 'postgres'; }
+    return null;
+  }
   try {
     // tasks.db is the durable board and stays small — worth a full quick_check.
-    if (!dbQuickCheckOk(getTasksDb())) bad = 'tasks.db';
+    if (!dbQuickCheckOk(getTasksDb())) return 'tasks.db';
     // logs.db can grow large — cheap liveness probe (a malformed image throws here).
-    else { try { getLogsDb().prepare('SELECT 1 AS n').get(); } catch { bad = 'logs.db'; } }
-  } catch { bad = 'tasks.db'; }
-  if (bad && bad !== boardCorrupt) console.error(`[db-server] 🩺 DB CORRUPT: ${bad} — get/update PAUSED; restore from git/backup, then restart`);
-  else if (!bad && boardCorrupt) console.log('[db-server] ✅ board DB healthy again — get/update resumed');
+    try { getLogsDb().prepare('SELECT 1 AS n').get(); } catch { return 'logs.db'; }
+    return null;
+  } catch { return 'tasks.db'; }
+}
+
+async function runDbIntegrityCheck(): Promise<void> {
+  // Durable board store — corruption/outage pauses get/update; never auto-rebuilt.
+  const bad = await probeBoardStore();
+  if (bad && bad !== boardCorrupt) console.error(`[db-server] DB UNHEALTHY: ${bad} — get/update PAUSED; restore from git/backup, then restart`);
+  else if (!bad && boardCorrupt) console.log('[db-server] board DB healthy again — get/update resumed');
   boardCorrupt = bad;
 
   // Code index (may be large) — cheap probe; auto-rebuild on failure. Periodic self-heal
-  // watches the DEFAULT project's index; other projects rebuild on demand.
+  // watches the DEFAULT project's index; other projects rebuild on demand. Always SQLite:
+  // the code index is a local per-project artifact, never moved to Postgres.
   if (!isRebuilding('default') && !indexResponds('default')) rebuildIndex('is corrupt', 'default');
 }
 
-setInterval(runDbIntegrityCheck, 30_000);
-setTimeout(runDbIntegrityCheck, 3_000); // one early check shortly after boot
+// Timer callbacks: swallow rejections so one failed probe can't kill the process.
+const tickIntegrity = () => { void runDbIntegrityCheck().catch(e => console.error('[db-server] integrity check failed:', e)); };
+setInterval(tickIntegrity, 30_000);
+setTimeout(tickIntegrity, 3_000); // one early check shortly after boot
 
 // ── Review previews ──────────────────────────────────────────────────────────
 // Build a task's branch and serve it statically on a free port so a human can see
@@ -579,7 +595,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (boardCorrupt && isBoardReq) {
       res.statusCode = 503;
       res.setHeader('Retry-After', '5');
-      res.end(JSON.stringify({ error: 'DB temporarily unavailable', reason: `${boardCorrupt} failed integrity check — restore/restart needed`, retryAfter: 5 }));
+      const reason = boardCorrupt === 'postgres'
+        ? 'the Postgres board database is unreachable — check the server and connection URL'
+        : `${boardCorrupt} failed integrity check — restore/restart needed`;
+      res.end(JSON.stringify({ error: 'DB temporarily unavailable', reason, retryAfter: 5 }));
       return;
     }
     if (anyRebuilding() && u.startsWith('/search')) {
@@ -1078,6 +1097,17 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   // --- DB browser (Database tab) — allowlisted tables across tasks.db + logs.db ---
+  //
+  // SQLITE ONLY, on purpose. Every query below leans on SQLite-specific surface: `PRAGMA
+  // table_info` for the column list and the implicit `rowid` as the edit/delete key.
+  // Postgres has neither (information_schema + a real primary key instead). Rather than
+  // let it silently read the stale local .db files — reporting 0 rows while the live
+  // Postgres board is full — the routes refuse. Porting them is tracked in PUT /backend.
+  if (req.url?.startsWith('/db/table') && isPostgres()) {
+    res.statusCode = 501;
+    res.end(JSON.stringify({ error: 'The DB browser is SQLite-only', reason: 'This datastore is Postgres — inspect it with psql or your own client.' }));
+    return;
+  }
   if (req.url === '/db/tables' && req.method === 'GET') {
     try {
       const { getTasksDb, getLogsDb } = await import('./tasks.js');
@@ -1099,34 +1129,43 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const TASKS = ['tasks', 'board_settings', 'agents', 'memory']; const LOGS = ['agent_logs', 'agent_db_usage'];
       const conn = TASKS.includes(table) ? getTasksDb() : LOGS.includes(table) ? getLogsDb() : null;
       if (!conn) { res.statusCode = 400; res.end(JSON.stringify({ error: 'table not allowed' })); return; }
+
+      // Column names cannot be bound as parameters — they are interpolated into the SQL.
+      // So they must come from the SCHEMA, never from the request body: `{"a = 1; DROP …": 1}`
+      // as an update key would otherwise be executed verbatim. `table` is already allowlisted.
+      const cols = (conn.prepare(`PRAGMA table_info(${table})`).all() as any[]).map(c => ({ name: String(c.name), type: c.type, pk: c.pk }));
+      const colNames = new Set(cols.map(c => c.name));
+      const safeCols = (keys: string[]): string[] => keys.filter(k => colNames.has(k));
+
       if (req.method === 'POST' && rowid === 'bulk-delete') {
         const { rowids } = JSON.parse(await readBody(req)); const stmt = conn.prepare(`DELETE FROM ${table} WHERE rowid = ?`);
         for (const r of rowids || []) stmt.run(r); res.end(JSON.stringify({ ok: true, deleted: (rowids || []).length })); return;
       }
       if (req.method === 'POST' && rowid === 'bulk-update') {
-        const { rowids, set } = JSON.parse(await readBody(req)); const col = Object.keys(set || {})[0];
-        if (col) { const stmt = conn.prepare(`UPDATE ${table} SET ${col} = ? WHERE rowid = ?`); for (const r of rowids || []) stmt.run(set[col], r); }
+        const { rowids, set } = JSON.parse(await readBody(req)); const col = safeCols(Object.keys(set || {}))[0];
+        if (!col) { res.statusCode = 400; res.end(JSON.stringify({ error: 'no known column to update' })); return; }
+        const stmt = conn.prepare(`UPDATE ${table} SET ${col} = ? WHERE rowid = ?`); for (const r of rowids || []) stmt.run(set[col], r);
         res.end(JSON.stringify({ ok: true })); return;
       }
       if (req.method === 'GET' && !rowid) {
         const u = new URL(req.url!, 'http://x');
         const limit = Math.min(200, parseInt(u.searchParams.get('limit') || '25')); const offset = parseInt(u.searchParams.get('offset') || '0');
         const q = u.searchParams.get('q') || ''; const sort = u.searchParams.get('sort'); const dir = u.searchParams.get('dir') === 'asc' ? 'ASC' : 'DESC';
-        const columns = (conn.prepare(`PRAGMA table_info(${table})`).all() as any[]).map(c => ({ name: c.name, type: c.type, pk: c.pk }));
+        const columns = cols;
         let where = ''; const params: any[] = [];
         if (q) { where = 'WHERE ' + columns.map(c => `CAST(${c.name} AS TEXT) LIKE ?`).join(' OR '); for (const _ of columns) params.push(`%${q}%`); }
         const total = (conn.prepare(`SELECT COUNT(*) c FROM ${table} ${where}`).get(...params) as any)?.c ?? 0;
-        const orderBy = (sort && columns.some(c => c.name === sort)) ? `ORDER BY ${sort} ${dir}` : 'ORDER BY rowid DESC';
+        const orderBy = (sort && colNames.has(sort)) ? `ORDER BY ${sort} ${dir}` : 'ORDER BY rowid DESC';
         const rows = conn.prepare(`SELECT rowid as _rowid, * FROM ${table} ${where} ${orderBy} LIMIT ? OFFSET ?`).all(...params, limit, offset);
         res.end(JSON.stringify({ columns, rows, total })); return;
       }
       if (req.method === 'POST' && !rowid) {
-        const body = JSON.parse(await readBody(req)); const keys = Object.keys(body);
+        const body = JSON.parse(await readBody(req)); const keys = safeCols(Object.keys(body));
         if (keys.length) conn.prepare(`INSERT INTO ${table} (${keys.join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...keys.map(k => body[k]));
         res.end(JSON.stringify({ ok: true })); return;
       }
       if (req.method === 'PUT' && rowid) {
-        const body = JSON.parse(await readBody(req)); const keys = Object.keys(body).filter(k => k !== '_rowid');
+        const body = JSON.parse(await readBody(req)); const keys = safeCols(Object.keys(body).filter(k => k !== '_rowid'));
         if (keys.length) conn.prepare(`UPDATE ${table} SET ${keys.map(k => `${k} = ?`).join(',')} WHERE rowid = ?`).run(...keys.map(k => body[k]), rowid);
         res.end(JSON.stringify({ ok: true })); return;
       }
@@ -2661,10 +2700,12 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
-  // ── Datastore backend (Phase 2: config + connection test) ────────────────────
+  // ── Datastore backend ────────────────────────────────────────────────────────
   // Selects/records the datastore backend and (for Postgres) its ENCRYPTED URL.
-  // The live datastore is NOT switched here — the query-layer/adapter swap +
-  // migrations are the documented TODO below. Passwords are never returned.
+  // The adapter IS built: at boot, configureBackend() points the async Store layer
+  // (agentic/db/getStore.ts) at SqliteStore or PgStore and runs that backend's
+  // migrations. Saving here only RECORDS the choice — the swap needs a restart,
+  // because the Store is opened once at boot. Passwords are never returned.
   //
   //   GET  /backend        → { kind, target }  (masked; no password)
   //   POST /backend/test   { url } → { ok } | { ok:false, error }  (does NOT persist)
@@ -2689,9 +2730,12 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try {
       const body = JSON.parse((await readBody(req)) || '{}');
       const masked = setBackendConfig({ kind: body.kind, url: body.url });
-      // TODO(adapter-swap): persisting here only RECORDS the choice. Wire getTasksDb/
-      // getLogsDb/getDbFor (agentic/db/connection.ts) to a Postgres adapter behind
-      // getBackendConfig(), add pg-side migrations, then switch on db-server restart.
+      // Takes effect on the next db-server boot, where configureBackend() reads this file
+      // and opens the matching Store. Not hot-swappable: in-flight requests hold the old one.
+      //
+      // TODO(pg-db-browser): the Database tab (/db/table*) is still SQLite-only — it needs
+      // `information_schema` for columns and a real primary key in place of `rowid`. Until
+      // then those routes 501 under Postgres. Everything else already runs on both.
       res.end(JSON.stringify(masked));
     } catch (e: any) { res.statusCode = 400; res.end(JSON.stringify({ error: e.message })); }
     return;

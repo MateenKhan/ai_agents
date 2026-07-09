@@ -1,0 +1,25 @@
+# One-command run:  ANTHROPIC_API_KEY=sk-... docker compose up
+# (or put ANTHROPIC_API_KEY in a .env file next to this — compose auto-loads it)
+#
+# Then open http://localhost:6951
+#
+# Ports are published to 127.0.0.1 ONLY — the unauthenticated API is never exposed to
+# your LAN. See SECURITY.md before changing that.
+services:
+  piranha:
+    build: .
+    image: piranha:local
+    ports:
+      - "127.0.0.1:6951:6951"   # frontend
+      - "127.0.0.1:6952:6952"   # db-server API
+    environment:
+      # The only thing you must supply. The `claude` CLI reads this to authenticate.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in your shell or a .env file}
+      # Optional per-role model overrides:
+      # MODEL_ARCHITECT: opus
+      # MODEL_DEV: sonnet
+      # MODEL_QA: sonnet
+    # Mount a target git repo to have agents work on YOUR code instead of the demo repo:
+    #   volumes:
+    #     - /abs/path/to/your/repo:/work/your-repo
+    # then add a project in the UI pointing at /work/your-repo.

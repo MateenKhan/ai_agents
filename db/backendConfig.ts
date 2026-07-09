@@ -1,13 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Datastore backend config — db/backend.json  (Phase 2: config only)
+// Datastore backend config — db/backend.json
 // Persists the CHOSEN datastore backend and, for Postgres, its connection URL.
 // The URL is a credential, so it is stored ENCRYPTED via secretbox (AES-256-GCM)
 // and only decrypted in-process to open a connection. It is NEVER returned to the
 // UI in plaintext — GET surfaces a masked view (password → ***).
 //
-// NOTE (Phase 2 scope): reading/writing this file selects the backend, but the
-// live datastore is NOT switched here. The query-layer/adapter swap + migrations
-// are a documented TODO (see db/server.ts PUT /backend).
+// This file is the persisted CHOICE, not the live connection. db-server reads it at
+// boot and pushes it into the Store layer via configureBackend(); changing it takes
+// effect on restart. agentic-core never imports this — it stays standalone.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
