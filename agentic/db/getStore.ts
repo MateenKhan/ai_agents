@@ -19,11 +19,15 @@ interface Backend { kind: 'sqlite' | 'postgres'; url?: string }
 let backend: Backend = { kind: 'sqlite' };
 const cache = new Map<string, Store>();
 
-/** Host (db-server) pushes the chosen backend at boot. Clears cached stores so the
- *  next getStore() opens the new target. Postgres is opt-in ONLY. */
+/** Host (db-server) pushes the chosen backend at boot. Clears cached stores AND the
+ *  migration flags, so the next getStore()/ensureMigrated() opens and migrates the new
+ *  target — otherwise repointing at a different Postgres URL would reuse the 'pg' flag
+ *  and skip creating its tables. Postgres is opt-in ONLY. */
 export function configureBackend(b: Backend): void {
   backend = b?.kind === 'postgres' && b.url ? { kind: 'postgres', url: b.url } : { kind: 'sqlite' };
   cache.clear();
+  migrated.clear();
+  inFlight.clear();
 }
 
 /** True when the live datastore is Postgres (a single shared database). */
@@ -48,13 +52,24 @@ export function getStore(group: DbGroup): Store {
 
 // Run schema migrations at most once per distinct Store (per group for sqlite, once
 // for the shared pg database). Callers await ensureMigrated() before first use.
+// `inFlight` de-dupes concurrent callers: without it two racing callers both start
+// runMigrations against the same store (harmless — every step is idempotent — but it
+// doubles the DDL and, on Postgres, can have two sessions issue the same DDL at once).
 const migrated = new Set<string>();
+const inFlight = new Map<string, Promise<void>>();
+
 export async function ensureMigrated(group: DbGroup): Promise<void> {
   const key = backend.kind === 'postgres' ? 'pg' : group;
   if (migrated.has(key)) return;
-  await runMigrations(getStore(group));
-  migrated.add(key);
+  let p = inFlight.get(key);
+  if (!p) {
+    p = runMigrations(getStore(group))
+      .then(() => { migrated.add(key); })
+      .finally(() => { inFlight.delete(key); });
+    inFlight.set(key, p);
+  }
+  await p; // a failed migration rejects every waiter and is retried on the next call
 }
 
 /** Test/reset hook — drop cached stores + migration flags (used by tests). */
-export function _resetStores(): void { cache.clear(); migrated.clear(); }
+export function _resetStores(): void { cache.clear(); migrated.clear(); inFlight.clear(); }
