@@ -848,7 +848,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // by "is an agent still holding it" — a dead process can't clean up after itself.
       try {
         const { sweepAllContext } = await import('../agentic/index.ts');
-        const swept = sweepAllContext();
+        const swept = await sweepAllContext();
         const freed = Object.values(swept).reduce((s: number, r: any) => s + (r.freedTokens || 0), 0);
         const projs = Object.keys(swept).length;
         steps.push({ step: 'Context memory GC', status: freed ? 'fixed' : 'ok', detail: freed ? `freed ${freed} tok across ${projs} project(s)` : (projs ? `${projs} project(s) within budget` : 'no context yet') });
@@ -975,15 +975,15 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const cap = Number(u.searchParams.get('cap')) || ctx.DEFAULT_CONTEXT_CAP;
 
       if (req.method === 'GET' && /^\/context(\?.*)?$/.test(req.url)) {
-        res.end(JSON.stringify({ files: ctx.listContext(project), stats: ctx.contextStats(project, cap) }));
+        res.end(JSON.stringify({ files: await ctx.listContext(project), stats: await ctx.contextStats(project, cap) }));
         return;
       }
       if (req.method === 'GET' && req.url.startsWith('/context/ops')) {
-        res.end(JSON.stringify({ ops: ctx.getContextOps(project, Number(u.searchParams.get('limit')) || 100) }));
+        res.end(JSON.stringify({ ops: await ctx.getContextOps(project, Number(u.searchParams.get('limit')) || 100) }));
         return;
       }
       if (req.method === 'GET' && req.url.startsWith('/context/usage')) {
-        res.end(JSON.stringify({ usage: ctx.getFileUsage(project, Number(u.searchParams.get('limit')) || 50) }));
+        res.end(JSON.stringify({ usage: await ctx.getFileUsage(project, Number(u.searchParams.get('limit')) || 50) }));
         return;
       }
       if (req.method === 'POST' && req.url.startsWith('/context/sweep')) {
@@ -991,8 +991,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         // THEN age-out + enforce cap. The disk reconcile is what a manual Sweep adds over
         // the automatic merge-time sync — it catches deletes made outside the merge flow.
         const root = await projectRepoPath(project);
-        const deleted = root === process.cwd() ? [] : ctx.reconcileContext(project, ctx.listRepoFiles(root));
-        const result = ctx.sweepContext(project, { cap });
+        const deleted = root === process.cwd() ? [] : await ctx.reconcileContext(project, ctx.listRepoFiles(root));
+        const result = await ctx.sweepContext(project, { cap });
         res.end(JSON.stringify({ result: {
           ...result,
           deletedOnDisk: deleted.length,
@@ -1002,7 +1002,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
       if (req.method === 'POST' && req.url.startsWith('/context/pin')) {
         const b = JSON.parse(await readBody(req));
-        res.end(JSON.stringify({ ok: ctx.setPinned(project, b.path, !!b.pinned, b.actor || 'user') }));
+        res.end(JSON.stringify({ ok: await ctx.setPinned(project, b.path, !!b.pinned, b.actor || 'user') }));
         return;
       }
       if (req.method === 'POST' && /^\/context(\?.*)?$/.test(req.url)) {
@@ -1013,12 +1013,12 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         if (!abs.startsWith(root) || String(b.path).includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
         const bytes = statSync(abs).size;                 // read cost is timed into durationMs
         const tokens = ctx.estimateTokens(bytes);
-        const r = ctx.keepInContext({ projectId: project, path: b.path, tokens, addedBy: b.addedBy || 'user', pinned: b.pinned, taskId: b.taskId ?? null, durationMs: Date.now() - t0, cap });
-        res.end(JSON.stringify({ file: r.file, evicted: r.evicted, stats: ctx.contextStats(project, cap) }));
+        const r = await ctx.keepInContext({ projectId: project, path: b.path, tokens, addedBy: b.addedBy || 'user', pinned: b.pinned, taskId: b.taskId ?? null, durationMs: Date.now() - t0, cap });
+        res.end(JSON.stringify({ file: r.file, evicted: r.evicted, stats: await ctx.contextStats(project, cap) }));
         return;
       }
       if (req.method === 'DELETE' && req.url.startsWith('/context')) {
-        res.end(JSON.stringify({ ok: ctx.removeFromContext(project, u.searchParams.get('path') || '', 'user', 'user removed') }));
+        res.end(JSON.stringify({ ok: await ctx.removeFromContext(project, u.searchParams.get('path') || '', 'user', 'user removed') }));
         return;
       }
       res.statusCode = 404; res.end(JSON.stringify({ error: 'unknown context route' }));

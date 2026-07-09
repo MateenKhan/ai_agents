@@ -251,6 +251,36 @@ const LOCKS: Col[] = [
   { name: 'expiresAt', type: 'ts' },
 ];
 
+// ── Project context memory (logs group) ─────────────────────────────────────
+// The per-project set of files currently held in agents' working context — a CACHE,
+// not an ownership ledger (see context.ts). `context_files` is the live set (one row
+// per project+path, UNIQUE(projectId, path) is the upsert conflict target); every
+// mutation appends a `context_ops` audit row.
+const CONTEXT_FILES: Col[] = [
+  { name: 'id', type: 'serial' },
+  { name: 'projectId', type: 'text', notNull: true },
+  { name: 'path', type: 'text', notNull: true },
+  { name: 'tokens', type: 'int', notNull: true, default: 0 },
+  { name: 'pinned', type: 'bool', notNull: true, default: false },
+  { name: 'addedBy', type: 'text' },
+  { name: 'useCount', type: 'int', notNull: true, default: 0 },
+  { name: 'addedAt', type: 'ts', notNull: true },
+  { name: 'lastUsedAt', type: 'ts', notNull: true },
+];
+
+const CONTEXT_OPS: Col[] = [
+  { name: 'id', type: 'serial' },
+  { name: 'projectId', type: 'text', notNull: true },
+  { name: 'path', type: 'text' },
+  { name: 'op', type: 'text', notNull: true },
+  { name: 'actor', type: 'text' },
+  { name: 'taskId', type: 'text' },
+  { name: 'tokens', type: 'int' },
+  { name: 'durationMs', type: 'int' },
+  { name: 'reason', type: 'text' },
+  { name: 'ts', type: 'ts', notNull: true },
+];
+
 
 // Additive ALTERs — historically added by migrate() to pre-existing tables. On a
 // fresh DB the columns are already present (in the CREATE TABLE above) so these are
@@ -295,6 +325,7 @@ export const ALL_COLUMN_NAMES: readonly string[] = Array.from(new Set(
   ([] as Col[]).concat(
     TASKS, BOARD_SETTINGS, GIT_TOKENS, GIT_TOKEN_ASSIGNMENTS, GITHUB_APPS, PROJECTS,
     AGENTS, AGENT_META, AGENT_LOGS, AGENT_DB_USAGE, MEMORY, WORKERS, LOCKS,
+    CONTEXT_FILES, CONTEXT_OPS,
     ADDITIVE.map(([, c]) => c),
   ).map(c => c.name),
 ));
@@ -323,6 +354,9 @@ export async function runMigrations(store: Store): Promise<void> {
   // Phase 3 — multi-orchestrator coordination (workers heartbeat + advisory locks).
   await store.exec(createTable(d, 'workers', WORKERS));
   await store.exec(createTable(d, 'locks', LOCKS));
+  // Project context memory (logs group).
+  await store.exec(createTable(d, 'context_files', CONTEXT_FILES));
+  await store.exec(createTable(d, 'context_ops', CONTEXT_OPS));
 
   // 2 — additive ALTERs (no-op on fresh DBs; upgrade old SQLite DBs) -----------
   for (const [table, col] of ADDITIVE) await tryStep(store, addColumn(d, table, col));
@@ -335,6 +369,11 @@ export async function runMigrations(store: Store): Promise<void> {
   await store.exec('CREATE INDEX IF NOT EXISTS idx_db_usage_agent ON agent_db_usage(agentName)');
   await store.exec('CREATE INDEX IF NOT EXISTS idx_db_usage_task ON agent_db_usage(taskId)');
   await store.exec('CREATE INDEX IF NOT EXISTS idx_memory_kind ON memory(kind)');
+  // context_files: (projectId, path) MUST be unique — it is the ON CONFLICT target the
+  // keepInContext upsert relies on. The plain projectId index serves the list/stats reads.
+  await store.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_ctx_files_proj_path ON context_files(projectId, path)');
+  await store.exec('CREATE INDEX IF NOT EXISTS idx_ctx_files_proj ON context_files(projectId)');
+  await store.exec('CREATE INDEX IF NOT EXISTS idx_ctx_ops_proj ON context_ops(projectId)');
 
   // 4 — seed the always-present 'default' project (idempotent) -----------------
   // Matches migrate()'s INSERT OR IGNORE; the app assumes 'default' always exists.

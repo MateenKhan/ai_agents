@@ -31,7 +31,7 @@ async function rulesBlock(task: Task): Promise<string> {
   // Auto-keep (pinned) in the project context so the rules stay in memory across the pipeline.
   const projectId = (task as any).projectId || 'default';
   for (const f of found) {
-    try { keepInContext({ projectId, path: f, tokens: estimateTokens(statSync(join(root, f)).size), addedBy: 'rules', pinned: true, taskId: task.id }); }
+    try { await keepInContext({ projectId, path: f, tokens: estimateTokens(statSync(join(root, f)).size), addedBy: 'rules', pinned: true, taskId: task.id }); }
     catch { /* context store optional — never block a dispatch */ }
   }
   return [

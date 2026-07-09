@@ -48,7 +48,7 @@ async function currentBranch(taskId: string): Promise<string> {
 async function reconcileContextAfterMerge(taskId: string): Promise<void> {
   try {
     const pid = (await getTask(taskId))?.projectId || 'default';
-    const removed = reconcileContext(pid, listRepoFiles(await repoCwdFor(taskId)));
+    const removed = await reconcileContext(pid, listRepoFiles(await repoCwdFor(taskId)));
     if (removed.length) log(taskId, `🧹 context: dropped ${removed.length} file(s) deleted by the merge`, 'info');
   } catch { /* context reconcile is best-effort — never block a merge */ }
 }

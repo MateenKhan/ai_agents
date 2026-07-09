@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// agentic-core — project context memory (logs.db, disposable)
+// agentic-core — project context memory (logs group, disposable)
 //
 // The per-project set of files currently held in agents' working context ("what
 // is in Claude's memory right now"). Modeled as a CACHE, never an ownership ledger:
@@ -7,13 +7,13 @@
 //     staleness / size cap, NEVER by trusting a dying agent to clean up.
 //   • user-added files are PINS — never auto-evicted.
 // Every mutation writes a high-quality op-log row (op + actor + tokens + durationMs
-// + reason) so the UI can show keep / read / evict timings. logs.db is disposable;
-// context rebuilds as agents run.
+// + reason) so the UI can show keep / read / evict timings. The logs datastore is
+// disposable; context rebuilds as agents run. Schema lives in migrations.ts and is
+// routed through the async Store (SQLite default, Postgres opt-in).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { DatabaseSync } from 'node:sqlite';
-import { getConfig } from '../runtime-context';
-import { openDb } from './connection';
+import type { Store } from './store';
+import { getStore, ensureMigrated } from './getStore';
 
 /** Default context budget. Past ~200K Haiku is unusable; large contexts also dilute
  *  attention ("context rot") — the cap is a quality+cost guardrail, LRU-enforced. */
@@ -51,50 +51,21 @@ export interface ContextOpRow {
   ts: string;
 }
 
-let ready = false;
-
-function db(): DatabaseSync {
-  const conn = openDb(getConfig().paths.logsDbPath);
-  if (!ready) {
-    conn.exec(`CREATE TABLE IF NOT EXISTS context_files (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      projectId  TEXT NOT NULL,
-      path       TEXT NOT NULL,
-      tokens     INTEGER NOT NULL DEFAULT 0,
-      pinned     INTEGER NOT NULL DEFAULT 0,
-      addedBy    TEXT,
-      useCount   INTEGER NOT NULL DEFAULT 0,
-      addedAt    TEXT NOT NULL,
-      lastUsedAt TEXT NOT NULL,
-      UNIQUE(projectId, path)
-    )`);
-    conn.exec(`CREATE INDEX IF NOT EXISTS idx_ctx_files_proj ON context_files(projectId)`);
-    conn.exec(`CREATE TABLE IF NOT EXISTS context_ops (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      projectId  TEXT NOT NULL,
-      path       TEXT,
-      op         TEXT NOT NULL,
-      actor      TEXT,
-      taskId     TEXT,
-      tokens     INTEGER,
-      durationMs INTEGER,
-      reason     TEXT,
-      ts         TEXT NOT NULL
-    )`);
-    conn.exec(`CREATE INDEX IF NOT EXISTS idx_ctx_ops_proj ON context_ops(projectId)`);
-    ready = true;
-  }
-  return conn;
+/** The active logs-group Store, with schema guaranteed. Context tables live in logs.db
+ *  today (disposable), so they share the logs group. */
+async function store(): Promise<Store> {
+  await ensureMigrated('logs');
+  return getStore('logs');
 }
 
 const now = () => new Date().toISOString();
 
-function logOp(row: Omit<ContextOpRow, 'id' | 'ts'>): void {
-  db().prepare(
+async function logOp(s: Store, row: Omit<ContextOpRow, 'id' | 'ts'>): Promise<void> {
+  await s.run(
     `INSERT INTO context_ops (projectId, path, op, actor, taskId, tokens, durationMs, reason, ts)
-     VALUES (?,?,?,?,?,?,?,?,?)`
-  ).run(row.projectId, row.path, row.op, row.actor ?? null, row.taskId ?? null,
-        row.tokens ?? null, row.durationMs ?? null, row.reason ?? null, now());
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [row.projectId, row.path, row.op, row.actor ?? null, row.taskId ?? null,
+     row.tokens ?? null, row.durationMs ?? null, row.reason ?? null, now()]);
 }
 
 export interface KeepArgs {
@@ -113,95 +84,102 @@ export interface KeepArgs {
 
 /** Put a file INTO context (or refresh an existing entry). Bumps use-count, records a
  *  `keep` op with timing, then enforces the size cap by evicting LRU unpinned files. */
-export function keepInContext(a: KeepArgs): { file: ContextFile; evicted: ContextFile[] } {
+export async function keepInContext(a: KeepArgs): Promise<{ file: ContextFile; evicted: ContextFile[] }> {
   const t0 = Date.now();
-  const conn = db();
+  const s = await store();
   const isUser = a.addedBy === 'user';
   const pin = (a.pinned ?? isUser) ? 1 : 0;
-  conn.prepare(
+  await s.run(
     `INSERT INTO context_files (projectId, path, tokens, pinned, addedBy, useCount, addedAt, lastUsedAt)
      VALUES (?,?,?,?,?,1,?,?)
      ON CONFLICT(projectId, path) DO UPDATE SET
        tokens=excluded.tokens,
        useCount=context_files.useCount+1,
        lastUsedAt=excluded.lastUsedAt,
-       pinned=MAX(context_files.pinned, excluded.pinned)`
-  ).run(a.projectId, a.path, a.tokens, pin, a.addedBy, now(), now());
-  logOp({ projectId: a.projectId, path: a.path, op: 'keep', actor: a.addedBy,
+       pinned=MAX(context_files.pinned, excluded.pinned)`,
+    [a.projectId, a.path, a.tokens, pin, a.addedBy, now(), now()]);
+  await logOp(s, { projectId: a.projectId, path: a.path, op: 'keep', actor: a.addedBy,
     taskId: a.taskId ?? null, tokens: a.tokens, durationMs: a.durationMs ?? (Date.now() - t0),
     reason: isUser ? 'user pinned' : 'agent kept' });
-  const evicted = enforceCap(a.projectId, a.cap ?? DEFAULT_CONTEXT_CAP);
-  const file = getContextFile(a.projectId, a.path)!;
+  const evicted = await enforceCap(a.projectId, a.cap ?? DEFAULT_CONTEXT_CAP);
+  const file = (await getContextFile(a.projectId, a.path))!;
   return { file, evicted };
 }
 
 /** Record that a file already in context was READ again — bumps LRU recency + use-count
  *  and logs a `read` op with the read time. No-op (returns false) if not in context. */
-export function touchContext(projectId: string, path: string, actor: string, taskId?: string | null, durationMs?: number): boolean {
-  const r = db().prepare(
-    `UPDATE context_files SET useCount=useCount+1, lastUsedAt=? WHERE projectId=? AND path=?`
-  ).run(now(), projectId, path);
-  const hit = (r.changes ?? 0) > 0;
-  if (hit) logOp({ projectId, path, op: 'read', actor, taskId: taskId ?? null, tokens: null, durationMs: durationMs ?? null, reason: 'read from memory' });
+export async function touchContext(projectId: string, path: string, actor: string, taskId?: string | null, durationMs?: number): Promise<boolean> {
+  const s = await store();
+  const before = ((await s.get(`SELECT COUNT(*) c FROM context_files WHERE projectId=? AND path=?`, [projectId, path]) as any)?.c) ?? 0;
+  await s.run(`UPDATE context_files SET useCount=useCount+1, lastUsedAt=? WHERE projectId=? AND path=?`,
+    [now(), projectId, path]);
+  const hit = Number(before) > 0;
+  if (hit) await logOp(s, { projectId, path, op: 'read', actor, taskId: taskId ?? null, tokens: null, durationMs: durationMs ?? null, reason: 'read from memory' });
   return hit;
 }
 
-export function getContextFile(projectId: string, path: string): ContextFile | null {
-  const r = db().prepare(`SELECT * FROM context_files WHERE projectId=? AND path=?`).get(projectId, path) as any;
+export async function getContextFile(projectId: string, path: string): Promise<ContextFile | null> {
+  const s = await store();
+  const r = await s.get(`SELECT * FROM context_files WHERE projectId=? AND path=?`, [projectId, path]) as any;
   return r ?? null;
 }
 
 /** Current context set — pins first, then most-recently-used. */
-export function listContext(projectId: string): ContextFile[] {
-  return db().prepare(
-    `SELECT * FROM context_files WHERE projectId=? ORDER BY pinned DESC, lastUsedAt DESC`
-  ).all(projectId) as any[];
+export async function listContext(projectId: string): Promise<ContextFile[]> {
+  const s = await store();
+  return await s.all(`SELECT * FROM context_files WHERE projectId=? ORDER BY pinned DESC, lastUsedAt DESC`,
+    [projectId]) as any[];
 }
 
 export interface ContextStats { projectId: string; cap: number; totalTokens: number; fileCount: number; pinnedCount: number; pct: number; }
 
-export function contextStats(projectId: string, cap = DEFAULT_CONTEXT_CAP): ContextStats {
-  const r = db().prepare(
-    `SELECT COALESCE(SUM(tokens),0) tot, COUNT(*) n, COALESCE(SUM(pinned),0) pins FROM context_files WHERE projectId=?`
-  ).get(projectId) as any;
-  const totalTokens = r?.tot ?? 0;
-  return { projectId, cap, totalTokens, fileCount: r?.n ?? 0, pinnedCount: r?.pins ?? 0, pct: cap ? Math.round((totalTokens / cap) * 100) : 0 };
+export async function contextStats(projectId: string, cap = DEFAULT_CONTEXT_CAP): Promise<ContextStats> {
+  const s = await store();
+  const r = await s.get(
+    `SELECT COALESCE(SUM(tokens),0) tot, COUNT(*) n, COALESCE(SUM(pinned),0) pins FROM context_files WHERE projectId=?`,
+    [projectId]) as any;
+  const totalTokens = Number(r?.tot ?? 0);
+  return { projectId, cap, totalTokens, fileCount: Number(r?.n ?? 0), pinnedCount: Number(r?.pins ?? 0), pct: cap ? Math.round((totalTokens / cap) * 100) : 0 };
 }
 
 /** Remove a file from context. `unpin` op if it was a pin, else `evict`. */
-export function removeFromContext(projectId: string, path: string, actor = 'user', reason = 'removed'): boolean {
+export async function removeFromContext(projectId: string, path: string, actor = 'user', reason = 'removed'): Promise<boolean> {
   const t0 = Date.now();
-  const existing = getContextFile(projectId, path);
+  const s = await store();
+  const existing = await getContextFile(projectId, path);
   if (!existing) return false;
-  db().prepare(`DELETE FROM context_files WHERE projectId=? AND path=?`).run(projectId, path);
-  logOp({ projectId, path, op: existing.pinned ? 'unpin' : 'evict', actor,
+  await s.run(`DELETE FROM context_files WHERE projectId=? AND path=?`, [projectId, path]);
+  await logOp(s, { projectId, path, op: existing.pinned ? 'unpin' : 'evict', actor,
     taskId: null, tokens: existing.tokens, durationMs: Date.now() - t0, reason });
   return true;
 }
 
-export function setPinned(projectId: string, path: string, pinned: boolean, actor = 'user'): boolean {
-  const r = db().prepare(`UPDATE context_files SET pinned=? WHERE projectId=? AND path=?`)
-    .run(pinned ? 1 : 0, projectId, path);
-  const hit = (r.changes ?? 0) > 0;
-  if (hit) logOp({ projectId, path, op: pinned ? 'pin' : 'unpin', actor, taskId: null, tokens: null, durationMs: null, reason: pinned ? 'pinned' : 'unpinned' });
+export async function setPinned(projectId: string, path: string, pinned: boolean, actor = 'user'): Promise<boolean> {
+  const s = await store();
+  const before = ((await s.get(`SELECT COUNT(*) c FROM context_files WHERE projectId=? AND path=?`, [projectId, path]) as any)?.c) ?? 0;
+  await s.run(`UPDATE context_files SET pinned=? WHERE projectId=? AND path=?`,
+    [pinned ? 1 : 0, projectId, path]);
+  const hit = Number(before) > 0;
+  if (hit) await logOp(s, { projectId, path, op: pinned ? 'pin' : 'unpin', actor, taskId: null, tokens: null, durationMs: null, reason: pinned ? 'pinned' : 'unpinned' });
   return hit;
 }
 
 /** Evict least-recently-used UNPINNED files until total ≤ cap. Pins are never touched.
  *  Each eviction is logged with the over-cap reason + timing. Returns evicted rows. */
-export function enforceCap(projectId: string, cap = DEFAULT_CONTEXT_CAP): ContextFile[] {
+export async function enforceCap(projectId: string, cap = DEFAULT_CONTEXT_CAP): Promise<ContextFile[]> {
+  const s = await store();
   const evicted: ContextFile[] = [];
-  let { totalTokens } = contextStats(projectId, cap);
+  let { totalTokens } = await contextStats(projectId, cap);
   if (totalTokens <= cap) return evicted;
   // LRU order among unpinned candidates.
-  const candidates = db().prepare(
-    `SELECT * FROM context_files WHERE projectId=? AND pinned=0 ORDER BY lastUsedAt ASC`
-  ).all(projectId) as any[];
+  const candidates = await s.all(
+    `SELECT * FROM context_files WHERE projectId=? AND pinned=0 ORDER BY lastUsedAt ASC`,
+    [projectId]) as any[];
   for (const f of candidates) {
     if (totalTokens <= cap) break;
     const t0 = Date.now();
-    db().prepare(`DELETE FROM context_files WHERE projectId=? AND path=?`).run(projectId, f.path);
-    logOp({ projectId, path: f.path, op: 'evict', actor: 'gc', taskId: null, tokens: f.tokens, durationMs: Date.now() - t0, reason: `over cap (${cap})` });
+    await s.run(`DELETE FROM context_files WHERE projectId=? AND path=?`, [projectId, f.path]);
+    await logOp(s, { projectId, path: f.path, op: 'evict', actor: 'gc', taskId: null, tokens: f.tokens, durationMs: Date.now() - t0, reason: `over cap (${cap})` });
     totalTokens -= f.tokens;
     evicted.push(f);
   }
@@ -213,33 +191,35 @@ export interface SweepResult { agedOut: number; overCap: number; freedTokens: nu
 /** Health-check GC: age out stale unpinned entries, then enforce the cap. This is the
  *  ONLY thing that reclaims orphans left by abruptly-killed agents — it prunes by
  *  staleness/size, never by "is an agent still holding it". */
-export function sweepContext(projectId: string, opts: { cap?: number; maxAgeMs?: number } = {}): SweepResult {
+export async function sweepContext(projectId: string, opts: { cap?: number; maxAgeMs?: number } = {}): Promise<SweepResult> {
   const t0 = Date.now();
+  const s = await store();
   const cap = opts.cap ?? DEFAULT_CONTEXT_CAP;
   const maxAgeMs = opts.maxAgeMs ?? 2 * 60 * 60 * 1000; // 2h default TTL for unpinned
   const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
-  const stale = db().prepare(
-    `SELECT * FROM context_files WHERE projectId=? AND pinned=0 AND lastUsedAt < ?`
-  ).all(projectId, cutoff) as any[];
+  const stale = await s.all(
+    `SELECT * FROM context_files WHERE projectId=? AND pinned=0 AND lastUsedAt < ?`,
+    [projectId, cutoff]) as any[];
   let freed = 0;
   for (const f of stale) {
-    db().prepare(`DELETE FROM context_files WHERE projectId=? AND path=?`).run(projectId, f.path);
-    logOp({ projectId, path: f.path, op: 'evict', actor: 'gc', taskId: null, tokens: f.tokens, durationMs: null, reason: 'stale (aged out)' });
+    await s.run(`DELETE FROM context_files WHERE projectId=? AND path=?`, [projectId, f.path]);
+    await logOp(s, { projectId, path: f.path, op: 'evict', actor: 'gc', taskId: null, tokens: f.tokens, durationMs: null, reason: 'stale (aged out)' });
     freed += f.tokens;
   }
-  const overCap = enforceCap(projectId, cap);
-  freed += overCap.reduce((s, f) => s + f.tokens, 0);
+  const overCap = await enforceCap(projectId, cap);
+  freed += overCap.reduce((sum, f) => sum + f.tokens, 0);
   const result: SweepResult = { agedOut: stale.length, overCap: overCap.length, freedTokens: freed };
-  logOp({ projectId, path: null, op: 'sweep', actor: 'gc', taskId: null, tokens: freed, durationMs: Date.now() - t0,
+  await logOp(s, { projectId, path: null, op: 'sweep', actor: 'gc', taskId: null, tokens: freed, durationMs: Date.now() - t0,
     reason: `aged ${result.agedOut} · over-cap ${result.overCap} · freed ${freed} tok` });
   return result;
 }
 
 /** Sweep every project that has context rows (called by the health check). */
-export function sweepAllContext(opts: { cap?: number; maxAgeMs?: number } = {}): Record<string, SweepResult> {
-  const projects = db().prepare(`SELECT DISTINCT projectId FROM context_files`).all() as any[];
+export async function sweepAllContext(opts: { cap?: number; maxAgeMs?: number } = {}): Promise<Record<string, SweepResult>> {
+  const s = await store();
+  const projects = await s.all(`SELECT DISTINCT projectId FROM context_files`) as any[];
   const out: Record<string, SweepResult> = {};
-  for (const p of projects) out[p.projectId] = sweepContext(p.projectId, opts);
+  for (const p of projects) out[p.projectId] = await sweepContext(p.projectId, opts);
   return out;
 }
 
@@ -247,17 +227,18 @@ export function sweepAllContext(opts: { cap?: number; maxAgeMs?: number } = {}):
  *  in `livePaths` is dropped — a merge or a manual delete removed the file, so holding it in
  *  memory is pure staleness (its preview 404s, agents burn budget on a ghost). Unlike LRU /
  *  sweep this removes PINNED entries too: a pin on a file that no longer exists is dead.
- *  Each removal logs an `evict` op with reason `deleted on disk`. PURE — the caller passes
- *  the authoritative disk set (git ls-files); this module never touches the filesystem. */
-export function reconcileContext(projectId: string, livePaths: Iterable<string>, actor = 'gc'): ContextFile[] {
+ *  Each removal logs an `evict` op with reason `deleted on disk`. The caller passes the
+ *  authoritative disk set (git ls-files); this module never touches the filesystem. */
+export async function reconcileContext(projectId: string, livePaths: Iterable<string>, actor = 'gc'): Promise<ContextFile[]> {
   const live = livePaths instanceof Set ? livePaths : new Set(livePaths);
-  const current = db().prepare(`SELECT * FROM context_files WHERE projectId=?`).all(projectId) as any[];
+  const s = await store();
+  const current = await s.all(`SELECT * FROM context_files WHERE projectId=?`, [projectId]) as any[];
   const removed: ContextFile[] = [];
   for (const f of current) {
     if (live.has(f.path)) continue;
     const t0 = Date.now();
-    db().prepare(`DELETE FROM context_files WHERE projectId=? AND path=?`).run(projectId, f.path);
-    logOp({ projectId, path: f.path, op: 'evict', actor, taskId: null, tokens: f.tokens, durationMs: Date.now() - t0, reason: 'deleted on disk' });
+    await s.run(`DELETE FROM context_files WHERE projectId=? AND path=?`, [projectId, f.path]);
+    await logOp(s, { projectId, path: f.path, op: 'evict', actor, taskId: null, tokens: f.tokens, durationMs: Date.now() - t0, reason: 'deleted on disk' });
     removed.push(f);
   }
   return removed;
@@ -267,8 +248,9 @@ export interface FileUsage { path: string; uses: number; agents: number; lastUse
 
 /** Most-used files for a project (Analytics): use-count, distinct-agent count, last used,
  *  and whether the file is still in context. Aggregated from the op log. */
-export function getFileUsage(projectId: string, limit = 50): FileUsage[] {
-  return db().prepare(
+export async function getFileUsage(projectId: string, limit = 50): Promise<FileUsage[]> {
+  const s = await store();
+  return await s.all(
     `SELECT o.path                                            AS path,
             SUM(CASE WHEN o.op IN ('keep','read') THEN 1 ELSE 0 END) AS uses,
             COUNT(DISTINCT CASE WHEN o.op IN ('keep','read') AND o.actor NOT IN ('user','gc') THEN o.actor END) AS agents,
@@ -278,14 +260,15 @@ export function getFileUsage(projectId: string, limit = 50): FileUsage[] {
      FROM context_ops o
      LEFT JOIN context_files cf ON cf.projectId=o.projectId AND cf.path=o.path
      WHERE o.projectId=? AND o.path IS NOT NULL
-     GROUP BY o.path
+     GROUP BY o.path, cf.path, cf.tokens
      ORDER BY uses DESC, lastUsedAt DESC
-     LIMIT ?`
-  ).all(projectId, limit) as any[];
+     LIMIT ?`,
+    [projectId, limit]) as any[];
 }
 
 /** Recent op-log rows (newest first) — the high-quality timeline the UI renders. */
-export function getContextOps(projectId: string, limit = 100): ContextOpRow[] {
-  return db().prepare(`SELECT * FROM context_ops WHERE projectId=? ORDER BY id DESC LIMIT ?`)
-    .all(projectId, limit) as any[];
+export async function getContextOps(projectId: string, limit = 100): Promise<ContextOpRow[]> {
+  const s = await store();
+  return await s.all(`SELECT * FROM context_ops WHERE projectId=? ORDER BY id DESC LIMIT ?`,
+    [projectId, limit]) as any[];
 }
