@@ -256,7 +256,7 @@ export default function AgentsTab() {
 
               {/* Pseudo-code: the pipeline as DB writes */}
               <div>
-                <p className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-1">Pipeline as DB writes</p>
+                <p className="eyebrow mb-1">Pipeline as DB writes</p>
                 <p className="text-2xs text-slate-500 mb-3">Exactly what each step writes — <span className="font-mono text-cyan-700">table</span>, column, value. This is the ground truth of the framework. Click a step to expand its writes.</p>
                 <div className="space-y-2">
                   {STEPS.map(s => {
@@ -326,7 +326,7 @@ export default function AgentsTab() {
               </div>
 
               <div>
-                <p className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-1">The Supervisor — always-on guards</p>
+                <p className="eyebrow mb-1">The Supervisor — always-on guards</p>
                 <p className="text-2xs text-slate-500 mb-3">Plain deterministic code (no LLM) — keeps working even when the Claude API is down. Agents can crash or hang; the board still converges to truth on its own.</p>
                 <div className="space-y-2">
                   {GUARDS.map(g => {
@@ -402,7 +402,7 @@ export default function AgentsTab() {
               </div>
               {/* Superpowers — the skills this role leads with (from the shared skill map) */}
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-micro font-black uppercase tracking-wider text-slate-500">Superpowers</span>
+                <span className="eyebrow">Superpowers</span>
                 {skillsForRole(a.role).map(s => <SkillChip key={s} name={s} />)}
               </div>
               <p className="text-2xs text-slate-500 font-mono bg-slate-50 border border-slate-200 rounded-lg p-2 line-clamp-3 whitespace-pre-wrap">{a.promptTemplate}</p>
@@ -431,25 +431,25 @@ export default function AgentsTab() {
               {!editing.isSystem && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-micro font-bold uppercase text-slate-600">Role id</label>
+                    <label className="eyebrow">Role id</label>
                     <input value={editing.role} onChange={e => setEditing({ ...editing, role: e.target.value.replace(/[^\w-]/g, '') })} className={`${inputCls} mt-1 font-mono`} placeholder="reviewer" />
                   </div>
                   <div>
-                    <label className="text-micro font-bold uppercase text-slate-600">Label</label>
+                    <label className="eyebrow">Label</label>
                     <input value={editing.label} onChange={e => setEditing({ ...editing, label: e.target.value })} className={`${inputCls} mt-1`} placeholder="Reviewer" />
                   </div>
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-micro font-bold uppercase text-slate-600">Model</label>
+                  <label className="eyebrow">Model</label>
                   <select value={editing.model} onChange={e => setEditing({ ...editing, model: e.target.value })} className={`${selectCls} mt-1`}>
                     {!MODELS.some(m => m.v === editing.model) && <option value={editing.model}>{editing.model}</option>}
                     {MODELS.map(m => <option key={m.v} value={m.v}>{m.label}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-micro font-bold uppercase text-slate-600">Workspace</label>
+                  <label className="eyebrow">Workspace</label>
                   <select value={editing.worktreeMode} onChange={e => setEditing({ ...editing, worktreeMode: e.target.value })} className={`${selectCls} mt-1`}>
                     {WORKTREES.map(w => <option key={w.v} value={w.v}>{w.v} — {w.d}</option>)}
                   </select>
@@ -457,7 +457,7 @@ export default function AgentsTab() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-micro font-bold uppercase text-slate-600">Workflow order</label>
+                  <label className="eyebrow">Workflow order</label>
                   <input type="number" value={editing.ord} onChange={e => setEditing({ ...editing, ord: parseInt(e.target.value) || 0 })} className={`${inputCls} mt-1`} />
                   <p className="text-micro text-slate-500 mt-0.5">lower = earlier in the flow</p>
                 </div>
@@ -469,7 +469,7 @@ export default function AgentsTab() {
                 </div>
               </div>
               <div>
-                <label className="text-micro font-bold uppercase text-slate-600">{editing.role === 'architect' ? 'Plan prompt (job 1: planning)' : 'Prompt template'}</label>
+                <label className="eyebrow">{editing.role === 'architect' ? 'Plan prompt (job 1: planning)' : 'Prompt template'}</label>
                 <textarea value={editing.promptTemplate} onChange={e => setEditing({ ...editing, promptTemplate: e.target.value })} rows={editing.role === 'architect' ? 12 : 16} className={`${textareaCls} mt-1 text-xs font-mono`} />
                 <p className="text-micro text-slate-500 mt-1.5">Placeholders (filled per task): {PLACEHOLDERS.map(p => <code key={p} className="mx-0.5 px-1 bg-slate-100 rounded text-accent-700">{`{{${p}}}`}</code>)}</p>
               </div>
@@ -487,7 +487,7 @@ export default function AgentsTab() {
               </div>
               {editing.role === 'architect' && (
                 <div>
-                  <label className="text-micro font-bold uppercase text-slate-600">Merge prompt (job 2: same architect merges the approved branch)</label>
+                  <label className="eyebrow">Merge prompt (job 2: same architect merges the approved branch)</label>
                   <textarea value={editing.mergePromptTemplate || ''} onChange={e => setEditing({ ...editing, mergePromptTemplate: e.target.value })} rows={12} className={`${textareaCls} mt-1 text-xs font-mono`} />
                   <p className="text-micro text-slate-500 mt-1.5">The architect who planned the task also merges it after your approval — one agent, both jobs.</p>
                 </div>

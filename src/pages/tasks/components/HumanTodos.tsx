@@ -232,7 +232,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                       <div className="min-w-0 flex-1">
                       <h3 className="text-base font-bold text-slate-900 leading-snug break-words">{task.title}</h3>
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span className="text-2xs font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono uppercase">{task.id}</span>
+                        <span className="eyebrow px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono">{task.id}</span>
                         <span className="flex items-center gap-1 text-2xs font-bold text-accent-700 px-1.5 py-0.5 bg-accent-50 rounded border border-accent-200">
                           <GitBranch size={10} /> task/{task.id}
                         </span>
@@ -287,7 +287,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                     {/* Context */}
                     {task.description && (
                       <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5">
-                        <p className="text-2xs font-bold uppercase tracking-wide text-slate-600 mb-1.5">Context</p>
+                        <p className="eyebrow mb-1.5">Context</p>
                         <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap break-words">{task.description}</p>
                       </div>
                     )}

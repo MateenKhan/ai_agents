@@ -20,7 +20,7 @@ const fmtAgo = (iso: string) => fmtMins(Date.now() - new Date(iso).getTime()) + 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-      <p className="text-micro font-bold uppercase tracking-widest text-slate-500">{label}</p>
+      <p className="eyebrow">{label}</p>
       <p className="text-2xl font-black text-slate-900 mt-1">{value}</p>
       {sub && <p className="text-2xs text-slate-500 mt-0.5">{sub}</p>}
     </div>

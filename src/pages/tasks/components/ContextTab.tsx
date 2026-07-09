@@ -249,7 +249,7 @@ function ContextMemory({ activeId }: { activeId: string }) {
         <div className="flex flex-col gap-3">
           <div className="border border-slate-200 rounded-xl bg-white flex flex-col max-h-[calc(100dvh-260px)]">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200">
-              <span className="text-2xs font-black uppercase tracking-widest text-slate-500">In Memory {stats ? `· ${stats.fileCount}` : ''}</span>
+              <span className="eyebrow">In Memory {stats ? `· ${stats.fileCount}` : ''}</span>
               <span className="text-micro text-slate-500">{stats?.pinnedCount ?? 0} pinned</span>
             </div>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5 space-y-1">
@@ -283,7 +283,7 @@ function ContextMemory({ activeId }: { activeId: string }) {
           <div className="border border-slate-200 rounded-xl bg-white">
             <button onClick={() => setOpsOpen(o => !o)} className="flex items-center gap-2 w-full px-3 py-2 text-left">
               <Clock size={13} className="text-slate-400" />
-              <span className="text-2xs font-black uppercase tracking-widest text-slate-500 flex-1">Memory Log</span>
+              <span className="eyebrow flex-1">Memory Log</span>
               <ChevronRight size={14} className={`text-slate-400 transition-transform ${opsOpen ? 'rotate-90' : ''}`} />
             </button>
             {opsOpen && (

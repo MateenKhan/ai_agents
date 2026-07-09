@@ -234,7 +234,7 @@ export default function CodeSearchTab() {
           </div>
           {sources.length > 0 && (
             <div className="space-y-2">
-              <div className="text-micro font-black uppercase tracking-wider text-slate-500">Sources ({sources.length})</div>
+              <div className="eyebrow">Sources ({sources.length})</div>
               {sources.map((h, i) => <HitRow key={i} h={h} />)}
             </div>
           )}
@@ -247,7 +247,7 @@ export default function CodeSearchTab() {
           ? <div className="p-8 text-center text-xs text-slate-500">No matches. Try rephrasing, or rebuild the index if this project was just cloned.</div>
           : (
             <div className="space-y-2">
-              <div className="text-micro font-black uppercase tracking-wider text-slate-500">{hits.length} results</div>
+              <div className="eyebrow">{hits.length} results</div>
               {hits.map((h, i) => <HitRow key={i} h={h} />)}
             </div>
           )

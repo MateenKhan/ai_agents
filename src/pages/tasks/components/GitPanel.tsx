@@ -907,7 +907,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                   <div className="pt-2 border-t border-slate-100 space-y-4">
                     {/* commit */}
                     <div className="space-y-2">
-                      <label className="text-micro font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><GitCommit size={13} className="text-accent-600" /> Commit</label>
+                      <label className="eyebrow flex items-center gap-2"><GitCommit size={13} className="text-accent-600" /> Commit</label>
                       <div className="flex flex-col sm:flex-row gap-2">
                         <input value={commitMsg} onChange={e => setCommitMsg(e.target.value)} placeholder="commit message (stages all changes)" className={inputCls} />
                         <button onClick={doCommit} disabled={acting} className={`${btnPrimary} shrink-0`}>Commit</button>
@@ -916,7 +916,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     {/* switch branch */}
                     {branches.list.length > 0 && (
                       <div className="space-y-2">
-                        <label className="text-micro font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><GitBranch size={13} className="text-accent-600" /> Switch branch</label>
+                        <label className="eyebrow flex items-center gap-2"><GitBranch size={13} className="text-accent-600" /> Switch branch</label>
                         <select value={branches.current} onChange={e => e.target.value !== branches.current && doCheckout(e.target.value)} disabled={acting} data-feature-id="git-switch-branch" className={`${inputCls} cursor-pointer`}>
                           {!branches.list.includes(branches.current) && <option value={branches.current}>{branches.current || '(detached)'}</option>}
                           {branches.list.map(b => <option key={b} value={b}>{b}{b === branches.current ? '  (current)' : ''}</option>)}
@@ -925,7 +925,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     )}
                     {/* new branch */}
                     <div className="space-y-2">
-                      <label className="text-micro font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><GitBranch size={13} className="text-accent-600" /> New branch</label>
+                      <label className="eyebrow flex items-center gap-2"><GitBranch size={13} className="text-accent-600" /> New branch</label>
                       <div className="flex flex-col sm:flex-row gap-2">
                         <input value={branchName} onChange={e => setBranchName(e.target.value)} placeholder="branch name" className={inputCls} />
                         <input value={branchFrom} onChange={e => setBranchFrom(e.target.value)} placeholder="from (optional)" className={`${inputCls} sm:max-w-[40%]`} />
@@ -934,7 +934,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     </div>
                     {/* pull + push */}
                     <div className="space-y-2">
-                      <label className="text-micro font-black text-slate-500 uppercase tracking-widest flex items-center gap-2"><Upload size={13} className="text-accent-600" /> Sync (read-write token)</label>
+                      <label className="eyebrow flex items-center gap-2"><Upload size={13} className="text-accent-600" /> Sync (read-write token)</label>
                       <div className="flex flex-col sm:flex-row gap-2">
                         {tokenOptions(pushToken, setPushToken, t => t.scope === 'readwrite')}
                         <button onClick={doPull} disabled={acting} className={`${btnGhost} shrink-0`}><DownloadCloud size={14} /> Pull</button>
@@ -953,7 +953,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
             <div className="space-y-3">
               <p className="text-2xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">Pick a token first — for a GitHub App it lists the repos you can clone. Leave token blank only for public repos (then paste the URL).</p>
               {/* 1) token — everything below depends on it */}
-              <div><label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Token</label>
+              <div><label className="eyebrow block mb-1">Token</label>
                 {tokens.length === 0 ? (
                   <button onClick={() => setTab('tokens')} className={`${btnGhost} w-full justify-start`}>
                     <KeyRound size={15} /> No credentials yet — connect GitHub or add a token →
@@ -962,7 +962,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
               {/* 2) repo picker — populated from the GitHub App installation's accessible repos */}
               {cloneToken.startsWith('app:') && (
                 <div>
-                  <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">
+                  <label className="eyebrow block mb-1">
                     Repository {repoListBusy && <span className="text-slate-500 normal-case font-normal">— loading…</span>}
                   </label>
                   {repoListErr ? (
@@ -985,13 +985,13 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 </div>
               )}
               {/* 3) URL — auto-filled by the repo picker; editable for public/manual clones */}
-              <div><label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Repository URL</label>
+              <div><label className="eyebrow block mb-1">Repository URL</label>
                 <input value={cloneUrl} onChange={e => setCloneUrl(e.target.value)} placeholder="https://github.com/owner/repo.git" className={`${inputCls} font-mono text-xs sm:text-sm`} /></div>
               {/* 4) target dir — auto-suggested from the repo name */}
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Target directory</label>
+                <div><label className="eyebrow block mb-1">Target directory</label>
                   <input value={cloneDir} onChange={e => setCloneDir(e.target.value)} placeholder="C:\code\my-repo" className={`${inputCls} font-mono text-xs sm:text-sm`} /></div>
-                <div><label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Branch <span className="text-slate-500 normal-case font-normal tracking-normal">{rbBusy ? '— loading…' : '(searchable)'}</span></label>
+                <div><label className="eyebrow block mb-1">Branch <span className="text-slate-500 normal-case font-normal tracking-normal">{rbBusy ? '— loading…' : '(searchable)'}</span></label>
                   <SearchSelect
                     value={cloneBranch}
                     onChange={setCloneBranch}
@@ -1049,7 +1049,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 ['test', 'Test', 'pnpm test'],
               ] as const).map(([key, label, ph]) => (
                 <div key={key}>
-                  <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">{label}</label>
+                  <label className="eyebrow block mb-1">{label}</label>
                   <div className="flex gap-2">
                     <input value={(runCfg as any)[key]} onChange={e => setRunCfg(c => ({ ...c, [key]: e.target.value }))}
                       placeholder={ph} className={`${inputCls} font-mono text-xs sm:text-sm`} />
@@ -1064,7 +1064,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
               ))}
 
               <div>
-                <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Subdirectory (optional)</label>
+                <label className="eyebrow block mb-1">Subdirectory (optional)</label>
                 <input value={runCfg.cwd || ''} onChange={e => setRunCfg(c => ({ ...c, cwd: e.target.value }))}
                   placeholder="e.g. frontend — blank = repo root" className={`${inputCls} font-mono text-xs sm:text-sm`} />
               </div>
@@ -1092,7 +1092,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
             <div className="space-y-5">
               {/* ---- provider picker: presets host + auth convention for the PAT flow ---- */}
               <div>
-                <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1.5">Where's your code?</label>
+                <label className="eyebrow block mb-1.5">Where's your code?</label>
                 <div className="grid grid-cols-3 gap-2">
                   {(Object.keys(PROVIDERS) as ProviderId[]).map(id => {
                     const P = PROVIDERS[id];
@@ -1221,16 +1221,16 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                   {/* connect form */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">App name (optional)</label>
+                      <label className="eyebrow block mb-1">App name (optional)</label>
                       <input value={appName} onChange={e => setAppName(e.target.value)} placeholder="ai-agents-git" className={inputCls} />
                     </div>
                     <div>
-                      <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Organization (blank = personal)</label>
+                      <label className="eyebrow block mb-1">Organization (blank = personal)</label>
                       <input value={appOrg} onChange={e => setAppOrg(e.target.value)} placeholder="my-org" className={inputCls} />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">Access</label>
+                    <label className="eyebrow block mb-1">Access</label>
                     <select value={appScope} onChange={e => setAppScope(e.target.value as any)} className={`${inputCls} appearance-none`}>
                       <option value="readonly">read (clone/fetch)</option>
                       <option value="readwrite">write (push)</option>
@@ -1391,7 +1391,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
               {worktrees.map(wt => (
                 <div key={wt.path} className="p-3 rounded-xl border border-slate-200 space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-micro font-black uppercase tracking-wider rounded px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-600">{wt.isPlan ? 'PLAN' : 'DEV'}</span>
+                    <span className="eyebrow rounded px-1.5 py-0.5 bg-slate-100 border border-slate-200">{wt.isPlan ? 'PLAN' : 'DEV'}</span>
                     <span className="font-mono text-xs font-bold text-slate-800">{wt.branch || wt.name}</span>
                     {wt.merged ? <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700">merged</span>
                       : <span className="text-[9px] font-black uppercase rounded px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-700">unmerged</span>}
@@ -1500,7 +1500,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
               </div>
 
               <div className="p-3 rounded-xl border border-slate-200 space-y-2">
-                <label className="text-micro font-black text-slate-500 uppercase tracking-widest">Index a different repo</label>
+                <label className="eyebrow">Index a different repo</label>
                 <input value={idxRoot} onChange={e => setIdxRoot(e.target.value)} placeholder="C:\code\some-cloned-repo — blank = host repo" className={`${inputCls} font-mono text-xs`} />
                 <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
                   <button onClick={() => retargetIndex('')} disabled={idxBusy} className={btnGhost}>Reset to host</button>

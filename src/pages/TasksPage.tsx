@@ -257,7 +257,7 @@ const TasksPage: React.FC = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-100 gap-4">
         <div className="w-12 h-12 border-4 border-accent-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-micro font-black uppercase tracking-widest text-slate-500">Waking the swarm…</p>
+        <p className="eyebrow">Waking the swarm…</p>
       </div>
     );
   }

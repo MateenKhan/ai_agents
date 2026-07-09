@@ -339,7 +339,7 @@ export function LogConsole({
               <>
                 <div className="fixed inset-0 z-[70]" onClick={() => setMenuOpen(false)} />
                 <div className="absolute right-0 top-full mt-1.5 z-[75] w-48 p-1.5 rounded-xl border border-slate-200 bg-white shadow-xl">
-                  <p className="px-2 py-1 text-micro font-black uppercase tracking-widest text-slate-500">Show controls</p>
+                  <p className="eyebrow px-2 py-1">Show controls</p>
                   {TOOLBAR_CONTROLS.filter(c => c.on({ searchable, historyControl, liveControl, tailControl, timeToggle, sizeControls, copyable, onClear, onRefresh }))
                     .map(c => (
                       <label key={c.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">

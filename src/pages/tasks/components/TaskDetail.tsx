@@ -63,7 +63,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
 
   const Meta = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div>
-      <p className="text-micro font-bold uppercase tracking-widest text-slate-500 mb-1">{label}</p>
+      <p className="eyebrow mb-1">{label}</p>
       {children}
     </div>
   );
@@ -110,7 +110,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
         <div className="flex-1 overflow-y-auto custom-scrollbar [-webkit-overflow-scrolling:touch] p-4 space-y-5">
           {/* Pipeline — where this task stands */}
           <div>
-            <p className="text-micro font-bold uppercase tracking-widest text-slate-500 mb-2">Pipeline</p>
+            <p className="eyebrow mb-2">Pipeline</p>
             <div className="flex items-center">
               {STAGES.map((s, i) => (
                 <React.Fragment key={s.key}>
@@ -138,7 +138,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           {task.summary && (
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
               <button onClick={() => setShowPlan(v => !v)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition-colors">
-                <span className="text-2xs font-bold uppercase tracking-widest text-slate-600">Summary · what the agent did &amp; how to verify</span>
+                <span className="eyebrow">Summary · what the agent did &amp; how to verify</span>
                 <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showPlan ? 'rotate-180' : ''}`} />
               </button>
               {showPlan
@@ -150,7 +150,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           {task.description && (
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
               <button onClick={() => setShowDesc(v => !v)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition-colors">
-                <span className="text-2xs font-bold uppercase tracking-widest text-slate-600">Description</span>
+                <span className="eyebrow">Description</span>
                 <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showDesc ? 'rotate-180' : ''}`} />
               </button>
               {showDesc

@@ -84,7 +84,7 @@ export default function DbBackendTab() {
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex items-center gap-3">
         <Database size={18} className="text-accent-600 shrink-0" />
         <div className="min-w-0">
-          <div className="text-micro font-black uppercase tracking-wider text-slate-500">Current backend</div>
+          <div className="eyebrow">Current backend</div>
           <div className="text-sm font-bold text-slate-800 truncate">
             {loading ? 'Loading…' : current ? (
               <><span className="uppercase">{current.kind}</span> <span className="text-slate-500">·</span> <span className="font-mono text-xs text-slate-600">{current.target}</span></>
@@ -123,7 +123,7 @@ export default function DbBackendTab() {
       {kind === 'postgres' && (
         <div className="space-y-3">
           <div>
-            <label className="text-micro font-black uppercase tracking-wider text-slate-500">Connection URL</label>
+            <label className="eyebrow">Connection URL</label>
             <div className="relative mt-1">
               <input
                 type={showUrl ? 'text' : 'password'}

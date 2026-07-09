@@ -79,7 +79,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
     >
       {/* Visible tabs — toggle closeable tabs back on after they've been hidden. */}
       <div className="mb-6">
-        <h3 className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-2.5">Visible Tabs</h3>
+        <h3 className="eyebrow mb-2.5">Visible Tabs</h3>
         <div className="flex flex-col gap-1.5">
           {closeableTabs.map(t => {
             const Icon = t.icon;
@@ -93,7 +93,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
                 <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                   <Icon size={15} className="text-slate-500" /> {t.label}
                 </span>
-                <span className="flex items-center gap-2 text-2xs font-bold uppercase tracking-wide text-slate-500">
+                <span className="eyebrow flex items-center gap-2">
                   {hidden ? <><EyeOff size={13} /> Hidden</> : <><Eye size={13} className="text-accent-500" /> Shown</>}
                   <input
                     type="checkbox"
@@ -111,7 +111,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
 
       {/* Agent defaults — the global fallback every project inherits (each project can override). */}
       <div className="mb-6">
-        <h3 className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-2.5">Agent Defaults</h3>
+        <h3 className="eyebrow mb-2.5">Agent Defaults</h3>
         <label className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50">
           <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
             <Cpu size={15} className="text-slate-500" /> Max concurrent agents
@@ -131,7 +131,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
       {/* Agent safety — the single most dangerous setting in the product. It used to be a
           silent env-var default with no UI at all. Surfaced so the user OWNS it. */}
       <div className="mb-6">
-        <h3 className="text-2xs font-black uppercase tracking-widest text-slate-500 mb-2.5">Agent Safety</h3>
+        <h3 className="eyebrow mb-2.5">Agent Safety</h3>
         <label
           data-feature-id="settings-skip-perms"
           className={`flex items-start justify-between gap-3 px-3 py-3 rounded-lg border cursor-pointer transition-colors ${

@@ -100,7 +100,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
         {/* Basic Info */}
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Title</label>
+            <label className="eyebrow">Title</label>
             <input
               autoFocus
               required
@@ -113,7 +113,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Description</label>
+            <label className="eyebrow">Description</label>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
@@ -152,7 +152,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Project</label>
+          <label className="eyebrow">Project</label>
           <div className="relative">
             <select
               value={project}
@@ -172,7 +172,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Status</label>
+            <label className="eyebrow">Status</label>
             <div className="relative">
               <select
                 value={status}
@@ -188,7 +188,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Priority</label>
+            <label className="eyebrow">Priority</label>
             <div className="relative">
               <select
                 value={priority}
@@ -210,7 +210,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           <h3 className="text-micro font-black uppercase text-accent-600 tracking-widest">Advanced</h3>
 
           <div className="space-y-1.5">
-            <label className="flex items-center gap-2 text-2xs font-bold uppercase text-slate-600 tracking-wide">
+            <label className="eyebrow flex items-center gap-2">
               <Link size={10} /> Depends On
             </label>
             <input
@@ -223,7 +223,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="flex items-center gap-2 text-2xs font-bold uppercase text-slate-600 tracking-wide">
+            <label className="eyebrow flex items-center gap-2">
               <FileText size={10} /> Associated Files
             </label>
             <input
@@ -236,7 +236,7 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-2xs font-bold uppercase text-slate-600 tracking-wide">Parent Task ID</label>
+            <label className="eyebrow">Parent Task ID</label>
             <input
               type="text"
               value={parentId}

@@ -41,7 +41,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
     <div className="space-y-5">
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-micro font-black text-slate-500 uppercase tracking-widest">Swimlanes ({columns.length})</h3>
+          <h3 className="eyebrow">Swimlanes ({columns.length})</h3>
           <button
             onClick={addCustom}
             data-feature-id="board-editor-add-column"
@@ -94,7 +94,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
 
       {missingBuiltins.length > 0 && (
         <section>
-          <h3 className="text-micro font-black text-slate-500 uppercase tracking-widest mb-2.5">Re-add built-in lanes</h3>
+          <h3 className="eyebrow mb-2.5">Re-add built-in lanes</h3>
           <div className="flex flex-wrap gap-2">
             {missingBuiltins.map(b => (
               <button

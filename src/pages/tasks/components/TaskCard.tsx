@@ -126,7 +126,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-micro font-bold text-slate-600 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono uppercase">
+          <span className="eyebrow px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono">
             {task.id.slice(-6)}
           </span>
 

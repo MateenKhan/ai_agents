@@ -191,7 +191,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
 
             {/* Events feed header — jump to full logs + clear the DB-backed feed */}
             <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-700/70">
-              <span className="text-micro font-bold uppercase tracking-wider text-slate-500">Recent events</span>
+              <span className="eyebrow">Recent events</span>
               <Tooltip label="Open the Logs tab"><button
                 onClick={() => { setOpen(false); navigate('/tasks/logs'); }}
                 className="ml-auto flex items-center gap-1 text-micro font-bold text-slate-500 hover:text-slate-100 transition-colors"

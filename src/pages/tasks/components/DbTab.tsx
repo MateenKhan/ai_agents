@@ -337,7 +337,7 @@ export default function DbTab() {
           <div className="space-y-3">
             {cols.map(c => (
               <div key={c.name}>
-                <label className="text-micro font-bold uppercase text-slate-500 tracking-wide">{c.name} <span className="text-slate-500">({c.type || 'TEXT'})</span></label>
+                <label className="eyebrow">{c.name} <span className="text-slate-500">({c.type || 'TEXT'})</span></label>
                 <textarea
                   rows={String(editing[c.name] ?? '').length > 60 ? 3 : 1}
                   value={editing[c.name] ?? ''}
