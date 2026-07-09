@@ -12,6 +12,17 @@ export default defineConfig({
     host: true,
     // The db-server owns the SQLite file (+ WAL/SHM) and embedding index. None of it is
     // in vite's module graph, but ignore it explicitly so DB writes never nudge the watcher.
-    watch: { ignored: ['**/*.db', '**/*.db-wal', '**/*.db-shm', '**/db/data/**', '**/*.sqlite', '**/*.sqlite3'] },
+    // Agent/orchestrator .log files churn every tick — if watched, each append triggers a
+    // full page reload (modals visibly "refresh" mid-use). Ignore logs + the agent log dir.
+    watch: {
+      ignored: [
+        '**/*.db', '**/*.db-wal', '**/*.db-shm', '**/db/data/**', '**/*.sqlite', '**/*.sqlite3',
+        '**/.agent_logs/**', '**/*.log',
+        // `projects/` holds separate repos the agents clone/run (own tsconfigs, playwright
+        // reports, scratch HTML). They churn constantly and are NOT in this app's module
+        // graph — watching them forces spurious full-reloads mid-use.
+        '**/projects/**',
+      ],
+    },
   },
 });

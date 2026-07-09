@@ -59,10 +59,23 @@ export function getAgentLogs(taskId: string, limit = 200): AgentLog[] {
 
 /** The most recent log rows across ALL tasks, newest-first — for the orchestrator/system
  *  event feed in /system-status. Shape matches the event contract: { ts, taskId, msg, type }. */
-export function getRecentLogs(limit = 15): Array<{ ts: string; taskId: string; msg: string; type: string }> {
-  const rows = db().prepare(`SELECT taskId, message, type, timestamp FROM agent_logs ORDER BY id DESC LIMIT ?`)
+export function getRecentLogs(limit = 15): Array<{ id: number; ts: string; taskId: string; msg: string; type: string }> {
+  const rows = db().prepare(`SELECT id, taskId, message, type, timestamp FROM agent_logs ORDER BY id DESC LIMIT ?`)
     .all(limit) as any[];
-  return rows.map(r => ({ ts: r.timestamp, taskId: r.taskId, msg: r.message, type: r.type }));
+  return rows.map(r => ({ id: r.id, ts: r.timestamp, taskId: r.taskId, msg: r.message, type: r.type }));
+}
+
+/** Delete one event row by id — for the status-widget "dismiss" action. Returns rows removed. */
+export function deleteAgentLog(id: number): number {
+  const info = db().prepare(`DELETE FROM agent_logs WHERE id = ?`).run(id);
+  return Number(info.changes ?? 0);
+}
+
+/** Clear the whole event feed (all agent_logs rows). Returns rows removed. */
+export function clearAgentLogs(): number {
+  const n = (db().prepare(`SELECT COUNT(*) c FROM agent_logs`).get() as any)?.c ?? 0;
+  db().prepare(`DELETE FROM agent_logs`).run();
+  return n;
 }
 
 /** Purge a task's log history after human approval — one compact line remains. */

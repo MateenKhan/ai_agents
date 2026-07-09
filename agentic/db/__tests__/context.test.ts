@@ -7,7 +7,7 @@ import { setConfig } from '../../runtime-context';
 import { getLogsDb } from '../logs';
 import {
   keepInContext, touchContext, removeFromContext, setPinned, listContext,
-  contextStats, enforceCap, sweepContext, getFileUsage, getContextOps,
+  contextStats, enforceCap, sweepContext, reconcileContext, getFileUsage, getContextOps,
 } from '../context';
 
 const P = 'proj_test';
@@ -124,6 +124,44 @@ describe('file usage analytics', () => {
     expect(hot.inContext).toBe(1);
     // hot ranks above cold
     expect(usage[0].path).toBe('hot.ts');
+  });
+});
+
+describe('reconcileContext (disk truth)', () => {
+  it('drops entries whose file is no longer on disk, keeps the rest', () => {
+    keepInContext({ projectId: P, path: 'keep.ts', tokens: 10, addedBy: 'agent-1' });
+    keepInContext({ projectId: P, path: 'gone.ts', tokens: 20, addedBy: 'agent-1' });
+    const removed = reconcileContext(P, ['keep.ts', 'other.ts']);
+    expect(removed.map(f => f.path)).toEqual(['gone.ts']);
+    expect(listContext(P).map(f => f.path)).toEqual(['keep.ts']);
+  });
+
+  it('removes PINNED entries too — a pin on a deleted file is dead', () => {
+    keepInContext({ projectId: P, path: 'pinned.md', tokens: 10, addedBy: 'user' }); // user = pinned
+    expect(listContext(P)[0].pinned).toBe(1);
+    const removed = reconcileContext(P, ['something-else.ts']);
+    expect(removed.map(f => f.path)).toEqual(['pinned.md']);
+    expect(listContext(P)).toHaveLength(0);
+  });
+
+  it('logs an evict op with reason "deleted on disk"', () => {
+    keepInContext({ projectId: P, path: 'ghost.ts', tokens: 10, addedBy: 'agent-1' });
+    reconcileContext(P, []);
+    expect(getContextOps(P).some(o => o.op === 'evict' && o.path === 'ghost.ts' && o.reason === 'deleted on disk')).toBe(true);
+  });
+
+  it('is a no-op when every entry still exists (returns [])', () => {
+    keepInContext({ projectId: P, path: 'a.ts', tokens: 10, addedBy: 'agent-1' });
+    keepInContext({ projectId: P, path: 'b.ts', tokens: 10, addedBy: 'agent-1' });
+    expect(reconcileContext(P, ['a.ts', 'b.ts'])).toEqual([]);
+    expect(listContext(P)).toHaveLength(2);
+  });
+
+  it('accepts a Set as well as an array', () => {
+    keepInContext({ projectId: P, path: 'x.ts', tokens: 10, addedBy: 'agent-1' });
+    keepInContext({ projectId: P, path: 'y.ts', tokens: 10, addedBy: 'agent-1' });
+    reconcileContext(P, new Set(['x.ts']));
+    expect(listContext(P).map(f => f.path)).toEqual(['x.ts']);
   });
 });
 

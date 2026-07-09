@@ -59,6 +59,7 @@
     "db:stop": "kill-port 6952",
     "ports:stop": "kill-port 6951 6952",
     "db:build": "cross-env DB_FILE=local.db tsx db/index.ts build",
+    "db:context": "cross-env DB_FILE=local.db tsx db/index.ts context",
     "db:update": "cross-env DB_FILE=local.db tsx db/index.ts update",
     "db:ensure": "cross-env DB_FILE=local.db tsx db/index.ts ensure",
     "db:check": "cross-env DB_FILE=local.db tsx db/index.ts check",
@@ -69,7 +70,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preagents": "kill-port 6951 6952",
-    "agents": "concurrently \"npm:dev\" \"npm:db:server:stable\" \"npm:db:orchestrator:stable\" --names \"vite,db,ai\" --prefix-colors \"cyan,magenta,green\"",
+    "agents": "concurrently --restart-tries -1 --restart-after 3000 \"npm:dev\" \"npm:db:server:stable\" \"npm:db:orchestrator:stable\" --names \"vite,db,ai\" --prefix-colors \"cyan,magenta,green\"",
     "agents:vps": "set -a; [ -f .env ] && . ./.env; set +a; npm run agents"
   },
   "dependencies": {

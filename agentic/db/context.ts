@@ -243,6 +243,26 @@ export function sweepAllContext(opts: { cap?: number; maxAgeMs?: number } = {}):
   return out;
 }
 
+/** Reconcile context against the project's REAL files on disk. Any entry whose path is not
+ *  in `livePaths` is dropped — a merge or a manual delete removed the file, so holding it in
+ *  memory is pure staleness (its preview 404s, agents burn budget on a ghost). Unlike LRU /
+ *  sweep this removes PINNED entries too: a pin on a file that no longer exists is dead.
+ *  Each removal logs an `evict` op with reason `deleted on disk`. PURE — the caller passes
+ *  the authoritative disk set (git ls-files); this module never touches the filesystem. */
+export function reconcileContext(projectId: string, livePaths: Iterable<string>, actor = 'gc'): ContextFile[] {
+  const live = livePaths instanceof Set ? livePaths : new Set(livePaths);
+  const current = db().prepare(`SELECT * FROM context_files WHERE projectId=?`).all(projectId) as any[];
+  const removed: ContextFile[] = [];
+  for (const f of current) {
+    if (live.has(f.path)) continue;
+    const t0 = Date.now();
+    db().prepare(`DELETE FROM context_files WHERE projectId=? AND path=?`).run(projectId, f.path);
+    logOp({ projectId, path: f.path, op: 'evict', actor, taskId: null, tokens: f.tokens, durationMs: Date.now() - t0, reason: 'deleted on disk' });
+    removed.push(f);
+  }
+  return removed;
+}
+
 export interface FileUsage { path: string; uses: number; agents: number; lastUsedAt: string | null; inContext: 0 | 1; tokens: number | null; }
 
 /** Most-used files for a project (Analytics): use-count, distinct-agent count, last used,

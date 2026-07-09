@@ -11,7 +11,7 @@
 export type TaskStatus = 'AVAILABLE' | 'WORKING' | 'TESTING' | 'DONE';
 
 /** Pipeline stage inside the runtime — routes which agent role runs next. */
-export type Stage = 'plan' | 'build' | 'qa' | 'review' | 'merge' | 'merged';
+export type Stage = 'plan' | 'build' | 'qa' | 'review' | 'merge' | 'merged' | 'rescue';
 
 /** Which agent handles a stage. `merge` is done by the architect (Opus), not a 4th role. */
 export type AgentRole = 'architect' | 'dev' | 'qa';
@@ -81,6 +81,14 @@ export interface Task {
   stageTimings?: Record<string, number> | null;
   /** Which project this task belongs to. NULL/absent is treated as 'default'. */
   projectId?: string | null;
+  /** How many times a merge attempt hit conflicts and bounced the task back to the dev
+   *  to rebase onto the base branch. Capped so a permanently-conflicting task dead-letters
+   *  instead of looping build→qa→merge forever. */
+  mergeBounces?: number;
+  /** How many times a dev/qa stage exhausted its retries and was escalated to the ARCHITECT
+   *  for a re-plan (rescue). Capped so a task that keeps failing even after re-planning
+   *  dead-letters to BLOCKED instead of looping rescue→build→rescue forever. */
+  rescueCount?: number;
   /** Per-task lifecycle control flag set by the server (a separate process) and enforced
    *  by the orchestrator: null/absent = run normally; 'paused' = hold from dispatch;
    *  'stop' = kill any live agent now and stay out of dispatch until resumed. */
@@ -103,6 +111,9 @@ export interface AgentConfig {
   promptTemplate: string;
   /** Architect-only: the template used for the merge stage. */
   mergePromptTemplate?: string;
+  /** Architect-only: the template used for the rescue stage — re-planning a task whose
+   *  dev/qa stage exhausted its retries. */
+  rescuePromptTemplate?: string;
 }
 
 /** Result handed to the orchestrator when a headless agent process exits. */

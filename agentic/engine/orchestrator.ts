@@ -7,10 +7,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import https from 'node:https';
+import http from 'node:http';
 import os from 'node:os';
 import { appendFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 
 /** The git repo a task's merge/ancestry checks run in. Project-scoped: a task in a
  *  project with a valid repoPath uses THAT repo; anything else → the host cwd (so the
@@ -38,20 +39,38 @@ function currentBranch(taskId: string): string {
   try { return execSync('git rev-parse --abbrev-ref HEAD', { stdio: 'pipe', cwd: repoCwdFor(taskId) }).toString().trim() || 'HEAD'; }
   catch { return 'HEAD'; }
 }
+
+/** After a merge lands, drop context-memory entries whose file no longer exists on disk —
+ *  the merged work may have deleted/renamed files. This is the AUTOMATIC sync point: every
+ *  merge keeps the Context panel truthful without a manual Sweep. Keyed on the same
+ *  `projectId || 'default'` the API/agents use so it matches the stored rows. Best-effort —
+ *  a git/db hiccup here must never taint a completed merge. */
+function reconcileContextAfterMerge(taskId: string): void {
+  try {
+    const pid = getTask(taskId)?.projectId || 'default';
+    const removed = reconcileContext(pid, listRepoFiles(repoCwdFor(taskId)));
+    if (removed.length) log(taskId, `🧹 context: dropped ${removed.length} file(s) deleted by the merge`, 'info');
+  } catch { /* context reconcile is best-effort — never block a merge */ }
+}
 import type { AgenticConfig, AgentConfig, AgentRole, Task, Stage, FailureKind, WorktreeMode, RunResult } from '../types';
 import { setConfig, getConfig } from '../runtime-context';
 import {
-  getAllTasks, getTask, updateTask, getBoardSettings, updateBoardSettings, beatHeartbeat, getTasksDb, getProject,
+  getAllTasks, getTask, updateTask, getBoardSettings, updateBoardSettings, beatHeartbeat, getTasksDb, getProject, listProjects, getAgentDefaults,
 } from '../db/tasks';
 import { addAgentLog, getLogsDb } from '../db/logs';
 import { getAgents } from '../db/agents';
 import { renderPrompt } from './prompts';
 import {
   spawnHeadlessAgent, isAgentBusy, isTaskRunning, agentIdleMs, killAgent,
-  removeWorktree, removePlanWorktree, pruneOrphans, isGitRepo,
+  removeWorktree, removePlanWorktree, pruneOrphans, pruneOrphansAll, isGitRepo,
 } from './runner';
+import { reconcileContext } from '../db/context';
+import { listRepoFiles } from './repo-files';
 
 const POLL_MS = 3000;
+// Deep-cleaner cadence: sweep orphan worktrees/branches across EVERY project repo (not just
+// the host) every ~30 min. The cheap host-only sweep still runs every ~30s in the loop.
+const CLEANER_EVERY_TICKS = Math.max(1, Math.round((30 * 60 * 1000) / POLL_MS));
 // Agent slots are just identities — concurrency is bound by the resource gate below,
 // not by this count. Provide plenty (env AGENT_POOL=csv to name them, or AGENT_POOL_SIZE=n).
 const AGENT_POOL = (() => {
@@ -123,6 +142,81 @@ function startProbe(): void {
   tick();
 }
 
+// ── db-server (6952) breaker ─────────────────────────────────────────────────────
+// The orchestrator writes SQLite DIRECTLY, so it survives a db-server crash — but the
+// AGENTS (separate processes in worktrees) need HTTP 6952 to advance their stage and to
+// query the code index. If that daemon is down, an agent that finished its work looks like
+// it "exited without advancing" — an INFRA fault, not the agent's fault. When we detect it,
+// we pause dispatch, heal the daemon (Layer 1 restarts it; we also spawn as a fallback), and
+// auto-resume the SAME stage once it's back — without burning the task's retry budget.
+const DB_HEALTH_URL = `http://127.0.0.1:${process.env.DB_SERVER_PORT || '6952'}/health`;
+const dbBreaker = { state: 'closed' as 'closed' | 'open' };
+let dbProbing = false;
+let lastDbSpawnAt = 0;
+
+function probeDbServer(): Promise<boolean> {
+  return new Promise(res => {
+    const req = http.get(DB_HEALTH_URL, r => { r.resume(); res((r.statusCode ?? 0) >= 200 && (r.statusCode ?? 0) < 500); });
+    req.on('error', () => res(false));
+    req.setTimeout(2500, () => { req.destroy(); res(false); });
+  });
+}
+function dbBreakerAllows(): boolean { return dbBreaker.state !== 'open'; }
+
+/** Fallback heal (Layer 2b): spawn a fresh db-server if the health probe keeps failing.
+ *  Rate-limited so we never spawn a storm — if the daemon is merely slow (or Layer-1's
+ *  supervisor already respawned it), the duplicate loses the port race and exits harmlessly. */
+function trySpawnDbServer(): void {
+  if (Date.now() - lastDbSpawnAt < 20000) return; // one attempt per ~20s
+  lastDbSpawnAt = Date.now();
+  try {
+    log('__system__', '🩹 spawning a fresh db-server (fallback heal)…', 'warning');
+    const child = spawn('npm run db:server:stable', {
+      cwd: process.cwd(), env: { ...process.env }, detached: true, stdio: 'ignore', shell: true,
+    });
+    child.unref();
+  } catch (e: any) { log('__system__', `db-server spawn failed: ${e?.message || e}`, 'error'); }
+}
+
+function openDbBreaker(reason: string): void {
+  if (dbBreaker.state === 'open') return;
+  dbBreaker.state = 'open';
+  log('__system__', `⛔ db-server (6952) unreachable — pausing dispatch and healing (${reason})`, 'warning');
+  setStatus('⛔ db-server offline — healing, dispatch paused', true);
+  startDbProbe();
+}
+function startDbProbe(): void {
+  if (dbProbing) return;
+  dbProbing = true;
+  let fails = 0;
+  const tick = () => probeDbServer().then(ok => {
+    if (ok) {
+      dbBreaker.state = 'closed'; dbProbing = false;
+      log('__system__', '✅ db-server reachable again — resuming; tasks paused by the outage will retry their stage', 'success');
+      return;
+    }
+    if (++fails >= 2) trySpawnDbServer(); // give Layer-1's supervisor a beat, then spawn as fallback
+    setTimeout(tick, 5000);
+  });
+  tick();
+}
+
+// How many times a task may be escalated to the architect for a re-plan before it
+// dead-letters to BLOCKED (env RESCUE_MAX, default 1 — one re-plan then human).
+const MAX_RESCUE = Math.max(0, parseInt(process.env.RESCUE_MAX || '') || 1);
+
+// ── periodic architect triage ────────────────────────────────────────────────────
+// Every TRIAGE_MS the orchestrator wakes ONE architect in read-only "triage" mode to
+// review a project's in-flight tasks in a single batched run and re-plan/nudge the stuck
+// ones — the efficient realisation of "an architect oversees ~5 tasks" without keeping an
+// LLM process alive 24/7. 0 disables. Tasks under review are frozen from normal dispatch for
+// the duration so the triage agent never races a live worker.
+const TRIAGE_MS = Math.max(0, parseInt(process.env.ARCHITECT_TRIAGE_MS || '') || 5 * 60 * 1000);
+const TRIAGE_MAX_TASKS = Math.max(1, parseInt(process.env.ARCHITECT_TRIAGE_MAX || '') || 5);
+const TRIAGE_EVERY_TICKS = TRIAGE_MS > 0 ? Math.max(1, Math.round(TRIAGE_MS / POLL_MS)) : 0;
+const triaging = new Set<string>(); // task ids under review by a triage pass — held out of dispatch
+let triageCursor = 0;               // round-robin index across projects
+
 // ── resource gate ──────────────────────────────────────────────────────────────
 // Concurrency follows the machine, not a fixed count: keep spawning while the box
 // has headroom, and WAIT once CPU or RAM crosses the threshold (default 80%, env-
@@ -159,8 +253,9 @@ function canSpawn(active: number): boolean {
  *  directly during those actions and get overwritten by this on the next quiet tick. */
 function computeSteadyStatus(): string {
   if (breaker.state === 'open') return '⛔ Anthropic API unreachable — dispatch paused, retrying every 15s';
+  if (dbBreaker.state === 'open') return '⛔ db-server offline — healing, dispatch paused';
   const working = agentTaskMap.size;
-  const pending = getAllTasks().filter(
+  const pending = allTasks().filter(
     x => x.status === 'WORKING' && !x.started && x.control !== 'paused' && x.control !== 'stop'
       && (!x.nextRetryAt || Date.parse(x.nextRetryAt) <= Date.now())
   ).length;
@@ -197,6 +292,12 @@ function nextRoute(task: Task): Routed | null {
     if (tg.enableQa === false) stage = 'merge';
     else return { role: 'qa', stage: 'qa' };
   }
+  // Rescue: a dev/qa stage exhausted its retries → architect re-plans (read-only), then
+  // hands back to 'build'. Disabled installs (no architect) skip straight to dead-letter.
+  if (stage === 'rescue') {
+    if (tg.enableArchitect === false) return null;
+    return { role: 'architect', stage: 'rescue' };
+  }
   if (stage === 'merge') return { role: 'architect', stage: 'merge' };
   return null; // 'merged' / unknown → not dispatchable
 }
@@ -215,6 +316,45 @@ function getAvailableAgent(): string | null {
   return null;
 }
 
+/** True if a merge is currently running. Only ONE merge may touch the shared repo root
+ *  at a time — `git merge` mutates the working tree/index, so two concurrent merges in
+ *  the same checkout corrupt each other. A second approved task waits its turn. */
+function mergeInFlight(): boolean {
+  for (const id of agentTaskMap.values()) {
+    if (getTask(id)?.stage === 'merge') return true;
+  }
+  return false;
+}
+
+// ── multi-project helpers ────────────────────────────────────────────────────────
+// The orchestrator serves EVERY project, not just 'default': it unions tasks across all
+// projects and dispatches them together, each project capped by its own concurrency.
+const projectOf = (task: Task): string => task.projectId || 'default';
+
+/** All tasks across all projects (NULL projectId rows belong to 'default'; no dup — a task
+ *  is returned under exactly one project). */
+function allTasks(): Task[] {
+  const out: Task[] = [];
+  for (const p of listProjects()) for (const tk of getAllTasks(p.id)) out.push(tk);
+  return out;
+}
+
+/** How many agents are currently running for a project (by the live agentTaskMap). */
+function activeForProject(pid: string): number {
+  let n = 0;
+  for (const id of agentTaskMap.values()) { const tk = getTask(id); if (tk && projectOf(tk) === pid) n++; }
+  return n;
+}
+
+/** A project's max concurrent agents: its own override, else the global default; 0 = unlimited. */
+function projectCap(pid: string): number {
+  try {
+    const p = getProject(pid);
+    if (p && p.maxConcurrency != null) return Math.max(0, p.maxConcurrency);
+  } catch { /* fall through to global default */ }
+  return Math.max(0, getAgentDefaults().maxConcurrency || 0);
+}
+
 // ── retry / dead-letter ──────────────────────────────────────────────────────
 function scheduleRetry(id: string, attempts: number, note: string): void {
   const backoff = Math.min(5 * 60 * 1000, 5000 * 2 ** attempts);
@@ -230,8 +370,99 @@ function deadLetter(id: string, note: string): void {
 function failTask(task: Task, kind: FailureKind, note: string): void {
   breakerFailure(kind);
   const attempts = task.attempts || 0;
-  if (attempts >= maxAttempts()) deadLetter(task.id, `${maxAttempts()} attempts exhausted (${note})`);
-  else scheduleRetry(task.id, attempts, note);
+  if (attempts < maxAttempts()) { scheduleRetry(task.id, attempts, note); return; }
+  // Retries exhausted. A genuine dev/qa failure gets ONE architect rescue (re-plan) before we
+  // give up — the architect diagnoses and hands a fresh brief back to the dev. Architect-stage
+  // failures (plan/rescue/merge) and rescue-budget exhaustion dead-letter straight to BLOCKED.
+  const stage = task.stage;
+  const canRescue = (stage === 'build' || stage === 'qa')
+    && (task.rescueCount || 0) < MAX_RESCUE
+    && t().enableArchitect !== false; // no architect enabled → nobody to re-plan
+  if (canRescue) {
+    escalateToArchitect(task, `${maxAttempts()} attempts exhausted (${note})`);
+  } else {
+    deadLetter(task.id, `${maxAttempts()} attempts exhausted (${note})`);
+  }
+}
+
+/** Route a repeatedly-failing dev/qa task to the architect for a re-plan, then back to the dev.
+ *  Resets the per-stage retry budget (attempts) and records the rescue so a task that keeps
+ *  failing even after re-planning eventually dead-letters instead of looping. */
+function escalateToArchitect(task: Task, note: string): void {
+  const failedStage = task.stage;
+  // rescueCount is incremented at DISPATCH (see dispatchPending) so the cap applies uniformly
+  // whether the rescue was triggered here OR by a dev/qa self-reporting that it's blocked.
+  updateTask(task.id, {
+    stage: 'rescue', status: 'WORKING',
+    started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
+    attempts: 0, lastError: note,
+    reviewNote: `RESCUE NEEDED — the ${failedStage} stage failed and could not self-recover (${note}). Diagnose the root cause and REVISE the plan so a fresh dev can succeed; do not just repeat the old brief.`,
+  });
+  log(task.id, `🩺 ${failedStage} exhausted retries → ARCHITECT rescue — re-planning`, 'warning');
+  setStatus(`Rescuing "${task.title}" — architect re-planning after ${failedStage} failures`, true);
+}
+
+// ── periodic architect triage pass ────────────────────────────────────────────
+const DB_PORT = process.env.DB_SERVER_PORT || '6952';
+function triagePromptFor(pid: string, tasks: Task[]): string {
+  const rows = tasks.map(x => {
+    const age = x.started ? `${Math.round((Date.now() - Date.parse(x.started)) / 60000)}min at stage` : 'waiting to be picked up';
+    return `- [${x.id}] "${x.title}" — stage=${x.stage}, status=${x.status}, attempts=${x.attempts || 0}, rescues=${x.rescueCount || 0}, ${age}` +
+      (x.lastError ? `, lastError=${String(x.lastError).slice(0, 160)}` : '') +
+      (x.nextRetryAt && x.nextRetryAt !== DEAD_LETTER_AT ? `, retryAt=${x.nextRetryAt}` : '');
+  }).join('\n');
+  const put = (body: string) => `     curl -X PUT http://127.0.0.1:${DB_PORT}/tasks/<id> -H "Content-Type: application/json" -d '${body}'`;
+  return [
+    `You are the ARCHITECT running a read-only TRIAGE pass over project "${pid}". Below are its in-flight tasks that are between stages and may be stuck. You did the planning; now make sure each reaches human review. For EACH task decide and act — but ONLY act on ones that are genuinely stuck; leave healthy ones alone.`,
+    '',
+    'DECISIONS (per task):',
+    '  • HEALTHY / just moving normally → do NOTHING.',
+    '  • Needs a nudge (ambiguous or thin brief, a missing detail the dev needs) → add guidance WITHOUT changing its stage:',
+    put('{"reviewNote":"GUIDANCE: <concrete next step for the dev/qa>"}'),
+    '  • Genuinely STUCK (repeated failures, an oversized/wrong plan, a contradictory scenario) → hand it to a rescue re-plan:',
+    put('{"stage":"rescue","reviewNote":"BLOCKED: <root cause + exactly what to change>"}'),
+    '',
+    'RULES: Do NOT write application code. Do NOT touch tasks that are progressing fine. Base every decision on the REAL code (use the shared index) and each task\'s history below. Be surgical — a needless rescue costs a whole re-plan cycle.',
+    '',
+    'IN-FLIGHT TASKS:',
+    rows,
+  ].join('\n');
+}
+
+async function triagePass(): Promise<void> {
+  if (TRIAGE_MS <= 0 || t().enableArchitect === false) return;
+  if (isAgentBusy('triage')) return; // one triage at a time
+  const arch = agentMap()['architect'];
+  if (!arch || !arch.enabled) return;
+
+  // Round-robin the projects so a busy project doesn't starve the others of oversight.
+  const projects = listProjects();
+  if (!projects.length) return;
+  let picked: { pid: string; tasks: Task[] } | null = null;
+  for (let i = 0; i < projects.length; i++) {
+    const pid = projects[(triageCursor + i) % projects.length].id;
+    const cands = getAllTasks(pid).filter(x =>
+      (x.status === 'WORKING' || x.status === 'TESTING')
+      && !!x.stage && ['build', 'qa', 'review', 'rescue'].includes(x.stage)
+      && !isTaskRunning(x.id)               // never race a live worker
+      && !triaging.has(x.id)
+      && x.control !== 'paused' && x.control !== 'stop'
+    ).slice(0, TRIAGE_MAX_TASKS);
+    if (cands.length) { picked = { pid, tasks: cands }; triageCursor = (triageCursor + i + 1) % projects.length; break; }
+  }
+  if (!picked) return;
+
+  const { pid, tasks } = picked;
+  const anchor = tasks[0];
+  for (const x of tasks) triaging.add(x.id); // freeze from dispatch for the run
+  const release = () => { for (const x of tasks) triaging.delete(x.id); };
+  const ok = spawnHeadlessAgent({
+    agentName: 'triage', taskId: anchor.id, role: 'architect',
+    prompt: triagePromptFor(pid, tasks), model: modelFor('architect', arch), worktree: 'none',
+    onExit: (r) => { release(); log('__system__', `🔭 architect triage done (${pid}, ${tasks.length} task(s), ${r.failure})`, r.failure === 'none' ? 'success' : 'warning'); },
+  });
+  if (ok) { log('__system__', `🔭 architect triage — reviewing ${tasks.length} in-flight task(s) in project ${pid}`, 'info'); setStatus(`Architect triage — reviewing ${tasks.length} task(s) in ${pid}`, true); }
+  else release();
 }
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
@@ -252,7 +483,7 @@ async function dispatch(task: Task, route: Routed, ac: AgentConfig, name: string
 
   const ok = spawnHeadlessAgent({
     agentName: name, taskId: task.id, role: route.role, prompt, model, worktree: wt,
-    onExit: (r) => handleAgentExit(name, task.id, route, r),
+    onExit: (r) => { handleAgentExit(name, task.id, route, r).catch(e => log(task.id, `exit handler error: ${e?.message || e}`, 'error')); },
   });
   if (ok) log(task.id, `🚀 ${route.role} (${model}) as ${name} — stage ${route.stage}, attempt ${attempts}/${maxAttempts()}`, 'success');
   else { agentTaskMap.delete(name); scheduleRetry(task.id, attempts, 'spawn failed'); }
@@ -260,13 +491,14 @@ async function dispatch(task: Task, route: Routed, ac: AgentConfig, name: string
 
 async function dispatchPending(): Promise<void> {
   const now = Date.now();
-  const pending = getAllTasks().filter(
+  const pending = allTasks().filter(
     // 'paused' holds a task out of dispatch; 'stop' is a kill-now request handled by the
     // watchdog — neither should be dispatched here.
     x => x.status === 'WORKING' && !x.started && x.control !== 'paused' && x.control !== 'stop'
+      && !triaging.has(x.id) // frozen while an architect triage pass is reviewing it
       && (!x.nextRetryAt || Date.parse(x.nextRetryAt) <= now)
   );
-  if (!pending.length || !breakerAllows()) return;
+  if (!pending.length || !breakerAllows() || !dbBreakerAllows()) return;
 
   const agents = agentMap();
   for (const task of pending) {
@@ -278,14 +510,35 @@ async function dispatchPending(): Promise<void> {
       continue;
     }
     if (!canSpawn(agentTaskMap.size)) break;
+    // Per-project concurrency cap: skip (don't break) so OTHER projects with headroom still
+    // dispatch this tick. cap 0 = unlimited (resource-gated only).
+    const pid = projectOf(task);
+    const cap = projectCap(pid);
+    if (cap > 0 && activeForProject(pid) >= cap) continue;
     const route = nextRoute(task);
     if (!route) continue;
     // Already merged? Don't re-run the merge agent — it's approved, mark it done.
     if (route.role === 'architect' && route.stage === 'merge' && isMergedIntoHead(task.id)) {
       removeWorktree(task.id);
+      reconcileContextAfterMerge(task.id);
       updateTask(task.id, { status: 'DONE', stage: 'merged', completed: new Date().toISOString(), started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
       log(task.id, '🔀 already merged — approved & done', 'success');
       continue;
+    }
+    // MERGE LOCK — serialize merges into the shared repo root. If one is already running,
+    // leave this approved task pending and pick it up on a later tick (order preserved).
+    if (route.role === 'architect' && route.stage === 'merge' && mergeInFlight()) continue;
+    // RESCUE BUDGET — enforced here so it covers BOTH triggers: the orchestrator's own
+    // auto-escalation AND a dev/qa self-reporting it's blocked (PUT stage="rescue"). Cap the
+    // number of architect re-plans so a task can't loop rescue→build→rescue forever.
+    if (route.stage === 'rescue') {
+      const rc = task.rescueCount || 0;
+      if (rc >= MAX_RESCUE) {
+        deadLetter(task.id, `rescue budget exhausted (${MAX_RESCUE} re-plan${MAX_RESCUE === 1 ? '' : 's'}) — still blocked, needs a human`);
+        continue;
+      }
+      updateTask(task.id, { rescueCount: rc + 1 });
+      log(task.id, `🩺 architect rescue pass ${rc + 1}/${MAX_RESCUE} — re-planning`, 'warning');
     }
     if (task.stage !== route.stage) { updateTask(task.id, { stage: route.stage }); task.stage = route.stage; }
     const ac = agents[route.role];
@@ -304,9 +557,10 @@ function refreshIndex(): void {
   try { getConfig().codeIndex?.refresh?.(m => log('__system__', m, 'info')); } catch { /* optional */ }
 }
 
-function handleAgentExit(name: string, taskId: string, route: Routed, r: RunResult): void {
+async function handleAgentExit(name: string, taskId: string, route: Routed, r: RunResult): Promise<void> {
   agentTaskMap.delete(name);
-  if (route.role === 'architect' && route.stage === 'plan') removePlanWorktree(taskId);
+  // plan + rescue both run the architect in a throwaway read-only worktree — drop it on exit.
+  if (route.role === 'architect' && (route.stage === 'plan' || route.stage === 'rescue')) removePlanWorktree(taskId);
 
   const fresh = getTask(taskId);
   if (!fresh) return;
@@ -343,26 +597,79 @@ function handleAgentExit(name: string, taskId: string, route: Routed, r: RunResu
     }
     if (route.role === 'architect' && route.stage === 'merge') {
       removeWorktree(taskId);            // merged → drop the dev worktree
+      reconcileContextAfterMerge(taskId); // merged → drop context entries for files the merge deleted
       refreshIndex();
       updateTask(taskId, { status: 'DONE', completed: new Date().toISOString() }); // human already approved pre-merge
       log(taskId, '🔀 merged into current branch — approved & done', 'success');
       setStatus(`Merged "${fresh.title}" — done`, true);
+    } else if (route.stage === 'rescue') {
+      // Architect re-planned and handed back to the dev — clear the stale RESCUE note so the
+      // dev works from the fresh {{plan}}, not the old failure feedback.
+      updateTask(taskId, { reviewNote: null });
+      log(taskId, `✅ architect re-planned (rescue) → back to dev at stage ${getTask(taskId)?.stage}`, 'success');
     } else {
       log(taskId, `✅ ${route.role} finished ${route.stage} → stage ${getTask(taskId)?.stage}`, 'success');
     }
     return;
   }
 
-  // Exited without advancing (crashed, or finished but skipped its callback) → failure.
+  // MERGE CONFLICT KICKBACK — a merge that didn't land (the architect couldn't cleanly
+  // integrate task/<id> into the base branch) bounces the task back to the DEV to rebase
+  // its branch onto the base, re-commit, then re-run qa → review → merge. This is the
+  // "one merge active; on conflict the dev rebases" policy, enforced in the control plane
+  // so it holds even with a stale merge prompt. Network failures are NOT conflicts — let
+  // those retry the merge via the breaker/backoff instead of forcing a full dev cycle.
+  if (route.role === 'architect' && route.stage === 'merge' && r.failure !== 'network' && !isMergedIntoHead(taskId)) {
+    // Abort any half-applied merge so the working tree is clean for the next task.
+    try { execSync('git merge --abort', { stdio: 'pipe', cwd: repoCwdFor(taskId) }); } catch { /* nothing to abort */ }
+    const MAX_MERGE_BOUNCES = 3;
+    const bounces = (fresh.mergeBounces || 0) + 1;
+    if (bounces > MAX_MERGE_BOUNCES) {
+      deadLetter(taskId, `merge still conflicts after ${MAX_MERGE_BOUNCES} rebase attempts — needs a human`);
+      return;
+    }
+    breakerSuccess(); // a merge conflict is not an API outage
+    const base = currentBranch(taskId);
+    updateTask(taskId, {
+      stage: 'build', qaVerdict: null, status: 'WORKING',
+      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null,
+      attempts: 0, mergeBounces: bounces,
+      reviewNote: `MERGE CONFLICT: your branch task/${taskId} no longer merges cleanly into ${base}. Reconcile it: run \`git rebase ${base}\` (or \`git merge ${base}\` into your branch), resolve the conflicts, re-run the sanity checks, and re-commit. Do NOT change scope — only bring your branch up to date with ${base}.`,
+    });
+    log(taskId, `↩ merge conflict — bounced to DEV to rebase onto ${base} (attempt ${bounces}/${MAX_MERGE_BOUNCES})`, 'warning');
+    setStatus(`Merge conflict on "${fresh.title}" — sent back to dev to rebase onto ${base}`, true);
+    return;
+  }
+
+  // Exited without advancing. Before blaming the agent, rule out an INFRA fault: an agent that
+  // finished cleanly (failure 'none') but didn't advance its stage may simply have been unable to
+  // REACH the db-server for its callback. If 6952 is down, that's infra — heal it and requeue the
+  // SAME stage WITHOUT burning a retry, instead of marching the task toward BLOCKED.
+  if (r.failure === 'none') {
+    const dbUp = await probeDbServer();
+    if (!dbUp) {
+      openDbBreaker('an agent finished but its stage-advance callback could not reach the db-server');
+      updateTask(taskId, {
+        started: null, claimedBy: null, leaseExpiresAt: null,
+        nextRetryAt: new Date(Date.now() + 8000).toISOString(),
+        attempts: Math.max(0, (fresh.attempts || 1) - 1), // do NOT count an infra fault against the budget
+        lastError: 'db-server unreachable — infra fault; will resume when healed',
+      });
+      log(taskId, `🩹 ${route.stage} did not advance, but db-server was DOWN — infra fault, not the agent; will retry the same stage once healed`, 'warning');
+      return;
+    }
+  }
+
+  // Genuine failure (crash, timeout, stall, or finished-but-skipped-callback with db healthy).
   const note = r.failure === 'none' ? 'exited without advancing the stage (missing callback)' : `${r.failure}: ${r.outputTail.slice(-200)}`;
   log(taskId, `❌ ${name} failed at ${route.stage} — ${note}`, 'error');
-  failTask(fresh, r.failure === 'none' ? 'crash' : r.failure, note);
+  failTask(getTask(taskId) || fresh, r.failure === 'none' ? 'crash' : r.failure, note);
 }
 
 // ── watchdog + stall ─────────────────────────────────────────────────────────
 function watchdog(): void {
   const now = Date.now();
-  for (const task of getAllTasks()) {
+  for (const task of allTasks()) {
     // ── stop request (set by the server, a separate process) ── kill any live agent NOW
     // and park the task out of dispatch (AVAILABLE + control 'paused') until the user resumes.
     // This is how a stop crosses the process boundary: server writes control='stop' to the
@@ -421,7 +728,7 @@ export function startOrchestrator(config?: AgenticConfig): void {
   // Reset it (fresh attempts) so it re-dispatches cleanly instead of the watchdog
   // dead-lettering it 15 min later. This makes restarts safe for in-flight work.
   try {
-    for (const task of getAllTasks()) {
+    for (const task of allTasks()) {
       if (task.status === 'WORKING' && task.started) {
         updateTask(task.id, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0, lastError: 'reconciled on restart' });
         log(task.id, '↻ reconciled on restart — previous agent died with the old process; re-dispatching from its last committed state', 'warning');
@@ -447,15 +754,31 @@ async function loop(): Promise<void> {
       if (status === 'STARTED' || status === 'PAUSED') {
         watchdog();
         if (n % 10 === 0) {
-          const removed = pruneOrphans(new Set(getAllTasks().map(x => x.id)));
+          const removed = pruneOrphans(new Set(allTasks().map(x => x.id)));
           if (removed.length) log('__system__', `🧹 pruned orphan worktrees: ${removed.join(', ')}`, 'info');
           dbHealthCheck(log); // SQLite integrity check every ~30s
+        }
+        // Deep cleaner (~every 30 min): sweep orphan worktrees/branches in ALL project repos,
+        // not just the host. Union task ids across projects so a live task in one project is
+        // never pruned while sweeping another (ids are globally unique).
+        if (n > 0 && n % CLEANER_EVERY_TICKS === 0) {
+          try {
+            const projects = listProjects();
+            const liveIds = new Set<string>();
+            for (const p of projects) for (const tk of getAllTasks(p.id)) liveIds.add(tk.id);
+            const roots = projects.map(p => p.repoPath).filter((r): r is string => !!r);
+            const removed = pruneOrphansAll(liveIds, roots);
+            if (removed.length) log('__system__', `🧹 deep clean — pruned orphan worktrees across projects: ${removed.join(', ')}`, 'info');
+          } catch (e: any) { log('__system__', `deep clean skipped: ${e?.message || e}`, 'warning'); }
         }
         await sampleCpu();      // refresh live CPU% for the resource gate
         if (status === 'PAUSED') {
           setStatus('Paused by user');
         } else {
           await dispatchPending();
+          // Periodic architect triage: wake one architect to review a project's in-flight tasks
+          // and re-plan/nudge the stuck ones (only while actively STARTED, not while paused).
+          if (TRIAGE_EVERY_TICKS > 0 && n > 0 && n % TRIAGE_EVERY_TICKS === 0) await triagePass();
           setStatus(computeSteadyStatus()); // steady line unless a transition already set one this tick
         }
         // Beat the human-readable status line OFTEN (~every 9s) so the UI feels live…

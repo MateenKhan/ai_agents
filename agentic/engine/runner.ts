@@ -175,7 +175,8 @@ export function spawnHeadlessAgent(opts: SpawnOptions): boolean {
   // FRESH log each run — the Logs tab shows only the current task's run.
   // Durable per-task history lives in logs.db, so overwriting here loses nothing.
   // Each line is stamped with HH:MM:SS so the Logs tab can show/hide per-line time.
-  const log = (line: string) => { try { appendFileSync(logFile, `[${new Date().toISOString().slice(11, 19)}] ${line}\n`); } catch { /* disk */ } };
+  // Full ISO stamp (date + time) so the Logs tab can show either date+time or just time.
+  const log = (line: string) => { try { appendFileSync(logFile, `[${new Date().toISOString()}] ${line}\n`); } catch { /* disk */ } };
   try {
     writeFileSync(logFile, `── RUN START ${new Date().toISOString()} · ${agentName} · task=${taskId} · ${worktree} (${model}) ──\n`);
   } catch { /* disk */ }
@@ -196,7 +197,15 @@ export function spawnHeadlessAgent(opts: SpawnOptions): boolean {
 
   let proc: ChildProcess;
   try {
-    proc = spawn(CLAUDE_BIN, args, { cwd, env: { ...process.env, ...gitEnv, AGENT_NAME: agentName, TASK_ID: taskId } });
+    // CODE_INDEX_ROOT pins the shared code index to the HOST repo root (where the db server
+    // and local.db live), so `db:search`'s offline fallback resolves the ONE index even though
+    // the agent's cwd is a worktree that has no local.db of its own. The daemon path (127.0.0.1
+    // :6952/search) already works from any cwd; this makes the fallback work too.
+    // CODE_INDEX_PROJECT scopes the search to THIS task's project so a multi-project install
+    // queries the right per-project index (index-<projectId>.db), not the default one.
+    let indexProject = 'default';
+    try { indexProject = getTask(taskId)?.projectId || 'default'; } catch { /* default */ }
+    proc = spawn(CLAUDE_BIN, args, { cwd, env: { ...process.env, ...gitEnv, AGENT_NAME: agentName, TASK_ID: taskId, CODE_INDEX_ROOT: process.cwd(), CODE_INDEX_PROJECT: indexProject } });
   } catch (e: any) {
     log(`SPAWN FAILED: ${e?.message || e}`);
     return false;
@@ -271,30 +280,50 @@ export function killAgent(agentName: string): void {
   running.delete(agentName);
 }
 
-/** Prune OUR worktrees + branches whose task no longer exists (orphan cleanup).
- *  Only touches worktrees under worktreesDir; never other git worktrees. */
-export function pruneOrphans(liveTaskIds: Set<string>): string[] {
+const normPath = (s: string): string => s.replace(/\\/g, '/').replace(/\/+$/, '');
+
+/** Prune OUR worktrees + branches whose task no longer exists, inside ONE repo `root`,
+ *  limited to worktrees under `dir` (never other git worktrees). Returns removed names. */
+function pruneOrphansIn(root: string, dir: string, liveTaskIds: Set<string>): string[] {
   const removed: string[] = [];
-  const dir = getConfig().paths.worktreesDir;
-  if (!isGitRepo()) return removed; // non-git host → nothing to prune, and skip the fatal
+  if (!isGitRepo(root)) return removed;                  // non-git → nothing to prune, skip the fatal
   let list = '';
-  try { list = execSync('git worktree list --porcelain', { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8' }); } catch { return removed; }
+  try { list = execSync('git worktree list --porcelain', { stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf-8', cwd: root }); } catch { return removed; }
 
   for (const block of list.split(/\n\n+/)) {
     const m = block.match(/^worktree (.+)$/m);
     if (!m) continue;
     const path = m[1].trim();
-    if (!path.startsWith(dir)) continue;                 // only our .worktrees/*
+    if (!normPath(path).startsWith(normPath(dir) + '/')) continue; // only our .worktrees/*
     const name = path.split(/[\\/]/).pop() || '';
     const isPlan = name.startsWith('plan-');
     const id = isPlan ? name.slice(5) : name;
     if (!id || liveTaskIds.has(id)) continue;            // task still exists → keep
 
-    try { git(`worktree remove "${path}" --force`); removed.push(name); } catch { /* skip */ }
+    try { git(`worktree remove "${path}" --force`, root); removed.push(name); } catch { /* skip */ }
     if (!isPlan) {                                        // abandoned dev branch → delete
-      try { git(`branch -D "task/${id}"`); } catch { /* no branch */ }
+      try { git(`branch -D "task/${id}"`, root); } catch { /* no branch */ }
     }
   }
-  try { execSync('git worktree prune', { stdio: 'pipe' }); } catch { /* skip */ }
+  try { execSync('git worktree prune', { stdio: 'pipe', cwd: root }); } catch { /* skip */ }
+  return removed;
+}
+
+/** Prune orphan worktrees/branches in the HOST repo (default project). Cheap; run often. */
+export function pruneOrphans(liveTaskIds: Set<string>): string[] {
+  return pruneOrphansIn(process.cwd(), getConfig().paths.worktreesDir, liveTaskIds);
+}
+
+/** Sweep the HOST repo AND every additional project repo (their <repo>/.worktrees). Used by
+ *  the periodic cleaner so orphans in non-default project repos don't leak forever.
+ *  `liveTaskIds` must be the union of task ids across ALL projects (ids are globally unique,
+ *  so a worktree is removed only when its id belongs to no project). */
+export function pruneOrphansAll(liveTaskIds: Set<string>, projectRoots: string[]): string[] {
+  const removed = pruneOrphans(liveTaskIds);
+  const host = normPath(process.cwd());
+  for (const root of projectRoots) {
+    if (!root || normPath(root) === host) continue;      // host already swept above
+    removed.push(...pruneOrphansIn(root, join(root, '.worktrees'), liveTaskIds));
+  }
   return removed;
 }

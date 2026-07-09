@@ -144,6 +144,13 @@ export default function AgentsTab() {
       'PASS → tasks SET qaVerdict="pass", qaReport="<per-scenario result>"',
       'FAIL → tasks SET qaVerdict="fail", qaReport="<why>"',
       '       then status="WORKING", stage="plan", reviewNote=qaReport' ] },
+    { label: '⤴ RESCUE', who: 'orchestrator → Architect · on repeated dev/qa failure', lines: [
+      'GATE   infra check — if db-server 6952 is DOWN the callback could not land:',
+      '       that is NOT the agent → pause, heal db, requeue SAME stage (no attempt burned)',
+      'else, dev/qa exhausted retries → tasks SET stage="rescue", attempts=0, rescueCount+=1',
+      'Architect (read-only) diagnoses + re-plans →',
+      '       tasks SET summary="<revised brief>", stage="build"   // back to dev',
+      'rescueCount > RESCUE_MAX → status="BLOCKED"   // re-plan failed too, needs a human' ] },
     { label: '8 · REVIEW', who: 'You · only qaVerdict="pass" shown', lines: [
       'APPROVE → tasks SET status="DONE", completed=now, stage="merge"',
       'REJECT  → tasks SET status="WORKING", stage="plan", reviewNote=<you>,',
@@ -159,7 +166,9 @@ export default function AgentsTab() {
     'Watchdog   renews tasks.leaseExpiresAt; on death/stall →',
     '           tasks SET started=NULL, claimedBy=NULL  (retry)',
     'Backoff    tasks SET nextRetryAt, lastError, attempts;',
-    '           after 3 attempts → status="BLOCKED" (dead-letter)',
+    '           dev/qa exhausted → Architect RESCUE (re-plan) → then BLOCKED',
+    'DB heal    agent callback fails + 6952 down → pause, restart db,',
+    '           auto-resume SAME stage  (infra fault ≠ agent fault)',
     'Heal       reconciles bad tasks rows every 2m + on boot',
     'Heartbeat  board_settings["heartbeat"] every 60s (liveness)',
   ];
@@ -182,6 +191,7 @@ export default function AgentsTab() {
     { icon: <Zap size={15} />, label: 'Circuit breaker', desc: 'Watches for API/network failure. After a few failed dispatches it OPENS — pausing all agents, leaving tasks safely queued in SQLite — then probes every 60s and auto-resumes the moment Claude is reachable again. An outage costs time, never work.' },
     { icon: <Stethoscope size={15} />, label: 'Auto-heal', desc: 'Every 2 minutes and on every boot it reconciles task state against reality: re-queues zombies, clears stale claims, bounces tasks with no scenarios. Survives crashes and power cuts — restart and it picks up where it left off.' },
     { icon: <ShieldCheck size={15} />, label: 'Resource gate', desc: 'Reads live CPU/RAM of the host and pauses new agent spawns above the limits, so the pipeline never takes the machine (VPS or laptop) down. Auto-detects hardware — no config.' },
+    { icon: <GitBranch size={15} />, label: 'DB self-heal + Architect rescue', desc: 'The agents reach the db-server (6952) to advance their stage and query the code index. If it goes down, an agent that finished looks like it "failed" — so the orchestrator probes it, and on an infra fault it pauses, restarts the db-server, and resumes the SAME stage without burning a retry or blaming the agent. And when a dev or QA genuinely exhausts its retries, the Architect steps in for one re-plan pass — diagnosing the failure and handing a fresh brief back to the dev — before anything is marked Blocked.' },
   ];
 
   const WorkflowFlow = () => (

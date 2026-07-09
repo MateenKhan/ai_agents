@@ -7,6 +7,8 @@ export interface Project {
   repoPath?: string;
   emoji?: string;
   createdAt?: string;
+  /** Max concurrent agents for this project. null = inherit the global default; 0 = unlimited. */
+  maxConcurrency?: number | null;
 }
 
 export interface CreateProjectInput {
@@ -19,6 +21,7 @@ export interface UpdateProjectInput {
   name?: string;
   repoPath?: string;
   emoji?: string;
+  maxConcurrency?: number | null;
 }
 
 interface ProjectContextValue {

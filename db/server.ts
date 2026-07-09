@@ -74,7 +74,44 @@ async function semanticSearch(query: string, topK: number, projectId: string = '
     .map(r => ({ score: +r.score.toFixed(4), name: r.name, type: r.type, path: r.path, line: r.start_line, signature: r.signature }));
 }
 
-import { getAllTasks, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, type RunConfig } from './tasks.js';
+// ── RAG: retrieval-augmented answer over the code index ────────────────────────
+// Feeds the top code snippets (retrieved via semanticSearch) to a one-shot headless
+// Claude call and returns the generated answer. Prompt is piped over stdin (not argv)
+// so large snippet context never hits the OS command-line length limit.
+function ragAnswer(question: string, ctx: string, cwd: string): Promise<string> {
+  const prompt = [
+    'You are a code-search assistant. Answer the developer\'s QUESTION using ONLY the',
+    'code SNIPPETS below (retrieved from this project\'s index). Cite sources inline as',
+    '`path:line`. If the snippets do not contain the answer, say so plainly — do not guess.',
+    'Answer concisely in markdown.',
+    '',
+    `QUESTION: ${question}`,
+    '',
+    'SNIPPETS:',
+    ctx,
+  ].join('\n');
+
+  const bin = process.env.CLAUDE_BIN || 'claude';
+  const model = process.env.RAG_MODEL || 'sonnet';
+  const flags = (process.env.CLAUDE_FLAGS || '--dangerously-skip-permissions').split(' ').filter(Boolean);
+  const args = ['-p', '--model', model, '--output-format', 'text', ...flags];
+
+  return new Promise(resolve => {
+    let out = '', err = '', settled = false;
+    const finish = (v: string) => { if (settled) return; settled = true; clearTimeout(timer); resolve(v); };
+    let proc: ReturnType<typeof spawn>;
+    try { proc = spawn(bin, args, { cwd, shell: false }); }
+    catch (e: any) { return finish(`⚠ Could not launch Claude (${bin}): ${e?.message || e}`); }
+    const timer = setTimeout(() => { try { proc.kill(); } catch { /* already gone */ } finish('⚠ Claude timed out (120s).'); }, 120000);
+    proc.stdout?.on('data', d => { out += d.toString(); });
+    proc.stderr?.on('data', d => { err += d.toString(); });
+    proc.on('error', e => finish(`⚠ Could not run Claude (${bin}): ${e?.message || e}. Is it on PATH? Set CLAUDE_BIN.`));
+    proc.on('close', () => finish(out.trim() || (err.trim() ? `⚠ ${err.trim().slice(0, 600)}` : '(no answer returned)')));
+    try { proc.stdin?.write(prompt); proc.stdin?.end(); } catch { /* pipe closed */ }
+  });
+}
+
+import { getAllTasks, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, setProjectMaxConcurrency, getAgentDefaults, setAgentDefaults, type RunConfig } from './tasks.js';
 
 // ── project scoping helpers ────────────────────────────────────────────────────
 // Every project-scoped route reads ?project=<id> (default 'default'); body routes may
@@ -611,6 +648,14 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // --- Agent Logs API (File based) ---
   if (req.method === 'GET' && req.url?.startsWith('/agent-logs/')) {
     const agentName = decodeURIComponent((req.url.split('/')[2] || '').split('?')[0]);
+    // Synthetic in-memory streams (not backed by .agent_logs files): the live clone
+    // output and the repo indexing ("reading & remembering") log, keyed per project.
+    if (agentName === '__clone__' || agentName === '__index__') {
+      const pid = projectIdOf(req);
+      const buf = agentName === '__clone__' ? (cloneProgress.get(pid)?.lines || []) : (indexLogs.get(pid) || []);
+      res.end(JSON.stringify(buf.map((l, i) => ({ id: i, message: l, timestamp: new Date().toISOString() }))));
+      return;
+    }
     const logPath = join(LOGS_DIR, `${agentName}.log`);
     try {
       if (!existsSync(logPath)) {
@@ -726,7 +771,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   // --- Log file list (Logs tab chips) ---
-  if (req.method === 'GET' && req.url === '/agent-log-files') {
+  if (req.method === 'GET' && (req.url || '').split('?')[0] === '/agent-log-files') {
     try {
       const { readdirSync, statSync } = await import('fs');
       const { getAllTasks } = await import('./tasks.js');
@@ -748,7 +793,15 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             return { name, kind: isSystem ? 'system' : 'agent', sizeKB: Math.round(st.size / 1024), modified: st.mtime.toISOString(), now, busy: !!task };
           }).sort((a, b) => a.name.localeCompare(b.name))
         : [];
-      res.end(JSON.stringify({ files }));
+      // Surface the in-memory clone + indexing streams as pseudo log files for the
+      // active project, so the Logs tab shows them alongside real agent logs.
+      const pid = projectIdOf(req);
+      const synth: any[] = [];
+      const cp = cloneProgress.get(pid);
+      if (cp && cp.lines.length) synth.push({ name: '__clone__', kind: 'system', sizeKB: 0, modified: new Date(cp.startedAt).toISOString(), now: cp.done ? (cp.ok ? 'clone done' : 'clone failed') : 'cloning', busy: !cp.done });
+      const il = indexLogs.get(pid);
+      if (il && il.length) synth.push({ name: '__index__', kind: 'system', sizeKB: 0, modified: new Date().toISOString(), now: isRebuilding(pid) ? 'reading repo' : 'idle', busy: isRebuilding(pid) });
+      res.end(JSON.stringify({ files: [...synth, ...files] }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
@@ -775,6 +828,19 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
+  // Global agent defaults (the fallback each project inherits). maxConcurrency 0 = unlimited.
+  if (req.url === '/agent-defaults' && req.method === 'GET') {
+    try { res.end(JSON.stringify(getAgentDefaults())); }
+    catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.url === '/agent-defaults' && req.method === 'PUT') {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      res.end(JSON.stringify(setAgentDefaults({ maxConcurrency: b.maxConcurrency != null ? Number(b.maxConcurrency) : undefined })));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
   const agentDel = req.url?.match(/^\/agents\/([^/]+)$/);
   if (agentDel && req.method === 'DELETE') {
     try { const { deleteAgent } = await import('../agentic/index.ts'); deleteAgent(decodeURIComponent(agentDel[1])); res.end(JSON.stringify({ ok: true })); }
@@ -790,30 +856,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // The 'default' project's repoPath is the orchestrator's own repo (the host cwd).
       // Context is for USER projects (one per git repo) — never expose the host's files here.
       if (root === process.cwd()) { res.end(JSON.stringify({ root, files: [], isHost: true })); return; }
-      // Prefer git (respects .gitignore, fast). Fall back to a bounded fs walk when the
-      // project isn't a git repo — skips heavy/generated dirs, caps at 5000 files.
-      const r = spawnSync('git', ['-C', root, 'ls-files'], { encoding: 'utf-8', timeout: 8000, maxBuffer: 32 * 1024 * 1024 });
-      let files = (r.stdout || '').split('\n').map(s => s.trim()).filter(Boolean);
-      if (files.length === 0) {
-        const SKIP = new Set(['node_modules', '.git', 'dist', '.worktrees', '.agent_logs', '.vite', '.ignored', 'coverage', '.next']);
-        const out: string[] = [];
-        const walk = (dir: string, rel: string) => {
-          if (out.length >= 5000) return;
-          let entries: any[] = [];
-          try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-          for (const e of entries) {
-            if (out.length >= 5000) return;
-            if (e.name.startsWith('.') && e.name !== '.env.example') { if (SKIP.has(e.name)) continue; }
-            if (SKIP.has(e.name)) continue;
-            const childRel = rel ? `${rel}/${e.name}` : e.name;
-            if (e.isDirectory()) walk(join(dir, e.name), childRel);
-            else out.push(childRel);
-          }
-        };
-        walk(root, '');
-        files = out;
-      }
-      res.end(JSON.stringify({ root, files: files.sort() }));
+      const { listRepoFiles } = await import('../agentic/index.ts');
+      res.end(JSON.stringify({ root, files: listRepoFiles(root) }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
@@ -854,7 +898,17 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         return;
       }
       if (req.method === 'POST' && req.url.startsWith('/context/sweep')) {
-        res.end(JSON.stringify({ result: ctx.sweepContext(project, { cap }) }));
+        // GC = reconcile against disk truth (drop files deleted/renamed since last kept),
+        // THEN age-out + enforce cap. The disk reconcile is what a manual Sweep adds over
+        // the automatic merge-time sync — it catches deletes made outside the merge flow.
+        const root = projectRepoPath(project);
+        const deleted = root === process.cwd() ? [] : ctx.reconcileContext(project, ctx.listRepoFiles(root));
+        const result = ctx.sweepContext(project, { cap });
+        res.end(JSON.stringify({ result: {
+          ...result,
+          deletedOnDisk: deleted.length,
+          freedTokens: result.freedTokens + deleted.reduce((s, f) => s + (f.tokens || 0), 0),
+        } }));
         return;
       }
       if (req.method === 'POST' && req.url.startsWith('/context/pin')) {
@@ -1105,7 +1159,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
-  if (req.method === 'POST' && req.url === '/search') {
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/search') {
     try {
       const body = JSON.parse(await readBody(req));
       // Attribute index usage to the calling agent (audit: who uses the DB vs greps)
@@ -1117,6 +1171,65 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
       const results = await semanticSearch(body.query, body.topK ?? 10, projectIdOf(req, body));
       res.end(JSON.stringify({ results }));
+    } catch (e: any) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // Cached project brief (the "context brain"). GET returns it; POST /rebuild regenerates.
+  if (req.method === 'GET' && (req.url || '').split('?')[0] === '/project-context') {
+    const pid = projectIdOf(req);
+    try {
+      const { getProjectBrief } = await import('./brief.js');
+      res.end(JSON.stringify(getProjectBrief(pid) || { brief: null, generatedAt: null, model: null }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/project-context/rebuild') {
+    const pid = projectIdOf(req);
+    try {
+      const { generateProjectBrief } = await import('./brief.js');
+      const root = projectRepoPath(pid);
+      // Fire-and-forget: the LLM pass can take ~15–120s; the UI polls GET for the result.
+      generateProjectBrief(pid, root).catch(e => console.warn(`[db-server] brief rebuild [${pid}]: ${e?.message || e}`));
+      res.end(JSON.stringify({ ok: true, started: true }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // RAG ask — retrieve top code snippets for a project, then have Claude answer the
+  // question grounded in them. Returns { answer, sources }.
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/ask') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const pid = projectIdOf(req, body);
+      const q = String(body.query || '').trim();
+      if (!q) { res.statusCode = 400; res.end(JSON.stringify({ error: 'query is required' })); return; }
+      const topK = Math.min(Math.max(Number(body.topK) || 8, 1), 20);
+      const results = await semanticSearch(q, topK, pid);
+      const root = projectRepoPath(pid);
+      // Pull a small window of real source around each hit so the answer is grounded in code.
+      const snippets = results.map(r => {
+        try {
+          const abs = join(root, r.path);
+          if (!existsSync(abs)) return null;
+          const lines = readFileSync(abs, 'utf-8').replace(/\0/g, '').split('\n');
+          const from = Math.max(0, (Number(r.line) || 1) - 3);
+          const to = Math.min(lines.length, from + 40);
+          const code = lines.slice(from, to).join('\n');
+          return { path: r.path, line: r.line, name: r.name, type: r.type, code };
+        } catch { return null; }
+      }).filter(Boolean) as Array<{ path: string; line: number; name: string; type: string; code: string }>;
+
+      if (!snippets.length) {
+        res.end(JSON.stringify({ answer: 'No indexed code matched that query. Try rebuilding the index or rephrasing.', sources: results }));
+        return;
+      }
+      const ctx = snippets.map((s, i) => `[[${i + 1}]] ${s.path}:${s.line}  (${s.type} ${s.name})\n${s.code}`).join('\n\n---\n\n');
+      const answer = await ragAnswer(q, ctx, root);
+      res.end(JSON.stringify({ answer, sources: results }));
     } catch (e: any) {
       res.statusCode = 500;
       res.end(JSON.stringify({ error: e.message }));
@@ -2039,6 +2152,23 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     }
   }
 
+  // PATCH /git/github-apps/:id → rename (label) an existing app. Only `name` is editable.
+  {
+    const m = req.url?.match(/^\/git\/github-apps\/([^/?]+)(?:\?.*)?$/);
+    if (m && (req.method === 'PATCH' || req.method === 'PUT')) {
+      try {
+        const b = JSON.parse((await readBody(req)) || '{}');
+        const id = decodeURIComponent(m[1]);
+        const name = String(b.name ?? '').trim();
+        if (!name) { res.statusCode = 400; res.end(JSON.stringify({ error: 'name is required' })); return; }
+        if (!getGithubApp(id)) { res.statusCode = 404; res.end(JSON.stringify({ error: 'app not found' })); return; }
+        updateGithubApp(id, { name });
+        res.end(JSON.stringify({ ok: true }));
+      } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+  }
+
   // DELETE /git/github-apps/:id
   {
     const m = req.url?.match(/^\/git\/github-apps\/([^/?]+)(?:\?.*)?$/);
@@ -2226,6 +2356,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const id = decodeURIComponent(m[1]);
         const b = JSON.parse((await readBody(req)) || '{}');
         updateProject(id, { name: b.name, repoPath: b.repoPath, emoji: b.emoji, branch: b.branch, cloneUrl: b.cloneUrl });
+        // Per-project concurrency: null/'' → inherit global default; a number → cap (0 = unlimited).
+        if ('maxConcurrency' in b) {
+          const v = b.maxConcurrency;
+          setProjectMaxConcurrency(id, (v === null || v === '' || v === undefined) ? null : Number(v));
+        }
         res.end(JSON.stringify({ ok: true }));
       } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
       return;
@@ -2253,6 +2388,28 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   // ── system status ── one poll for the UI's live activity widget (per project). ──
+  // Delete one event from the status-widget feed (a logs.db row). id in the path.
+  {
+    const m = (req.url || '').split('?')[0].match(/^\/system-status\/events\/(\d+)$/);
+    if (req.method === 'DELETE' && m) {
+      try {
+        const { deleteAgentLog } = await import('../agentic/db/logs.js');
+        const removed = deleteAgentLog(Number(m[1]));
+        res.end(JSON.stringify({ ok: true, removed }));
+      } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+  }
+  // Clear the whole event feed (all logs.db rows).
+  if (req.method === 'DELETE' && (req.url || '').split('?')[0] === '/system-status/events') {
+    try {
+      const { clearAgentLogs } = await import('../agentic/db/logs.js');
+      const removed = clearAgentLogs();
+      res.end(JSON.stringify({ ok: true, removed }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
   if (req.method === 'GET' && req.url?.startsWith('/system-status')) {
     try {
       const pid = projectIdOf(req);
@@ -2291,7 +2448,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       } catch { /* optional */ }
 
       // Most recent orchestrator/system log rows (newest-first) for the live event feed.
-      let events: Array<{ ts: string; taskId: string; msg: string; type: string }> = [];
+      let events: Array<{ id: number; ts: string; taskId: string; msg: string; type: string }> = [];
       try { events = getRecentLogs(15); } catch { /* logs.db optional */ }
 
       res.end(JSON.stringify({

@@ -112,6 +112,10 @@ export function migrate(conn: DatabaseSync): void {
     () => conn.exec(`ALTER TABLE tasks ADD COLUMN projectId TEXT`),
     // ── LIFECYCLE CONTROL (additive) ── null = run; 'paused' = hold; 'stop' = kill-now.
     () => conn.exec(`ALTER TABLE tasks ADD COLUMN control TEXT`),
+    // ── MERGE CONFLICT BOUNCES (additive) ── count of merge→build kickbacks (rebase asks).
+    () => conn.exec(`ALTER TABLE tasks ADD COLUMN mergeBounces INTEGER`),
+    // ── ARCHITECT RESCUE PASSES (additive) ── count of dev/qa→architect re-plan escalations.
+    () => conn.exec(`ALTER TABLE tasks ADD COLUMN rescueCount INTEGER`),
     () => conn.exec(`ALTER TABLE git_tokens ADD COLUMN projectId TEXT`),
     () => conn.exec(`ALTER TABLE git_token_assignments ADD COLUMN projectId TEXT`),
     () => conn.exec(`CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(projectId)`),
@@ -121,6 +125,9 @@ export function migrate(conn: DatabaseSync): void {
     // cloned repo + its checked-out branch is persisted and never lost.
     () => conn.exec(`ALTER TABLE projects ADD COLUMN branch TEXT`),
     () => conn.exec(`ALTER TABLE projects ADD COLUMN cloneUrl TEXT`),
+    // ── PER-PROJECT CONCURRENCY (additive) ── max simultaneous agents for this project.
+    // NULL = inherit the global default (board_settings 'agent_defaults'); 0 = unlimited.
+    () => conn.exec(`ALTER TABLE projects ADD COLUMN maxConcurrency INTEGER`),
     // Seed the always-present 'default' project (repoPath = the host repo).
     () => conn.prepare(
       `INSERT OR IGNORE INTO projects (id,name,repoPath,emoji,createdAt) VALUES ('default','Default',?,'📦',?)`
@@ -179,7 +186,7 @@ function rowToTask(r: any): Task {
   };
 }
 
-const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control';
+const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount';
 
 function toRow(t: Partial<Task>): any[] {
   return [
@@ -190,7 +197,7 @@ function toRow(t: Partial<Task>): any[] {
     JSON.stringify(t.docs ?? []), t.reviewNote ?? null, t.leaseExpiresAt ?? null,
     t.attempts ?? 0, t.nextRetryAt ?? null, t.lastError ?? null, t.model ?? null, t.summary ?? null,
     t.etcMinutes ?? null, t.etcSetAt ?? null, JSON.stringify(t.stageTimings ?? {}),
-    t.projectId ?? 'default', t.control ?? null,
+    t.projectId ?? 'default', t.control ?? null, t.mergeBounces ?? 0, t.rescueCount ?? 0,
   ];
 }
 
@@ -402,9 +409,9 @@ export function setCodeIndexConfig(cfg: CodeIndexConfig, projectId: string = 'de
 // ── Projects ── every task/token/index is scoped to one; 'default' always exists.
 /** How to install/run/build/test a project's cloned repo. `cwd` is an optional subdir. */
 export interface RunConfig { install?: string; run?: string; build?: string; test?: string; cwd?: string }
-export interface Project { id: string; name: string; repoPath?: string; emoji?: string; createdAt: string; runConfig?: RunConfig; branch?: string; cloneUrl?: string }
+export interface Project { id: string; name: string; repoPath?: string; emoji?: string; createdAt: string; runConfig?: RunConfig; branch?: string; cloneUrl?: string; maxConcurrency?: number | null }
 
-const PROJECT_COLS = `id,name,repoPath,emoji,createdAt,runConfig,branch,cloneUrl`;
+const PROJECT_COLS = `id,name,repoPath,emoji,createdAt,runConfig,branch,cloneUrl,maxConcurrency`;
 export function listProjects(): Project[] {
   return (db().prepare(`SELECT ${PROJECT_COLS} FROM projects ORDER BY (id='default') DESC, createdAt ASC`).all() as any[]).map(rowToProject) as Project[];
 }
@@ -412,7 +419,7 @@ function rowToProject(r: any): Project | null {
   if (!r) return null;
   let runConfig: RunConfig | undefined;
   if (r.runConfig) { try { runConfig = JSON.parse(r.runConfig); } catch { /* ignore malformed */ } }
-  return { id: r.id, name: r.name, repoPath: r.repoPath ?? undefined, emoji: r.emoji ?? undefined, createdAt: r.createdAt, runConfig, branch: r.branch ?? undefined, cloneUrl: r.cloneUrl ?? undefined };
+  return { id: r.id, name: r.name, repoPath: r.repoPath ?? undefined, emoji: r.emoji ?? undefined, createdAt: r.createdAt, runConfig, branch: r.branch ?? undefined, cloneUrl: r.cloneUrl ?? undefined, maxConcurrency: r.maxConcurrency ?? null };
 }
 export function getProject(id: string): Project | null {
   return rowToProject(db().prepare(`SELECT ${PROJECT_COLS} FROM projects WHERE id = ?`).get(id));
@@ -421,6 +428,30 @@ export function getProject(id: string): Project | null {
 export function setProjectRunConfig(id: string, cfg: RunConfig | undefined): void {
   if (!getProject(id)) throw new Error('project not found');
   db().prepare(`UPDATE projects SET runConfig = ? WHERE id = ?`).run(cfg ? JSON.stringify(cfg) : null, id);
+}
+/** Set a project's max concurrent agents. null → inherit the global default; 0 → unlimited. */
+export function setProjectMaxConcurrency(id: string, n: number | null): void {
+  if (!getProject(id)) throw new Error('project not found');
+  const val = n == null ? null : Math.max(0, Math.floor(n));
+  db().prepare(`UPDATE projects SET maxConcurrency = ? WHERE id = ?`).run(val, id);
+}
+
+// ── Agent defaults ── global fallbacks stored in the DB (board_settings 'agent_defaults'),
+// editable from Settings. A project's own value overrides these; here maxConcurrency 0 =
+// unlimited (resource-gated only), which is the out-of-the-box default.
+export interface AgentDefaults { maxConcurrency: number }
+export function getAgentDefaults(): AgentDefaults {
+  const r = db().prepare(`SELECT data FROM board_settings WHERE id = 'agent_defaults'`).get() as any;
+  try {
+    const d = r ? JSON.parse(r.data) : {};
+    return { maxConcurrency: Math.max(0, Math.floor(Number(d.maxConcurrency) || 0)) };
+  } catch { return { maxConcurrency: 0 }; }
+}
+export function setAgentDefaults(d: Partial<AgentDefaults>): AgentDefaults {
+  const cur = getAgentDefaults();
+  const next: AgentDefaults = { maxConcurrency: d.maxConcurrency != null ? Math.max(0, Math.floor(d.maxConcurrency)) : cur.maxConcurrency };
+  db().prepare(`INSERT OR REPLACE INTO board_settings (id, data) VALUES ('agent_defaults', ?)`).run(JSON.stringify(next));
+  return next;
 }
 export function createProject(p: { name: string; repoPath?: string; emoji?: string; branch?: string; cloneUrl?: string }): Project {
   const row: Project = {

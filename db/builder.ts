@@ -17,6 +17,22 @@ export async function buildFull() {
   initSchema(db);
   db.exec('DELETE FROM edges; DELETE FROM nodes; DELETE FROM files;');
   await indexFiles(db, true);
+  await refreshBriefBestEffort();
+}
+
+// After a full build, regenerate the cached project brief so agents get fresh context
+// for free. Opt-out with CONTEXT_BRIEF=0. Never fatal — a missing brief is fine.
+async function refreshBriefBestEffort() {
+  if (process.env.CONTEXT_BRIEF === '0') return;
+  try {
+    const { generateProjectBrief } = await import('./brief.js');
+    const projectId = process.env.CODE_INDEX_PROJECT ?? 'default';
+    console.log('Generating project brief (context brain) via Claude…');
+    await generateProjectBrief(projectId, ROOT);
+    console.log('Project brief cached.');
+  } catch (e: any) {
+    console.warn(`Project brief skipped: ${e?.message || e}`);
+  }
 }
 
 export async function buildIncremental() {

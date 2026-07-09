@@ -16,9 +16,10 @@ export * from './db/logs';
 export { createOwnedMemory } from './db/memory';
 export {
   keepInContext, touchContext, removeFromContext, setPinned, listContext,
-  contextStats, enforceCap, sweepContext, sweepAllContext, getFileUsage,
+  contextStats, enforceCap, sweepContext, sweepAllContext, reconcileContext, getFileUsage,
   getContextOps, estimateTokens, DEFAULT_CONTEXT_CAP,
 } from './db/context';
+export { listRepoFiles } from './engine/repo-files';
 export type { ContextFile, ContextOpRow, ContextStats, FileUsage, SweepResult, ContextOp } from './db/context';
 export { getAgents, getAgent, upsertAgent, updateAgent, deleteAgent, resetAgents } from './db/agents';
 export { DEFAULT_AGENTS } from './db/defaults';

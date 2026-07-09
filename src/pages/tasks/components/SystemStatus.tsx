@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { DownloadCloud, Database, Bot, CheckCircle2, AlertTriangle, Activity, WifiOff, ChevronUp, ChevronDown } from 'lucide-react';
+import { DownloadCloud, Database, Bot, CheckCircle2, AlertTriangle, Activity, WifiOff, ChevronUp, ChevronDown, X, Trash2, ScrollText } from 'lucide-react';
 import { API_BASE, withProject } from '../../../apiBase';
 import { humanizeStatusMessage } from '../statusMessages';
 
@@ -12,7 +13,7 @@ interface OrchestratorInfo {
   up: boolean;
 }
 interface Counts { pending: number; working: number; testing: number; done: number }
-interface OrchEvent { ts: string | number; taskId?: string; msg: string; type?: string }
+interface OrchEvent { id?: number; ts: string | number; taskId?: string; msg: string; type?: string }
 
 interface Status {
   activity: { kind: string; label: string; detail?: string; since: number };
@@ -67,11 +68,24 @@ function eventDot(type?: string): string {
 }
 
 export function SystemStatus({ activeId }: { activeId?: string }) {
+  const navigate = useNavigate();
   const [s, setS] = useState<Status | null>(null);
   const [reachable, setReachable] = useState(true);
   const [open, setOpen] = useState(false);
   // Re-render every second so relative times stay fresh while the panel is open.
   const [, setTick] = useState(0);
+  // Optimistically hide rows the moment they're deleted, before the next poll lands.
+  const [removed, setRemoved] = useState<Set<number>>(new Set());
+
+  const deleteEvent = async (id: number) => {
+    setRemoved(prev => new Set(prev).add(id));
+    try { await fetch(withProject(`${API_BASE}/system-status/events/${id}`), { method: 'DELETE' }); }
+    catch { setRemoved(prev => { const n = new Set(prev); n.delete(id); return n; }); }
+  };
+  const clearEvents = async () => {
+    try { await fetch(withProject(`${API_BASE}/system-status/events`), { method: 'DELETE' }); }
+    catch { /* next poll reflects reality */ }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -130,7 +144,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
       : 'bg-slate-900/90 border-slate-700 text-slate-100';
 
   const counts = s.counts;
-  const events = (s.events || []).slice(0, 10);
+  const events = (s.events || []).filter(e => e.id == null || !removed.has(e.id)).slice(0, 10);
 
   return (
     <div className="fixed bottom-3 right-3 z-[1000] w-[min(92vw,340px)]">
@@ -174,6 +188,27 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
               </div>
             )}
 
+            {/* Events feed header — jump to full logs + clear the DB-backed feed */}
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-700/70">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Recent events</span>
+              <button
+                onClick={() => { setOpen(false); navigate('/tasks/logs'); }}
+                className="ml-auto flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-slate-100 transition-colors"
+                title="Open the Logs tab"
+              >
+                <ScrollText size={12} /> Logs
+              </button>
+              {events.length > 0 && (
+                <button
+                  onClick={clearEvents}
+                  className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-rose-300 transition-colors"
+                  title="Delete all events from the feed (logs.db)"
+                >
+                  <Trash2 size={12} /> Clear
+                </button>
+              )}
+            </div>
+
             {/* Events feed */}
             <div className="max-h-[42vh] sm:max-h-64 overflow-y-auto custom-scrollbar">
               {events.length === 0 ? (
@@ -181,7 +216,7 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
               ) : (
                 <ul className="divide-y divide-slate-800">
                   {events.map((e, i) => (
-                    <li key={i} className="flex items-start gap-2 px-3 py-2">
+                    <li key={e.id ?? i} className="group flex items-start gap-2 px-3 py-2">
                       <span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${eventDot(e.type)}`} />
                       <div className="min-w-0 flex-1">
                         <p className={`text-[11px] leading-snug ${eventColor(e.type)}`}>
@@ -190,6 +225,16 @@ export function SystemStatus({ activeId }: { activeId?: string }) {
                         </p>
                         <span className="text-[9px] text-slate-500">{relTime(e.ts)}</span>
                       </div>
+                      {e.id != null && (
+                        <button
+                          onClick={() => deleteEvent(e.id!)}
+                          className="shrink-0 -mr-1 p-1 rounded text-slate-600 hover:text-rose-300 hover:bg-slate-800 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                          aria-label="Delete event"
+                          title="Delete this event"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>

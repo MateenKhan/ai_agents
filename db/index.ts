@@ -20,6 +20,10 @@ switch (cmd) {
     const query = args.join(' ');
     if (!query) { console.error('Usage: npm run db:search -- "your query"'); process.exit(1); }
 
+    // Which project's index to search. Agents run scoped to a project; the runner injects
+    // CODE_INDEX_PROJECT so a task in project X searches X's index, not the default one.
+    const projectId = process.env.CODE_INDEX_PROJECT ?? 'default';
+
     // Try daemon first (model pre-warmed = fast), fall back to direct
     const PORT = process.env.DB_SERVER_PORT ?? '6952';
     let results: any[] = [];
@@ -28,7 +32,7 @@ switch (cmd) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query, topK: 10,
+          query, topK: 10, projectId,
           // Identify the calling agent (set by agent-runner) for index-usage audit
           agentName: process.env.AGENT_NAME ?? null,
           taskId: process.env.TASK_ID ?? null,
@@ -38,7 +42,7 @@ switch (cmd) {
       const data = await res.json() as { results: any[] };
       results = data.results;
     } catch {
-      results = await semanticSearch(query, 10);
+      results = await semanticSearch(query, 10, projectId);
     }
 
     if (!results.length) { console.log('No results.'); break; }
@@ -114,6 +118,22 @@ switch (cmd) {
         console.log(`${dbName} OK (${s.files} files, ${s.nodes} nodes) — running incremental update...`);
         await buildIncremental();
       }
+    }
+    break;
+  }
+
+  case 'context': {
+    // Regenerate the cached project brief (the "context brain") without a full re-index.
+    const { generateProjectBrief } = await import('./brief.js');
+    const projectId = process.env.CODE_INDEX_PROJECT ?? 'default';
+    const root = process.env.CODE_INDEX_ROOT || process.cwd();
+    console.log(`Generating project brief for [${projectId}]…`);
+    try {
+      const brief = await generateProjectBrief(projectId, root);
+      console.log('\n' + brief + '\n');
+    } catch (e: any) {
+      console.error(`Failed: ${e?.message || e}`);
+      process.exit(1);
     }
     break;
   }

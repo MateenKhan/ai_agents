@@ -4,13 +4,13 @@ import {
   GitBranch, Github, Gitlab, KeyRound, X, Eye, EyeOff, RefreshCw, FileDiff,
   Copy, Check, ChevronDown, Trash2, Plus, DownloadCloud, GitCommit,
   Upload, Users, History, FolderGit2, Bot, Database, HeartPulse,
-  ExternalLink, Radar, CheckCircle2, Play, Square, Wand2, Save,
+  ExternalLink, Radar, CheckCircle2, Play, Square, Wand2, Save, Pencil,
 } from 'lucide-react';
 import { API_BASE, withProject } from '../../../apiBase';
 import { useToast } from './Toast';
 import { useConfirm } from './ConfirmProvider';
 import { useProjects } from '../projectContext';
-import { LogView } from './LogView';
+import { LogConsole } from './LogConsole';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 
 // lucide has no Bitbucket brand glyph — minimal inline SVG matching the icon-size API.
@@ -199,6 +199,10 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
   const [appBusy, setAppBusy] = useState(false);
   const [connectStarted, setConnectStarted] = useState(false);
   const [detectingId, setDetectingId] = useState<string | null>(null);
+  // ---- rename (label) an already-connected app ----
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+  const [renameBusy, setRenameBusy] = useState(false);
   // ---- manual "connect an existing app" ----
   const [manualOpen, setManualOpen] = useState(false);
   const [manualAppId, setManualAppId] = useState('');
@@ -391,6 +395,22 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
       await loadGithubApps(); await loadTokens();
       toast.success('GitHub App disconnected');
     } catch (e: any) { toast.error('Disconnect failed', e?.message); setAppMsg({ kind: 'err', text: e?.message || 'Failed.' }); }
+  };
+  const startRename = (id: string, current: string) => { setRenamingId(id); setRenameVal(current); };
+  const saveRename = async (id: string) => {
+    const name = renameVal.trim();
+    if (!name) { setRenamingId(null); return; }
+    setRenameBusy(true);
+    try {
+      const r = await fetch(withProject(`${API_BASE}/git/github-apps/${id}`), {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+      });
+      const d = await r.json(); if (!d.ok) throw new Error(d.error || 'Rename failed');
+      setRenamingId(null);
+      await loadGithubApps(); await loadTokens();
+      toast.success('Label updated');
+    } catch (e: any) { toast.error('Rename failed', e?.message); }
+    finally { setRenameBusy(false); }
   };
 
   // ---- run config CRUD ----
@@ -796,6 +816,11 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
     { id: 'index', label: 'Index', icon: Database },
   ];
 
+  // GitHub Apps are surfaced as pseudo-tokens (source==='github-app') so they show up in the
+  // Clone/Push pickers, but in the Saved-credentials list they'd duplicate the app card — so
+  // list only real PATs here and render apps from `apps` below.
+  const patTokens = tokens.filter(t => t.source !== 'github-app');
+
   const msgBox = (m: Msg) => m && (
     <div className={`text-xs rounded-lg px-3 py-2 border break-words ${m.kind === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>{m.text}</div>
   );
@@ -983,7 +1008,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
 
               {/* Live clone output — streams git progress (Receiving/Resolving %) */}
               {(cloning || cloneLog.length > 0) && (
-                <LogView title="Clone output" live={cloning} copyable lines={cloneLog} empty="starting…" />
+                <LogConsole title="Clone output" live={cloning} copyable lines={cloneLog} empty="starting…" />
               )}
 
               {/* Success line — full destination path, horizontally scrollable (never truncated) */}
@@ -1053,7 +1078,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     </span>
                     {runRunning && <button onClick={stopRun} className="ml-auto text-[11px] font-bold text-rose-300 hover:text-rose-200 flex items-center gap-1"><Square size={12} /> Stop</button>}
                   </div>
-                  <LogView bare text={runLog} maxHeight="max-h-64" empty="…" className="bg-slate-950" />
+                  <LogConsole bare text={runLog} maxHeight="max-h-64" empty="…" className="bg-slate-950" />
                 </div>
               )}
             </div>
@@ -1085,14 +1110,15 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 <button type="button" onClick={() => setSavedTokOpen(o => !o)} className="w-full px-3 py-2.5 flex items-center gap-2 bg-slate-50 hover:bg-slate-100">
                   <KeyRound size={14} className="text-slate-500 shrink-0" />
                   <span className="text-xs font-bold text-slate-700">Saved credentials</span>
-                  <span className="text-[10px] font-black rounded-full px-2 py-0.5 bg-slate-200 text-slate-600">{tokens.length + apps.length}</span>
+                  <span className="text-[10px] font-black rounded-full px-2 py-0.5 bg-slate-200 text-slate-600">{patTokens.length + apps.length}</span>
                   <ChevronDown size={16} className={`ml-auto text-slate-400 transition-transform ${savedTokOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {savedTokOpen && (
                   <div className="p-3 space-y-2 border-t border-slate-100">
-                    {tokens.length === 0 && apps.length === 0 && <p className="text-xs text-slate-400">No credentials yet — connect GitHub or add a token below.</p>}
-                    {/* PAT rows */}
-                    {tokens.map(t => (
+                    {patTokens.length === 0 && apps.length === 0 && <p className="text-xs text-slate-400">No credentials yet — connect GitHub or add a token below.</p>}
+                    {/* PAT rows only — GitHub Apps render as their own card below (the app also
+                        appears as a pseudo-token in Clone/Push pickers, but not duplicated here). */}
+                    {patTokens.map(t => (
                       <div key={t.id} className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50">
                         <KeyRound size={15} className={t.scope === 'readwrite' ? 'text-rose-500 shrink-0' : 'text-emerald-600 shrink-0'} />
                         <div className="min-w-0 flex-1">
@@ -1105,7 +1131,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         {/* App pseudo-tokens can't be edited (minted on demand); their delete
                             disconnects the underlying app (removes this row + the app row). */}
                         {t.source !== 'github-app' && (
-                          <button onClick={() => { editToken(t); setAddTokOpen(true); }} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-indigo-600 rounded-lg" aria-label="Edit"><FileDiff size={15} /></button>
+                          <button onClick={() => { editToken(t); setAddTokOpen(true); }} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-indigo-600 rounded-lg" aria-label="Edit"><Pencil size={15} /></button>
                         )}
                         <button
                           onClick={() => t.source === 'github-app' ? deleteGithubApp(t.id.replace(/^app:/, '')) : deleteToken(t.id)}
@@ -1126,9 +1152,23 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         <div key={app.id} className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             <Github size={15} className="text-slate-700 shrink-0" />
-                            <span className="text-sm font-bold text-slate-800 truncate">{app.name}</span>
-                            <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${badge}`}>{app.state}</span>
-                            <button onClick={() => deleteGithubApp(app.id)} className="ml-auto p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-lg" aria-label="Delete app"><Trash2 size={15} /></button>
+                            {renamingId === app.id ? (
+                              <>
+                                <input
+                                  autoFocus value={renameVal} onChange={e => setRenameVal(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveRename(app.id); if (e.key === 'Escape') setRenamingId(null); }}
+                                  className={`${inputCls} h-8 py-1 text-sm flex-1 min-w-0`} placeholder="Label for this app" />
+                                <button onClick={() => saveRename(app.id)} disabled={renameBusy} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-emerald-600 hover:bg-emerald-50 rounded-lg" aria-label="Save label"><CheckCircle2 size={16} /></button>
+                                <button onClick={() => setRenamingId(null)} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Cancel"><X size={16} /></button>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-sm font-bold text-slate-800 truncate">{app.name}</span>
+                                <span className={`text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border ${badge}`}>{app.state}</span>
+                                <button onClick={() => startRename(app.id, app.name || '')} className="ml-auto p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-indigo-600 rounded-lg" aria-label="Rename app" title="Rename / label this app"><Pencil size={15} /></button>
+                                <button onClick={() => deleteGithubApp(app.id)} className="p-2 min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-lg" aria-label="Delete app"><Trash2 size={15} /></button>
+                              </>
+                            )}
                           </div>
                           <div className="text-[11px] text-slate-500 font-mono break-all">
                             {app.slug ? `@${app.slug}` : ''}{app.account ? ` · ${app.account}` : ''}
@@ -1468,7 +1508,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
 
               {/* Live indexing log — streams the db:build output while it reads the repo */}
               {indexLog.length > 0 && (
-                <LogView title="Indexing" live={!!idx?.rebuilding} copyable lines={indexLog} empty="…" />
+                <LogConsole title="Indexing" live={!!idx?.rebuilding} copyable lines={indexLog} empty="…" />
               )}
               {msgBox(idxMsg)}
             </div>

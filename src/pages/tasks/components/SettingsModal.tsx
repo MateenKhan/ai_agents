@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Settings, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Settings, RotateCcw, Eye, EyeOff, Cpu } from 'lucide-react';
 import type { Column } from '../types';
 import { DEFAULT_COLUMNS } from '../boardConfig';
 import { TAB_META, type TabId } from '../tabsConfig';
 import { BoardColumnsEditor } from './BoardColumnsEditor';
 import { Modal } from './Modal';
+import { API_BASE } from '../../../apiBase';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -19,7 +20,23 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
   const [cols, setCols] = useState<Column[]>(columns);
   const closeableTabs = TAB_META.filter(t => t.closeable);
 
-  const handleSave = () => { onSave(cols); onClose(); };
+  // Global agent default: max concurrent agents per project ('' = unset → 0/unlimited).
+  const [agentMaxConc, setAgentMaxConc] = useState<string>('');
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch(`${API_BASE}/agent-defaults`).then(r => r.json())
+      .then(d => setAgentMaxConc(d?.maxConcurrency ? String(d.maxConcurrency) : '0'))
+      .catch(() => {});
+  }, [isOpen]);
+
+  const handleSave = () => {
+    fetch(`${API_BASE}/agent-defaults`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ maxConcurrency: Math.max(0, Math.floor(Number(agentMaxConc) || 0)) }),
+    }).catch(() => {});
+    onSave(cols);
+    onClose();
+  };
 
   return (
     <Modal
@@ -82,6 +99,25 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
           })}
         </div>
         <p className="text-[10px] text-slate-500 mt-2">The Board tab is always visible. Hidden tabs can be re-enabled here anytime.</p>
+      </div>
+
+      {/* Agent defaults — the global fallback every project inherits (each project can override). */}
+      <div className="mb-6">
+        <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2.5">Agent Defaults</h3>
+        <label className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50">
+          <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <Cpu size={15} className="text-slate-500" /> Max concurrent agents
+          </span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={agentMaxConc}
+            onChange={e => setAgentMaxConc(e.target.value.replace(/[^\d]/g, ''))}
+            data-feature-id="settings-agent-maxconc"
+            className="w-24 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-indigo-500"
+          />
+        </label>
+        <p className="text-[10px] text-slate-500 mt-2">Default cap on how many agents run at once <span className="font-semibold">per project</span> — <span className="font-mono">0 = unlimited</span> (still bounded by CPU/RAM). A project can override this in its editor.</p>
       </div>
 
       <BoardColumnsEditor columns={cols} onChange={setCols} />

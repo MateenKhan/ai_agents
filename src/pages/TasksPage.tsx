@@ -31,6 +31,7 @@ const ChatIntake = lazy(() => import('./tasks/components/ChatIntake'));
 const LogsTab = lazy(() => import('./tasks/components/LogsTab'));
 const DbTab = lazy(() => import('./tasks/components/DbTab'));
 const AgentsTab = lazy(() => import('./tasks/components/AgentsTab'));
+const CodeSearchTab = lazy(() => import('./tasks/components/CodeSearchTab'));
 const GitPanel = lazy(() => import('./tasks/components/GitPanel').then(m => ({ default: m.GitPanel })));
 const SystemStatus = lazy(() => import('./tasks/components/SystemStatus').then(m => ({ default: m.SystemStatus })));
 
@@ -72,10 +73,10 @@ const TasksPage: React.FC = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [todosOpen, setTodosOpen] = useState(false);
   const { tab: urlTab } = useParams<{ tab?: string }>();
-  const PATH_TO_TAB: Record<string, 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents'> = { context: 'context', analytics: 'analytics', logs: 'logs', database: 'db', agents: 'agents' };
-  const TAB_TO_PATH: Record<string, string> = { board: '', context: 'context', analytics: 'analytics', logs: 'logs', db: 'database', agents: 'agents' };
-  const activeTab: 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents' = PATH_TO_TAB[urlTab ?? ''] ?? 'board';
-  const setActiveTab = (t: 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents') => navigate(`/tasks${TAB_TO_PATH[t] ? '/' + TAB_TO_PATH[t] : ''}`);
+  const PATH_TO_TAB: Record<string, 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents' | 'search'> = { context: 'context', analytics: 'analytics', logs: 'logs', database: 'db', agents: 'agents', search: 'search' };
+  const TAB_TO_PATH: Record<string, string> = { board: '', context: 'context', analytics: 'analytics', logs: 'logs', db: 'database', agents: 'agents', search: 'search' };
+  const activeTab: 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents' | 'search' = PATH_TO_TAB[urlTab ?? ''] ?? 'board';
+  const setActiveTab = (t: 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents' | 'search') => navigate(`/tasks${TAB_TO_PATH[t] ? '/' + TAB_TO_PATH[t] : ''}`);
 
   // Closeable tabs the user has hidden. Persisted; restored from Settings → Visible Tabs.
   const [hiddenTabs, setHiddenTabs] = useState<Set<TabId>>(() => new Set(loadHiddenTabs()));
@@ -256,7 +257,7 @@ const TasksPage: React.FC = () => {
       <div className="px-3 sm:px-4 pt-3">
         {/* Tab switcher — folder tabs whose active tab connects into the content panel below */}
         <div className="flex items-end gap-2 border-b border-slate-300" data-feature-id="tasks-tab-switcher">
-          <div className="flex items-stretch gap-1 overflow-x-auto custom-scrollbar min-w-0 flex-1 pb-px">
+          <div className="flex items-stretch gap-1 overflow-x-auto overflow-y-hidden custom-scrollbar min-w-0 flex-1 pb-px">
             {visibleTabs.map((t) => {
               const Icon = t.icon;
               const active = activeTab === t.id;
@@ -340,12 +341,12 @@ const TasksPage: React.FC = () => {
                   </button>
                 </Tooltip>
                 <Tooltip label="Heal — reset stuck in-progress tasks">
-                  <button onClick={handleHeal} disabled={healing} data-feature-id="tasks-heal" aria-label="Heal" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-amber-500 border border-amber-500 text-white shadow-sm active:bg-amber-600 sm:hover:bg-amber-400 disabled:opacity-60 transition-colors">
+                  <button onClick={handleHeal} disabled={healing} data-feature-id="tasks-heal" aria-label="Heal" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 disabled:opacity-60 transition-colors">
                     <HeartPulse size={16} className={healing ? 'animate-pulse' : ''} />
                   </button>
                 </Tooltip>
                 <Tooltip label="Chat → Tasks">
-                  <button onClick={() => setChatOpen(true)} data-feature-id="tasks-chat-create" aria-label="Chat to Tasks" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-emerald-600 border border-emerald-600 text-white shadow-sm active:bg-emerald-700 sm:hover:bg-emerald-500 transition-colors">
+                  <button onClick={() => setChatOpen(true)} data-feature-id="tasks-chat-create" aria-label="Chat to Tasks" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 transition-colors">
                     <MessageSquarePlus size={16} />
                   </button>
                 </Tooltip>
@@ -355,7 +356,7 @@ const TasksPage: React.FC = () => {
                   </button>
                 </Tooltip>
                 <Tooltip label="New task">
-                  <button onClick={() => handleAddTask()} aria-label="New task" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-indigo-600 border border-indigo-600 text-white shadow-lg shadow-indigo-600/20 sm:hover:bg-indigo-500 active:scale-95 transition-all">
+                  <button onClick={() => handleAddTask()} aria-label="New task" className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded-lg bg-slate-100 border border-slate-200 text-slate-500 sm:hover:bg-slate-200 sm:hover:text-slate-900 active:scale-95 transition-all">
                     <Plus size={16} strokeWidth={3} />
                   </button>
                 </Tooltip>
@@ -392,6 +393,10 @@ const TasksPage: React.FC = () => {
         ) : activeTab === 'agents' ? (
           <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading agents…</div>}>
             <AgentsTab />
+          </Suspense>
+        ) : activeTab === 'search' ? (
+          <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading search…</div>}>
+            <CodeSearchTab />
           </Suspense>
         ) : (
         <TaskBoard

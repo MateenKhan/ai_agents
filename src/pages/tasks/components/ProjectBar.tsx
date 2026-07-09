@@ -109,6 +109,8 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
   const [name, setName] = useState(project.name);
   const [repoPath, setRepoPath] = useState(project.repoPath || '');
   const [emoji, setEmoji] = useState(project.emoji || '');
+  // '' = inherit the global default; else a number cap (0 = unlimited).
+  const [maxConc, setMaxConc] = useState<string>(project.maxConcurrency == null ? '' : String(project.maxConcurrency));
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [msg, setMsg] = useState<Msg>(null);
@@ -129,6 +131,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
         name: name.trim(),
         repoPath: repoPath.trim(),
         emoji: emoji.trim(),
+        maxConcurrency: maxConc.trim() === '' ? null : Math.max(0, Math.floor(Number(maxConc) || 0)),
       });
       onClose();
     } catch (e: any) {
@@ -222,6 +225,18 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Emoji (optional)</label>
             <input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="🚀" maxLength={4} className={`${inputCls} sm:max-w-[100px]`} />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Max concurrent agents</label>
+            <input
+              value={maxConc}
+              onChange={e => setMaxConc(e.target.value.replace(/[^\d]/g, ''))}
+              inputMode="numeric"
+              placeholder="Inherit default"
+              className={`${inputCls} sm:max-w-[160px]`}
+            />
+            <p className="text-[10px] text-slate-400 mt-1">How many agents may run at once for this project. Blank = use the global default (Settings); 0 = unlimited (capped only by CPU/RAM).</p>
           </div>
 
           {/* Boards accordion — same swimlane editor as the Board tab, scoped to this project. */}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Minus, Square, Terminal, Activity, ChevronRight, Maximize2 } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
+import { LogConsole } from './LogConsole';
 
 interface TerminalMonitorProps {
   isOpen: boolean;
@@ -72,18 +73,24 @@ export function TerminalMonitor({
         {/* Terminal Body */}
         {!minimized && (
           <>
-            <div 
-              ref={bodyRef as any}
-              className="h-80 overflow-y-auto p-4 bg-[#080e1d] font-mono text-[11px] text-slate-300 custom-scrollbar leading-relaxed"
-            >
-              <div className="flex items-center gap-2 text-indigo-400 mb-2 opacity-60">
+            <div ref={bodyRef as any} className="h-80 flex flex-col p-3 bg-[#080e1d]">
+              <div className="flex items-center gap-2 text-indigo-400 mb-2 opacity-60 shrink-0">
                 <ChevronRight size={14} />
-                <span>Monitoring tmux session for agent {agentName}...</span>
+                <span>Monitoring session for agent {agentName}...</span>
               </div>
               {output ? (
-                <pre className="whitespace-pre-wrap">{output}</pre>
+                <LogConsole
+                  text={output}
+                  parsed
+                  fill
+                  searchable
+                  timeToggle
+                  sizeControls
+                  copyable
+                  empty="Waiting for signal…"
+                />
               ) : (
-                <div className="flex flex-col items-center justify-center h-full gap-3 opacity-20">
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 opacity-20">
                   <Activity size={32} className="animate-pulse" />
                   <span className="text-[10px] font-bold uppercase tracking-widest">Waiting for signal...</span>
                 </div>

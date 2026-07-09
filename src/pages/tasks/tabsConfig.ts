@@ -1,9 +1,9 @@
-import { LayoutGrid, BarChart3, ScrollText, Database, Bot, BrainCircuit, type LucideIcon } from 'lucide-react';
+import { LayoutGrid, BarChart3, ScrollText, Database, Bot, BrainCircuit, Search, type LucideIcon } from 'lucide-react';
 
 // The main nav tabs. `closeable` tabs show an X that HIDES them (they're restored
 // from Settings → Visible Tabs, never deleted). Board is the home view and can
 // never be hidden, so it has no close affordance.
-export type TabId = 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents';
+export type TabId = 'board' | 'context' | 'analytics' | 'logs' | 'db' | 'agents' | 'search';
 
 export interface TabMeta {
   id: TabId;
@@ -19,6 +19,7 @@ export const TAB_META: TabMeta[] = [
   { id: 'logs',      label: 'Logs',      icon: ScrollText, closeable: true },
   { id: 'db',        label: 'Database',  icon: Database,   closeable: true },
   { id: 'agents',    label: 'Agents',    icon: Bot,        closeable: true },
+  { id: 'search',    label: 'Search',    icon: Search,     closeable: true },
 ];
 
 export const CLOSEABLE_TABS: TabId[] = TAB_META.filter(t => t.closeable).map(t => t.id);
