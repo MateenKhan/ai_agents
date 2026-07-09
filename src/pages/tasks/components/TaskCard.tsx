@@ -74,9 +74,13 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
       onDragEnd={() => onDragEnd?.()}
       data-feature-id="task-card"
       onClick={() => onView(task)}
+      // While dragging, THIS element is the card left behind in the lane — the browser
+      // paints its own drag image for the one following the cursor. So it must recede,
+      // not lift: a tilt/scale/ring here reads as "lifted" on the one thing that isn't.
+      // Fading it (plus the lane's own drop indicator) already says "this is moving".
       className={`group relative bg-white border rounded-xl p-4 shadow-sm cursor-pointer transition-[transform,box-shadow,opacity,border-color] duration-200 sm:hover:shadow-md sm:hover:-translate-y-0.5 active:bg-slate-50 ${
         isDragging
-          ? 'cursor-grabbing opacity-50 scale-[0.97] rotate-[1.5deg] border-accent-500 ring-2 ring-accent-400/50 shadow-lg shadow-accent-500/20'
+          ? 'cursor-grabbing opacity-40 border-dashed border-slate-300 shadow-none sm:hover:shadow-none sm:hover:translate-y-0'
           : selected
             ? 'border-accent-500 ring-1 ring-accent-400/60'
             : 'border-slate-300 sm:hover:border-accent-400'
