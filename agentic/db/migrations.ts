@@ -136,6 +136,11 @@ const TASKS: Col[] = [
   // db-server restart, an orchestrator crash, or an agent-slot being reused by another task:
   // the file is found by TASK, not by whichever pool slot happened to run it.
   { name: 'logPath', type: 'text' },
+  // Business owner: the user's untouched original ask, the owner's bounce comments, and the
+  // bounce budget that stops owner↔architect ping-pong.
+  { name: 'intent', type: 'text' },
+  { name: 'ownerNote', type: 'text' },
+  { name: 'ownerBounces', type: 'int' },
 ];
 
 const BOARD_SETTINGS: Col[] = [
@@ -204,7 +209,8 @@ const AGENTS: Col[] = [
   { name: 'isSystem', type: 'bool', notNull: true, default: false },
   { name: 'promptTemplate', type: 'text', notNull: true },
   { name: 'mergePromptTemplate', type: 'text' },
-  { name: 'rescuePromptTemplate', type: 'text' }, // additive
+  { name: 'rescuePromptTemplate', type: 'text' },  // additive
+  { name: 'acceptPromptTemplate', type: 'text' },  // additive — business owner's accept gate
 ];
 
 const AGENT_META: Col[] = [
@@ -323,6 +329,11 @@ const ADDITIVE: Array<[string, Col]> = [
   ['agent_logs', { name: 'projectId', type: 'text' }],
   ['tasks', { name: 'logPath', type: 'text' }],
   ['agents', { name: 'rescuePromptTemplate', type: 'text' }],
+  // Business owner gates.
+  ['tasks', { name: 'intent', type: 'text' }],
+  ['tasks', { name: 'ownerNote', type: 'text' }],
+  ['tasks', { name: 'ownerBounces', type: 'int' }],
+  ['agents', { name: 'acceptPromptTemplate', type: 'text' }],
 ];
 
 /**

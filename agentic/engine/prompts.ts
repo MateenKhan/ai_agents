@@ -117,18 +117,23 @@ async function docsBlock(task: Task): Promise<string> {
   return lines.length ? 'ATTACHED DOCUMENTS (context for this task):\n' + lines.join('\n') : '';
 }
 
-/** Render an agent's template for a task. `merge` uses the architect's merge template. */
+/** Render an agent's template for a task. `merge` uses the architect's merge template,
+ *  `accept` the owner's accept template. */
 export async function renderPrompt(agent: AgentConfig, task: Task, stage: string): Promise<string> {
   const cfg = getConfig();
   const template =
     (stage === 'merge' && agent.mergePromptTemplate) ? agent.mergePromptTemplate
     : (stage === 'rescue' && agent.rescuePromptTemplate) ? agent.rescuePromptTemplate
+    : (stage === 'accept' && agent.acceptPromptTemplate) ? agent.acceptPromptTemplate
     : agent.promptTemplate;
 
   const values: Record<string, string> = {
     taskId: task.id,
     title: task.title,
     description: task.description || '',
+    // The user's untouched ask. Falls back to description for rows created before `intent`
+    // existed, so an owner running against an old task still has something to judge against.
+    intent: task.intent || task.description || task.title,
     scenarios: scenariosToGherkin(task.scenarios) || '(no scenarios — ask for clarification)',
     plan: task.summary || '(no plan recorded yet)',
     memory: await memoryBlock(task),
@@ -143,6 +148,12 @@ export async function renderPrompt(agent: AgentConfig, task: Task, stage: string
 
   if (task.reviewNote) {
     out = `REVIEWER FEEDBACK — address this first (a previous attempt was rejected):\n${task.reviewNote}\n\n` + out;
+  }
+  // The business owner's bounce comments. Kept distinct from REVIEWER FEEDBACK so the dev /
+  // architect can tell a human rejection from the owner's, and prepended last so it reads
+  // first. The owner never sees its own note echoed back — it wrote it.
+  if (task.ownerNote && agent.role !== 'owner') {
+    out = `BUSINESS OWNER FEEDBACK — the work did not deliver what the user asked for. Address this first:\n${task.ownerNote}\n\n` + out;
   }
   // Cached project brief — prepended below the rules so every role gets a fast orientation
   // to the codebase for free (generated once at index-build time, not per agent).

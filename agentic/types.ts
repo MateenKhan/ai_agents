@@ -10,11 +10,14 @@
 /** Board columns a task moves through (human-facing kanban state). */
 export type TaskStatus = 'AVAILABLE' | 'WORKING' | 'TESTING' | 'DONE';
 
-/** Pipeline stage inside the runtime — routes which agent role runs next. */
-export type Stage = 'plan' | 'build' | 'qa' | 'review' | 'merge' | 'merged' | 'rescue';
+/** Pipeline stage inside the runtime — routes which agent role runs next.
+ *  `intake` and `accept` are the business owner's two gates: it turns the user's raw intent
+ *  into acceptance scenarios before the architect plans, and re-checks the finished work
+ *  against that intent before it reaches the human. */
+export type Stage = 'intake' | 'plan' | 'build' | 'qa' | 'accept' | 'review' | 'merge' | 'merged' | 'rescue';
 
-/** Which agent handles a stage. `merge` is done by the architect (Opus), not a 4th role. */
-export type AgentRole = 'architect' | 'dev' | 'qa';
+/** Which agent handles a stage. `merge` is done by the architect (Opus), not a separate role. */
+export type AgentRole = 'owner' | 'architect' | 'dev' | 'qa';
 
 /** Git isolation for a role's run. plan = detached read-only; create = owns task/<id>;
  *  reuse = attaches to the dev's existing worktree; none = runs in the main repo. */
@@ -61,6 +64,17 @@ export interface Task {
 
   /** Human reviewer feedback from a rejected review — injected into the retry prompt. */
   reviewNote?: string | null;
+  /** The user's ORIGINAL words, captured at creation and never rewritten by an agent.
+   *  `description` gets absorbed into the architect's plan; this does not. It is the only
+   *  thing "expectations not met" can be judged against. */
+  intent?: string | null;
+  /** The business owner's feedback when it bounces work back. Kept separate from
+   *  `reviewNote` so a human rejection can't silently overwrite the owner's comments —
+   *  and so dev/architect can tell whose objection they are reading. */
+  ownerNote?: string | null;
+  /** How many times the business owner has bounced this task. Capped: on exhaustion the
+   *  task goes to the human WITH the notes, never to BLOCKED. */
+  ownerBounces?: number;
   /** ISO timestamp — while WORKING, the watchdog reclaims the task if this expires. */
   leaseExpiresAt?: string | null;
   /** Absolute path to THIS task's own append-only log file (`<logsDir>/<projectId>/<id>.log`).
@@ -118,6 +132,9 @@ export interface AgentConfig {
   /** Architect-only: the template used for the rescue stage — re-planning a task whose
    *  dev/qa stage exhausted its retries. */
   rescuePromptTemplate?: string;
+  /** Owner-only: the template used for the accept stage. The base `promptTemplate` is the
+   *  intake gate (intent → scenarios); this one judges finished work against that intent. */
+  acceptPromptTemplate?: string;
 }
 
 /** Result handed to the orchestrator when a headless agent process exits. */
@@ -213,6 +230,11 @@ export interface AgenticConfig {
   toggles?: {
     enableArchitect?: boolean;
     enableQa?: boolean;
+    /** Business owner gates (intake + accept). On by default; turn off for pipelines where
+     *  the intent is already precise (a backend refactor) and the extra opus pass is waste. */
+    enableOwner?: boolean;
+    /** Max times the owner may bounce one task before it goes to the human regardless. */
+    maxOwnerBounces?: number;
     /** Merge automatically when QA passes (before human review) vs on human approval. */
     autoMergeOnQaPass?: boolean;
     maxAttempts?: number;

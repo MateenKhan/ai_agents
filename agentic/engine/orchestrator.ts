@@ -249,6 +249,22 @@ function startDbProbe(): void {
 // dead-letters to BLOCKED (env RESCUE_MAX, default 1 — one re-plan then human).
 const MAX_RESCUE = Math.max(0, parseInt(process.env.RESCUE_MAX || '') || 1);
 
+// ── business owner gates ───────────────────────────────────────────────────────
+/** Owner gates are ON unless explicitly disabled — the user owns the definition of done. */
+const ownerEnabled = (): boolean => t().enableOwner !== false;
+
+/** How many times the owner may bounce ONE task before it goes to the human regardless.
+ *  This is the ONLY thing standing between an opinionated agent and an owner↔architect
+ *  ping-pong that never converges. On exhaustion the task advances to human review WITH the
+ *  owner's notes — it is never dead-lettered, because "the owner disagrees" is not a failure
+ *  of the task, it is a disagreement for a person to settle. */
+const maxOwnerBounces = (): number => {
+  const fromEnv = parseInt(process.env.OWNER_MAX_BOUNCES || '', 10);
+  if (Number.isFinite(fromEnv) && fromEnv >= 0) return fromEnv;
+  const fromToggle = t().maxOwnerBounces;
+  return typeof fromToggle === 'number' && fromToggle >= 0 ? fromToggle : 2;
+};
+
 // ── periodic architect triage ────────────────────────────────────────────────────
 // Every TRIAGE_MS the orchestrator wakes ONE architect in read-only "triage" mode to
 // review a project's in-flight tasks in a single batched run and re-plan/nudge the stuck
@@ -327,9 +343,17 @@ function dbHealthCheck(logFn: (id: string, m: string, t?: 'info' | 'success' | '
 // ── stage routing ──────────────────────────────────────────────────────────────
 interface Routed { role: AgentRole; stage: Stage; }
 
-function nextRoute(task: Task): Routed | null {
+/** Exported for tests: an unroutable stage silently orphans a task in WORKING forever, so the
+ *  routing table is worth pinning directly rather than inferring from a live run. */
+export function nextRoute(task: Task): Routed | null {
   const tg = t();
-  let stage: Stage = task.stage || 'plan';
+  // A brand-new task starts at the owner's intake gate (intent → scenarios), or straight at
+  // 'plan' when the owner is disabled. 'accept' is only ever set while the owner is enabled.
+  let stage: Stage = task.stage || (ownerEnabled() ? 'intake' : 'plan');
+  if (stage === 'intake') {
+    if (!ownerEnabled()) stage = 'plan';
+    else return { role: 'owner', stage: 'intake' };
+  }
   if (stage === 'plan') {
     if (tg.enableArchitect === false) stage = 'build';
     else return { role: 'architect', stage: 'plan' };
@@ -338,6 +362,12 @@ function nextRoute(task: Task): Routed | null {
   if (stage === 'qa') {
     if (tg.enableQa === false) stage = 'merge';
     else return { role: 'qa', stage: 'qa' };
+  }
+  // Owner's acceptance gate — QA has passed; does the work deliver the user's ask?
+  // Disabled mid-flight, a parked 'accept' task is converted to 'review' in dispatchPending.
+  if (stage === 'accept') {
+    if (!ownerEnabled()) return null;
+    return { role: 'owner', stage: 'accept' };
   }
   // Rescue: a dev/qa stage exhausted its retries → architect re-plans (read-only), then
   // hands back to 'build'. Disabled installs (no architect) skip straight to dead-letter.
@@ -356,7 +386,11 @@ async function agentMap(): Promise<Record<string, AgentConfig>> {
 }
 function modelFor(role: AgentRole, a: AgentConfig): string { return getConfig().models?.[role] || a.model; }
 function worktreeFor(role: AgentRole, stage: string, a: AgentConfig): WorktreeMode {
-  return (role === 'architect' && stage === 'merge') ? 'none' : a.worktreeMode;
+  if (role === 'architect' && stage === 'merge') return 'none';
+  // The owner reads the dev's actual diff at 'accept', so it must attach to that worktree.
+  // At 'intake' there is no branch yet — it reads the base repo.
+  if (role === 'owner') return stage === 'accept' ? 'reuse' : 'none';
+  return a.worktreeMode;
 }
 function getAvailableAgent(): string | null {
   for (const n of AGENT_POOL) if (!agentTaskMap.has(n) && !isAgentBusy(n)) return n;
@@ -435,6 +469,15 @@ async function failTask(task: Task, kind: FailureKind, note: string): Promise<vo
   // give up — the architect diagnoses and hands a fresh brief back to the dev. Architect-stage
   // failures (plan/rescue/merge) and rescue-budget exhaustion dead-letter straight to BLOCKED.
   const stage = task.stage;
+  // The owner's ACCEPT gate is advisory, and it runs on work QA has already passed. A broken
+  // reviewer must not condemn good work: fall through to the human instead of BLOCKED. The
+  // INTAKE gate is different — nothing has been built and there are no scenarios, so there is
+  // nothing to hand onward; that one dead-letters like any other planning failure.
+  if (stage === 'accept') {
+    await updateTask(task.id, { stage: 'review', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0 });
+    log(task.id, `🧑‍💼 business owner could not complete its review (${note}) — passing QA-approved work to Human Review`, 'warning');
+    return;
+  }
   const canRescue = (stage === 'build' || stage === 'qa')
     && (task.rescueCount || 0) < MAX_RESCUE
     && t().enableArchitect !== false; // no architect enabled → nobody to re-plan
@@ -577,11 +620,28 @@ async function dispatchPending(): Promise<void> {
 
   const agents = await agentMap();
   for (const task of pending) {
+    // Owner disabled while a task sat at its acceptance gate: nextRoute() would return null
+    // for 'accept' and the task would sit in WORKING forever, un-dispatchable. Convert it to
+    // the human gate instead — the same place the owner would have sent it on approval.
+    if (task.stage === 'accept' && !ownerEnabled()) {
+      await updateTask(task.id, { stage: 'review' });
+      log(task.id, '🧑‍💼 business owner disabled — skipping acceptance, straight to Human Review', 'info');
+      continue;
+    }
     // QA passed → human review gate (PRE-merge). Park it in Human Review, keep the
     // worktree so a preview can be built, and don't dispatch until the human approves.
     if (task.stage === 'review') {
       await updateTask(task.id, { status: 'TESTING', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
-      log(task.id, '🧑‍⚖️ QA passed — awaiting your review (build a preview, then approve to merge)', 'success');
+      // Three different things park here, and saying "QA passed" for all of them is a lie the
+      // user has to debug: the owner can park an ambiguous ask at intake (nothing built yet),
+      // and an exhausted bounce budget parks work the owner still objects to.
+      if (!task.qaVerdict && task.ownerNote) {
+        log(task.id, `🧑‍💼 business owner needs your input before any work starts — ${task.ownerNote.slice(0, 160)}`, 'warning');
+      } else if (task.qaVerdict === 'pass' && task.ownerNote) {
+        log(task.id, '🧑‍⚖️ QA passed, but the business owner still objects — read its note, then approve or reject', 'warning');
+      } else {
+        log(task.id, '🧑‍⚖️ QA passed — awaiting your review (build a preview, then approve to merge)', 'success');
+      }
       continue;
     }
     if (!canSpawn(agentTaskMap.size)) break;
@@ -629,6 +689,16 @@ async function dispatchPending(): Promise<void> {
       log(task.id, `🩺 architect rescue pass ${rc + 1}/${MAX_RESCUE} — re-planning`, 'warning');
     }
     if (task.stage !== route.stage) { await updateTask(task.id, { stage: route.stage }); task.stage = route.stage; }
+    // The owner has TWO independent switches: the `enableOwner` toggle and the agent row's
+    // `enabled` flag. When they disagree the generic `continue` below would silently park the
+    // task in WORKING forever, un-dispatchable and invisible. Its gates are advisory, so a
+    // missing or disabled owner means SKIP THE GATE, never stall.
+    if (route.role === 'owner' && !agents.owner?.enabled) {
+      const to: Stage = route.stage === 'intake' ? 'plan' : 'review';
+      await updateTask(task.id, { stage: to });
+      log(task.id, `🧑‍💼 business owner agent is disabled — skipping the ${route.stage} gate → ${to}`, 'info');
+      continue;
+    }
     const ac = agents[route.role];
     if (!ac || !ac.enabled) continue;
     const name = getAvailableAgent();
@@ -698,9 +768,42 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
     // (old prompts route to 'merge'), a PASS always goes to Human Review first. The human
     // previews the branch and approves; only /approve advances it to merge. This makes the
     // gate independent of the agent prompt, so it can't be skipped by a stale qa template.
-    if (route.role === 'qa' && fresh.qaVerdict === 'pass' && fresh.stage !== 'review') {
-      await updateTask(taskId, { stage: 'review' });
-      log(taskId, '🔎 QA passed → Human Review (preview + approve before merge)', 'info');
+    // QA pass routes to the owner's acceptance gate first, then to the human. With the owner
+    // disabled this is the old behaviour exactly. Enforced here rather than in the qa prompt
+    // so a stale template can't skip the gate.
+    if (route.role === 'qa' && fresh.qaVerdict === 'pass' && fresh.stage !== 'review' && fresh.stage !== 'accept') {
+      if (ownerEnabled()) {
+        await updateTask(taskId, { stage: 'accept' });
+        log(taskId, '🔎 QA passed → Business Owner acceptance (does it deliver the ask?)', 'info');
+      } else {
+        await updateTask(taskId, { stage: 'review' });
+        log(taskId, '🔎 QA passed → Human Review (preview + approve before merge)', 'info');
+      }
+    }
+
+    // OWNER BOUNCE BUDGET — the owner just finished 'accept'. If it bounced the task back
+    // (stage plan|build) charge the budget; when exhausted, override its objection and send
+    // the task to the human WITH the note. The owner may not veto forever, and it may not
+    // dead-letter: a disagreement about intent is for a person to settle, not a BLOCKED card.
+    if (route.role === 'owner' && route.stage === 'accept') {
+      const after = (await getTask(taskId))?.stage;
+      const bounced = after === 'plan' || after === 'build';
+      if (bounced) {
+        const used = (fresh.ownerBounces || 0) + 1;
+        const cap = maxOwnerBounces();
+        if (used > cap) {
+          await updateTask(taskId, { stage: 'review', ownerBounces: used });
+          log(taskId, `🧑‍💼 owner bounce budget exhausted (${cap}) — sending to Human Review with the owner's notes instead of re-planning again`, 'warning');
+        } else {
+          await updateTask(taskId, { ownerBounces: used });
+          log(taskId, `🧑‍💼 owner bounced to ${after} (${used}/${cap}) — "${(fresh.ownerNote || '').slice(0, 120)}"`, 'warning');
+        }
+      } else if (after === 'review') {
+        // Approved: drop any note from an earlier bounce, or the human-review park below
+        // would report an objection the owner has since withdrawn.
+        await updateTask(taskId, { ownerNote: null });
+        log(taskId, '🧑‍💼 owner accepted — delivers the ask; on to Human Review', 'success');
+      }
     }
     if (route.role === 'architect' && route.stage === 'merge') {
       await removeWorktree(taskId);            // merged → drop the dev worktree
@@ -716,7 +819,7 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
       log(taskId, `✅ architect re-planned (rescue) → back to dev at stage ${(await getTask(taskId))?.stage}`, 'success');
     } else {
       const newStage = (await getTask(taskId))?.stage;
-      const ROUTABLE = ['plan', 'build', 'qa', 'review', 'merge', 'merged', 'rescue'];
+      const ROUTABLE = ['intake', 'plan', 'build', 'qa', 'accept', 'review', 'merge', 'merged', 'rescue'];
       if (!newStage || !ROUTABLE.includes(newStage)) {
         // The agent advanced to an unknown/non-pipeline stage (e.g. an architect declaring a
         // task impossible by inventing stage="blocked"). Left alone it sits un-dispatchable in

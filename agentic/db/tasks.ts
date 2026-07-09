@@ -102,11 +102,56 @@ export async function reencryptSecretsAtRest(s: Store): Promise<void> {
 
 function parseArr(v: any): string[] { try { return v ? JSON.parse(v) : []; } catch { return []; } }
 
+/** Read scenarios back out of a stored column (always a JSON array of Scenario). */
 export function safeParseScenarios(v: any): Scenario[] {
   try {
     const arr = typeof v === 'string' ? JSON.parse(v) : v;
     return Array.isArray(arr) ? arr.filter(s => s && typeof s.then === 'string') : [];
   } catch { return []; }
+}
+
+/** Parse ONE Gherkin block into a Scenario. A block with no THEN is treated as a bare
+ *  acceptance statement — better a scenario the agent can read than a silently dropped one. */
+function parseGherkinBlock(block: string): Scenario[] {
+  const text = block.replace(/^\s*scenario\s*\d*\s*:?\s*/i, '').trim();
+  if (!text) return [];
+  const grab = (kw: string): string | undefined => {
+    const m = text.match(new RegExp(`\\b${kw}\\b\\s+([\\s\\S]*?)(?=\\b(?:GIVEN|WHEN|THEN|AND)\\b|$)`, 'i'));
+    return m?.[1]?.trim() || undefined;
+  };
+  const then = grab('THEN');
+  if (!then) return [{ then: text }];
+  return [{ given: grab('GIVEN'), when: grab('WHEN'), then }];
+}
+
+/** Accept whatever an agent PUTs for `scenarios` and normalise it to Scenario[].
+ *
+ *  The architect and owner prompts both tell agents to send a Gherkin STRING
+ *  (`"scenarios":"GIVEN … WHEN … THEN …"`). Storing that with JSON.stringify and reading it
+ *  back with safeParseScenarios yielded [] — the scenarios vanished, and since a task will not
+ *  dispatch without at least one, the task silently stalled. Coerce here, at the only door
+ *  into the column, so every writer benefits. */
+export function coerceScenarios(v: any): Scenario[] {
+  if (v == null) return [];
+  if (Array.isArray(v)) {
+    return v.flatMap(x =>
+      typeof x === 'string' ? parseGherkinBlock(x)
+      : (x && typeof x.then === 'string') ? [x as Scenario]
+      : []);
+  }
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (!s) return [];
+    // A JSON array that arrived as a string (some clients double-encode).
+    if (s.startsWith('[')) { try { return coerceScenarios(JSON.parse(s)); } catch { /* it's prose */ } }
+    // Blank-line separated blocks; failing that, one scenario per line when each line has THEN.
+    const blocks = s.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
+    const lines = s.split('\n').map(l => l.trim()).filter(Boolean);
+    const perLine = blocks.length === 1 && lines.length > 1 && lines.every(l => /\bTHEN\b/i.test(l));
+    return (perLine ? lines : blocks).flatMap(parseGherkinBlock);
+  }
+  if (typeof v === 'object' && typeof (v as any).then === 'string') return [v as Scenario];
+  return [];
 }
 
 /** Render scenarios as Gherkin text for an agent prompt. */
@@ -123,30 +168,40 @@ export function scenariosToGherkin(scenarios?: Scenario[]): string {
 
 function parseObj(v: any): Record<string, number> { try { return v ? JSON.parse(v) : {}; } catch { return {}; } }
 
+/** JSON.parse when it is JSON, otherwise hand back the raw value. */
+function parseMaybeJson(v: any): any {
+  if (typeof v !== 'string') return v;
+  try { return JSON.parse(v); } catch { return v; }
+}
+
 function rowToTask(r: any): Task {
   return {
     ...r,
     dependsOn: parseArr(r.dependsOn),
     files: parseArr(r.files),
     docs: parseArr(r.docs),
-    scenarios: safeParseScenarios(r.scenarios),
+    // coerce, not safeParse: rows written before the coercion existed hold a double-encoded
+    // Gherkin string ('"GIVEN … THEN …"'), which safeParseScenarios turned into []. Parsing the
+    // JSON layer first and coercing the result recovers those rows instead of stranding them
+    // with no scenarios (and therefore un-dispatchable) forever.
+    scenarios: coerceScenarios(parseMaybeJson(r.scenarios)),
     stageTimings: parseObj(r.stageTimings),
   };
 }
 
-const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath';
+const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath,intent,ownerNote,ownerBounces';
 
 function toRow(t: Partial<Task>): any[] {
   return [
     t.id, t.title, t.description ?? null, t.status, t.priority ?? 0,
     t.claimedBy ?? null, t.started ?? null, t.completed ?? null,
     JSON.stringify(t.dependsOn ?? []), JSON.stringify(t.files ?? []), t.parentId ?? null,
-    JSON.stringify(t.scenarios ?? []), t.stage ?? null, t.qaVerdict ?? null,
+    JSON.stringify(coerceScenarios(t.scenarios)), t.stage ?? null, t.qaVerdict ?? null,
     JSON.stringify(t.docs ?? []), t.reviewNote ?? null, t.leaseExpiresAt ?? null,
     t.attempts ?? 0, t.nextRetryAt ?? null, t.lastError ?? null, t.model ?? null, t.summary ?? null,
     t.etcMinutes ?? null, t.etcSetAt ?? null, JSON.stringify(t.stageTimings ?? {}),
     t.projectId ?? 'default', t.control ?? null, t.mergeBounces ?? 0, t.rescueCount ?? 0,
-    t.logPath ?? null,
+    t.logPath ?? null, t.intent ?? null, t.ownerNote ?? null, t.ownerBounces ?? 0,
   ];
 }
 
@@ -171,14 +226,24 @@ export async function getTask(id: string): Promise<Task | null> {
 export async function createTask(task: Partial<Task> & { id: string; title: string; status: string }): Promise<void> {
   const s = await store();
   const ph = COLS.split(',').map(() => '?').join(',');
-  await s.run(`INSERT INTO tasks (${COLS}) VALUES (${ph})`, toRow(task));
+  // Capture the user's ask verbatim. `description` is fair game for agents to rewrite (the
+  // architect folds its plan into it); `intent` is the immutable record of what was asked for,
+  // and is the only thing "expectations not met" can be judged against later.
+  const withIntent = { ...task, intent: task.intent ?? task.description ?? task.title };
+  await s.run(`INSERT INTO tasks (${COLS}) VALUES (${ph})`, toRow(withIntent));
 }
 
 export async function updateTask(id: string, updates: Partial<Task>): Promise<void> {
   const s = await store();
   const current = await s.get(`SELECT * FROM tasks WHERE id = ?`, [id]);
   if (!current) throw new Error(`Task not found: ${id}`);
-  const merged = { ...rowToTask(current), ...updates, id };
+  const cur = rowToTask(current);
+  const merged = { ...cur, ...updates, id };
+  // WRITE-ONCE intent. Agents PUT arbitrary JSON at /tasks/:id; without this an architect or
+  // an owner could quietly restate the user's ask to match what it built, and the acceptance
+  // gate would then be checking the work against itself. Only a task that has no intent yet
+  // (pre-migration rows) can gain one.
+  if (cur.intent) merged.intent = cur.intent;
   const assignments = COLS.split(',').filter(c => c !== 'id').map(c => `${c}=?`).join(',');
   const row = toRow(merged);
   row.shift(); // drop id from the front (it goes to the WHERE clause)

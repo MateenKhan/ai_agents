@@ -19,7 +19,9 @@ import { DEFAULT_AGENTS } from './defaults';
 //  changing it needs no bump — only stored-template changes do.)
 //   v3: architect gains a rescuePromptTemplate (re-plan a task whose dev/qa exhausted retries).
 //   v4: dev/qa learn to CALL FOR HELP — self-report a block by handing to stage="rescue".
-const SYSTEM_TEMPLATE_VERSION = 4;
+// Bump to roll new system-role templates onto existing installs. 5 = business owner role
+// (intake + accept templates) and the QA→owner acceptance routing.
+const SYSTEM_TEMPLATE_VERSION = 5;
 
 // Seed DEFAULT_AGENTS + roll templates forward exactly once per process (the work the
 // old lazy `db()` did on first access). Table creation itself lives in runMigrations.
@@ -40,8 +42,8 @@ async function refreshSystemTemplates(s: Store): Promise<void> {
   const cur = row ? (parseInt(row.v) || 0) : 0;
   if (cur >= SYSTEM_TEMPLATE_VERSION) return;
   for (const a of DEFAULT_AGENTS) {
-    await s.run(`UPDATE agents SET promptTemplate = ?, mergePromptTemplate = ?, rescuePromptTemplate = ? WHERE role = ? AND isSystem = 1`,
-      [a.promptTemplate, a.mergePromptTemplate ?? null, a.rescuePromptTemplate ?? null, a.role]);
+    await s.run(`UPDATE agents SET promptTemplate = ?, mergePromptTemplate = ?, rescuePromptTemplate = ?, acceptPromptTemplate = ? WHERE role = ? AND isSystem = 1`,
+      [a.promptTemplate, a.mergePromptTemplate ?? null, a.rescuePromptTemplate ?? null, a.acceptPromptTemplate ?? null, a.role]);
   }
   await upsert(s, 'agent_meta', { k: 'templateVersion', v: String(SYSTEM_TEMPLATE_VERSION) }, ['k']);
 }
@@ -58,6 +60,7 @@ function rowToAgent(r: any): AgentConfig {
     promptTemplate: r.promptTemplate,
     mergePromptTemplate: r.mergePromptTemplate ?? undefined,
     rescuePromptTemplate: r.rescuePromptTemplate ?? undefined,
+    acceptPromptTemplate: r.acceptPromptTemplate ?? undefined,
   };
 }
 
@@ -68,25 +71,37 @@ async function insert(s: Store, a: AgentConfig): Promise<void> {
     promptTemplate: a.promptTemplate,
     mergePromptTemplate: a.mergePromptTemplate ?? null,
     rescuePromptTemplate: a.rescuePromptTemplate ?? null,
+    acceptPromptTemplate: a.acceptPromptTemplate ?? null,
   }, ['role']);
 }
 
-/** Seed defaults on first run; self-heal a missing architect merge template. */
+/** Seed defaults on first run, backfill any system role added since the DB was created, and
+ *  self-heal missing stage templates.
+ *
+ *  The empty-table check alone is not enough: an existing install has rows, so a NEW system
+ *  role (the business owner) would silently never be inserted, and the orchestrator would
+ *  look up an agent that isn't there. Backfill by role, not by table emptiness. */
 async function seedIfEmpty(s: Store): Promise<void> {
-  const count = (await s.get(`SELECT COUNT(*) c FROM agents`) as any)?.c ?? 0;
-  if (count === 0) {
-    for (const a of DEFAULT_AGENTS) await insert(s, a);
-    return;
-  }
-  // Self-heal: ensure the architect carries its merge + rescue templates (both are its job).
-  const arch = await s.get(`SELECT mergePromptTemplate, rescuePromptTemplate FROM agents WHERE role = 'architect'`) as any;
-  const def = DEFAULT_AGENTS.find(a => a.role === 'architect');
-  if (arch && def) {
-    if (!arch.mergePromptTemplate && def.mergePromptTemplate) {
-      await s.run(`UPDATE agents SET mergePromptTemplate = ? WHERE role = 'architect'`, [def.mergePromptTemplate]);
+  const have = new Set(((await s.all(`SELECT role FROM agents`)) as any[]).map(r => r.role));
+  for (const a of DEFAULT_AGENTS) if (!have.has(a.role)) await insert(s, a);
+
+  // Self-heal per-stage templates for system roles that predate them (architect's merge +
+  // rescue, the owner's accept). A role can exist with a NULL template if it was inserted
+  // before that column/stage was introduced.
+  for (const def of DEFAULT_AGENTS) {
+    const row = await s.get(
+      `SELECT mergePromptTemplate, rescuePromptTemplate, acceptPromptTemplate FROM agents WHERE role = ? AND isSystem = 1`,
+      [def.role],
+    ) as any;
+    if (!row) continue;
+    if (!row.mergePromptTemplate && def.mergePromptTemplate) {
+      await s.run(`UPDATE agents SET mergePromptTemplate = ? WHERE role = ?`, [def.mergePromptTemplate, def.role]);
     }
-    if (!arch.rescuePromptTemplate && def.rescuePromptTemplate) {
-      await s.run(`UPDATE agents SET rescuePromptTemplate = ? WHERE role = 'architect'`, [def.rescuePromptTemplate]);
+    if (!row.rescuePromptTemplate && def.rescuePromptTemplate) {
+      await s.run(`UPDATE agents SET rescuePromptTemplate = ? WHERE role = ?`, [def.rescuePromptTemplate, def.role]);
+    }
+    if (!row.acceptPromptTemplate && def.acceptPromptTemplate) {
+      await s.run(`UPDATE agents SET acceptPromptTemplate = ? WHERE role = ?`, [def.acceptPromptTemplate, def.role]);
     }
   }
 }
