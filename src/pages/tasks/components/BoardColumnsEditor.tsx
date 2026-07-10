@@ -64,7 +64,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
                 value={lane.color}
                 onChange={e => patch(lane.id, { color: e.target.value })}
                 className="w-8 h-8 rounded-lg border border-slate-300 bg-white cursor-pointer shrink-0 p-0.5"
-                title="Lane color" aria-label="Lane color"
+                aria-label="Lane color"
               />
 
               <input

@@ -385,7 +385,7 @@ export default function AgentsTab() {
               </div>
               <div className="flex items-center gap-3 text-xs">
                 {/* Inline model picker — change the model without opening the editor */}
-                <label className="flex items-center gap-1 text-slate-700" title="Model — applies within ~10s">
+                <label className="flex items-center gap-1 text-slate-700">
                   <Cpu size={12} className="text-accent-500" />
                   <select
                     value={a.model}

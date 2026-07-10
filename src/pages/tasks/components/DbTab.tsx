@@ -134,7 +134,7 @@ export default function DbTab() {
   };
 
   const cell = (colName: string, v: any) => {
-    if (v === null || v === undefined) return <span className="text-slate-300 italic">null</span>;
+    if (v === null || v === undefined) return <span className="text-slate-500 italic">null</span>;
     const s = String(v);
     if (colName === 'status' && STATUS_CLASS[s]) {
       return <span className={`inline-block px-2 py-0.5 text-micro font-bold rounded-full border ${STATUS_CLASS[s]}`}>{s}</span>;
@@ -249,7 +249,7 @@ export default function DbTab() {
             <tr className="bg-gradient-to-b from-slate-200 to-slate-100 shadow-[0_2px_0_0_#94a3b8]">
               <th className="px-3 py-3 w-10 border-r border-slate-300 bg-slate-200/70">
                 <input type="checkbox" checked={pageAllSelected} onChange={togglePage}
-                  className="w-4 h-4 accent-accent-600" title="Select page" data-feature-id="db-select-page" />
+                  className="w-4 h-4 accent-accent-600" aria-label="Select all rows on this page" data-feature-id="db-select-page" />
               </th>
               {cols.map(c => (
                 <th

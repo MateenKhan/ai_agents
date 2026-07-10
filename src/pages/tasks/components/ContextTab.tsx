@@ -293,7 +293,7 @@ function ContextMemory({ activeId }: { activeId: string }) {
                     <span className={`shrink-0 px-1.5 py-0.5 rounded border font-bold uppercase ${OP_STYLE[o.op] || 'text-slate-600 bg-slate-50 border-slate-200'}`}>{o.op}</span>
                     <span className="flex-1 min-w-0 truncate font-mono text-slate-600" title={o.reason || ''}>{o.path || o.reason}</span>
                     {o.durationMs != null && <span className="shrink-0 text-slate-500 tabular-nums">{o.durationMs}ms</span>}
-                    <span className="shrink-0 text-slate-300">{o.actor}</span>
+                    <span className="shrink-0 text-slate-500">{o.actor}</span>
                   </div>
                 )) : <p className="p-3 text-center text-2xs text-slate-500">No memory operations yet.</p>}
               </div>

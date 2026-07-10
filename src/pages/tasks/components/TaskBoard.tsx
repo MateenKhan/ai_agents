@@ -150,7 +150,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
                     onChange={() => toggleLane(colTasks)}
                     disabled={colTasks.length === 0}
                     className="w-5 h-5 accent-accent-600 disabled:opacity-20"
-                    title={allInLaneSelected ? 'Deselect all in lane' : 'Select all in lane'}
+                    aria-label={allInLaneSelected ? 'Deselect all in lane' : 'Select all in lane'}
                   />
                 </label>
                 <div className="w-1 h-4 rounded-full shrink-0" style={{ backgroundColor: col.color }}></div>

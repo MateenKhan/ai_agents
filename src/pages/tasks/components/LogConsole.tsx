@@ -256,7 +256,7 @@ export function LogConsole({
             value={history}
             onChange={e => { const n = Number(e.target.value); setHistory(n); onHistoryLengthChange?.(n); }}
             data-feature-id="logs-history"
-            title="How many recent lines to keep"
+            aria-label="How many recent lines to keep"
             className="px-2 min-h-control text-xs font-bold bg-white border border-slate-300 rounded-lg text-slate-600 focus:outline-none focus:border-accent-500"
           >
             {historyOptions.map(n => <option key={n} value={n}>{n >= 1000 ? `${n / 1000}k` : n} lines</option>)}

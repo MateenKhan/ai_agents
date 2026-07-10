@@ -86,11 +86,10 @@ function ToastRow({ t, onDismiss }: { t: Toast; onDismiss: (id: number) => void 
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       data-feature-id="toast"
-      // A11Y (safety, not polish): agents autonomously edit and merge a git repo, and this
-      // is the only channel that says so. Errors interrupt (assertive); success/info wait for
-      // a pause (polite). Announced on insert, so the 4.2s auto-dismiss doesn't matter to AT.
-      role={t.kind === 'error' ? 'alert' : 'status'}
-      aria-live={t.kind === 'error' ? 'assertive' : 'polite'}
+      // The live region is the CONTAINER, not this row — see ToastProvider. A row is created
+      // at announce time, and a screen reader subscribes to regions that already exist; it
+      // cannot subscribe to a node that arrives carrying its own aria-live. `aria-atomic`
+      // stays here so the row is read as one unit rather than piecemeal.
       aria-atomic="true"
       className={`pointer-events-auto w-full sm:w-auto sm:min-w-[320px] sm:max-w-md bg-white border ${s.ring} rounded-xl shadow-lg shadow-slate-500/15 overflow-hidden flex`}
     >
@@ -151,18 +150,37 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     dismiss,
   };
 
+  // A11Y (safety, not polish): agents autonomously edit and merge a git repo, and this is the
+  // only channel that says so. A live region must EXIST BEFORE its content changes — a screen
+  // reader subscribes to the region, not to arriving nodes. Both containers below are therefore
+  // rendered unconditionally, empty, for the life of the app; inserting a row into one is the
+  // change that gets announced.
+  //
+  // Two of them, because one element cannot be both assertive and polite. Errors interrupt
+  // ("Merge failed"); success/info wait for a pause ("Task merged"). Splitting by kind also
+  // means a stream of successes can never delay an error announcement behind it in the queue.
+  //
+  // `aria-atomic="false"` overrides the implicit `true` that role=alert/status carry: without
+  // it, adding one toast re-announces every toast still on screen.
+  const errors = toasts.filter(t => t.kind === 'error');
+  const rest = toasts.filter(t => t.kind !== 'error');
+  const stack = 'flex flex-col gap-2 items-stretch sm:items-end w-full sm:w-auto';
+
   return (
     <ToastCtx.Provider value={api}>
       {children}
       {/* Stack: bottom-right. Newest at the bottom; older ones move up as new arrive. */}
-      <div
-        role="region"
-        aria-label="Notifications"
-        className="fixed z-[85] bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 left-4 sm:left-auto sm:right-6 flex flex-col gap-2 items-stretch sm:items-end pointer-events-none"
-      >
-        <AnimatePresence initial={false}>
-          {toasts.map(t => <ToastRow key={t.id} t={t} onDismiss={dismiss} />)}
-        </AnimatePresence>
+      <div className="fixed z-[85] bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 left-4 sm:left-auto sm:right-6 flex flex-col gap-2 items-stretch sm:items-end pointer-events-none">
+        <div role="alert" aria-live="assertive" aria-atomic="false" aria-label="Errors" className={stack}>
+          <AnimatePresence initial={false}>
+            {errors.map(t => <ToastRow key={t.id} t={t} onDismiss={dismiss} />)}
+          </AnimatePresence>
+        </div>
+        <div role="status" aria-live="polite" aria-atomic="false" aria-label="Notifications" className={stack}>
+          <AnimatePresence initial={false}>
+            {rest.map(t => <ToastRow key={t.id} t={t} onDismiss={dismiss} />)}
+          </AnimatePresence>
+        </div>
       </div>
     </ToastCtx.Provider>
   );

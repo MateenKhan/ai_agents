@@ -41,7 +41,12 @@
   /* ── Motion: dread is quiet ─────────────────────────────────────────────────
      WCAG 2.2.2 — anything that moves indefinitely needs an escape hatch. Beyond the
      standard: a screen where a dozen dots pulse forever reads as panic, not care.
-     Steady-state motion is suppressed for users who ask; transient feedback survives. */
+     Steady-state motion is suppressed for users who ask; transient feedback survives.
+
+     SCOPE: this rule reaches CSS only — animate-pulse, animate-spin, transitions. Framer
+     Motion animates inline transforms from JS on rAF and is invisible to it. The other
+     half of this promise is <MotionConfig reducedMotion="user"> in main.tsx. Both are
+     required; neither is sufficient. */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration: 0.01ms !important;

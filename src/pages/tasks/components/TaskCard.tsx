@@ -104,7 +104,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               draggable={false}
               onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
               className="w-5 h-5 accent-accent-600 rounded"
-              title="Select task"
+              aria-label="Select task"
             />
           </label>
           <h3 className="text-sm font-semibold text-slate-900 leading-snug line-clamp-2 pt-1.5">
@@ -267,7 +267,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
               value={task.status}
               onChange={(e) => onMove(task.id, e.target.value)}
               data-feature-id="task-card-move"
-              title="Move to lane"
+              aria-label="Move to lane"
               className="w-full min-h-control-lg appearance-none pl-8 pr-2 text-2xs font-bold uppercase tracking-wide bg-slate-50 text-slate-700 border border-slate-300 rounded-lg active:bg-slate-100 sm:hover:bg-slate-100 transition-colors cursor-pointer"
             >
               {/* Keep the current status selectable even if its lane is hidden/removed. */}
