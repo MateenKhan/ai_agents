@@ -249,6 +249,46 @@ function startDbProbe(): void {
 // dead-letters to BLOCKED (env RESCUE_MAX, default 1 — one re-plan then human).
 const MAX_RESCUE = Math.max(0, parseInt(process.env.RESCUE_MAX || '') || 1);
 
+// ── what a failure MEANS ───────────────────────────────────────────────────────
+/** An infrastructure failure says nothing about the task. The API (or the DB) was
+ *  unreachable, so no agent ever got to judge the work. `timeout`/`stall`/`crash` are
+ *  task-specific — the agent ran and misbehaved — and those DO consume the budget. */
+export function isInfraFailure(kind: FailureKind): boolean { return kind === 'network'; }
+
+/** What to do about a failed run. Pure, so the policy can be tested without a live agent —
+ *  which matters because the expensive mistakes here are silent: escalating an outage to an
+ *  opus architect, or dead-lettering work that was never actually evaluated. */
+export type FailureAction = 'retry' | 'infra-wait' | 'rescue' | 'human-review' | 'dead-letter';
+
+export function decideFailure(a: {
+  failure: FailureKind;
+  stage?: Stage | null;
+  attempts: number;
+  maxAttempts: number;
+  rescueCount: number;
+  maxRescue: number;
+  architectEnabled: boolean;
+}): FailureAction {
+  // FIRST, before the budget is even consulted. The Anthropic API being down is not a fact
+  // about this task: the circuit breaker opens on the 3rd network failure and maxAttempts is
+  // also 3, so an outage used to exhaust the budget on the very tick the breaker tripped —
+  // waking an opus architect to "re-plan" a task whose plan was never the problem, and then
+  // dead-lettering it when the architect's own run failed for the same reason.
+  if (isInfraFailure(a.failure)) return 'infra-wait';
+
+  if (a.attempts < a.maxAttempts) return 'retry';
+
+  // The owner's ACCEPT gate is advisory and runs on QA-approved work. A broken reviewer must
+  // not condemn good work — hand it to the human instead.
+  if (a.stage === 'accept') return 'human-review';
+
+  // A genuine dev/qa failure earns ONE architect re-plan. Architect stages (plan/rescue/merge)
+  // have nobody above them to appeal to.
+  if ((a.stage === 'build' || a.stage === 'qa') && a.rescueCount < a.maxRescue && a.architectEnabled) return 'rescue';
+
+  return 'dead-letter';
+}
+
 // ── business owner gates ───────────────────────────────────────────────────────
 /** Owner gates are ON unless explicitly disabled — the user owns the definition of done. */
 const ownerEnabled = (): boolean => t().enableOwner !== false;
@@ -464,27 +504,42 @@ async function deadLetter(id: string, note: string): Promise<void> {
 async function failTask(task: Task, kind: FailureKind, note: string): Promise<void> {
   breakerFailure(kind);
   const attempts = task.attempts || 0;
-  if (attempts < maxAttempts()) { await scheduleRetry(task.id, attempts, note); return; }
-  // Retries exhausted. A genuine dev/qa failure gets ONE architect rescue (re-plan) before we
-  // give up — the architect diagnoses and hands a fresh brief back to the dev. Architect-stage
-  // failures (plan/rescue/merge) and rescue-budget exhaustion dead-letter straight to BLOCKED.
-  const stage = task.stage;
-  // The owner's ACCEPT gate is advisory, and it runs on work QA has already passed. A broken
-  // reviewer must not condemn good work: fall through to the human instead of BLOCKED. The
-  // INTAKE gate is different — nothing has been built and there are no scenarios, so there is
-  // nothing to hand onward; that one dead-letters like any other planning failure.
-  if (stage === 'accept') {
-    await updateTask(task.id, { stage: 'review', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0 });
-    log(task.id, `🧑‍💼 business owner could not complete its review (${note}) — passing QA-approved work to Human Review`, 'warning');
-    return;
-  }
-  const canRescue = (stage === 'build' || stage === 'qa')
-    && (task.rescueCount || 0) < MAX_RESCUE
-    && t().enableArchitect !== false; // no architect enabled → nobody to re-plan
-  if (canRescue) {
-    await escalateToArchitect(task, `${maxAttempts()} attempts exhausted (${note})`);
-  } else {
-    await deadLetter(task.id, `${maxAttempts()} attempts exhausted (${note})`);
+  const action = decideFailure({
+    failure: kind,
+    stage: task.stage,
+    attempts,
+    maxAttempts: maxAttempts(),
+    rescueCount: task.rescueCount || 0,
+    maxRescue: MAX_RESCUE,
+    architectEnabled: t().enableArchitect !== false,
+  });
+
+  switch (action) {
+    case 'infra-wait': {
+      // REFUND the attempt. dispatch() already spent one before the agent even reached the API,
+      // and an outage must not eat a task's retry budget — otherwise a five-minute Anthropic
+      // blip permanently costs every in-flight task a third of its lives.
+      const refunded = Math.max(0, attempts - 1);
+      await updateTask(task.id, { attempts: refunded });
+      // Back off on the OUTAGE's severity (consecutive network failures), not on this task's
+      // attempt count — which we just refunded and which no longer tracks anything real.
+      await scheduleRetry(task.id, Math.min(6, breaker.failures), `infrastructure unavailable — ${note}`);
+      log(task.id, `🌐 infrastructure failure (${note}) — attempt refunded, stage kept; waiting for the API to return`, 'warning');
+      return;
+    }
+    case 'retry':
+      await scheduleRetry(task.id, attempts, note);
+      return;
+    case 'human-review':
+      await updateTask(task.id, { stage: 'review', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0 });
+      log(task.id, `🧑‍💼 business owner could not complete its review (${note}) — passing QA-approved work to Human Review`, 'warning');
+      return;
+    case 'rescue':
+      await escalateToArchitect(task, `${maxAttempts()} attempts exhausted (${note})`);
+      return;
+    case 'dead-letter':
+      await deadLetter(task.id, `${maxAttempts()} attempts exhausted (${note})`);
+      return;
   }
 }
 

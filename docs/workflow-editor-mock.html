@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Piranha — Workflow Editor (design mock)</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOKENS — lifted verbatim from tailwind.config.js + src/index.css.
+   Change them here and the whole mock re-themes, same as the real app.
+   ═══════════════════════════════════════════════════════════════════════ */
+:root{
+  /* Piranha brand accent. IDENTITY only — never a routine action button. */
+  --accent-50:#fff1ee; --accent-100:#ffe0d9; --accent-300:#ff9a83;
+  --accent-500:#ff3b1d; --accent-600:#e62e12; --accent-700:#bf2410;
+  /* "the machine's doing" — agents, skills, AI surfaces. Never danger. */
+  --ai-50:#f5f3ff; --ai-100:#ede9fe; --ai-300:#c4b5fd; --ai-500:#8b5cf6; --ai-600:#7c3aed; --ai-700:#6d28d9;
+  /* dark terminal surfaces */
+  --surface-terminal:#0d1117; --surface-console:#080e1d; --surface-panel:#0f172a; --surface-border:#1e2d45;
+  /* slate neutrals */
+  --s50:#f8fafc; --s100:#f1f5f9; --s200:#e2e8f0; --s300:#cbd5e1; --s400:#94a3b8;
+  --s500:#64748b; --s600:#475569; --s700:#334155; --s800:#1e293b; --s900:#0f172a; --s950:#020617;
+  /* semantic status — deliberately NOT the brand red */
+  --rose-100:#ffe4e6; --rose-300:#fda4af; --rose-500:#f43f5e; --rose-600:#e11d48;
+  --amber-100:#fef3c7; --amber-500:#f59e0b; --amber-600:#d97706;
+  --emerald-100:#d1fae5; --emerald-500:#10b981; --emerald-600:#059669;
+  --sky-100:#e0f2fe; --sky-500:#0ea5e9; --sky-600:#0284c7;
+
+  --ctrl:36px;      /* pointer control */
+  --ctrl-lg:44px;   /* HIG touch minimum */
+}
+
+/* 15px root: pro density. Everything below inherits it. */
+html{font-size:15px}
+*,*::before,*::after{box-sizing:border-box}
+body{
+  margin:0; font-weight:400; background:var(--s100); color:var(--s900);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+/* Focus is a safety feature — one high-contrast ring, keyboard only. */
+:where(a,button,input,select,summary,[tabindex]):focus-visible{
+  outline:2px solid var(--s900); outline-offset:2px; border-radius:.5rem;
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* ── type ramp: bold must be earned ─────────────────────────────────────── */
+.eyebrow{font-size:10px;line-height:14px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--s500)}
+.micro{font-size:10px;line-height:14px}
+.xs2{font-size:11px;line-height:16px}
+
+/* ── buttons: 3-tier danger hierarchy ───────────────────────────────────── */
+.btn-primary{min-height:var(--ctrl-lg);padding:0 1.25rem;font-size:.875rem;font-weight:700;color:#fff;background:var(--s900);border:0;border-radius:.75rem;box-shadow:0 10px 15px -3px rgb(15 23 42 / .15);display:inline-flex;align-items:center;gap:.5rem;cursor:pointer}
+.btn-primary:hover{background:var(--s800)}
+.btn-danger{min-height:var(--ctrl-lg);padding:0 1.25rem;font-size:.875rem;font-weight:900;color:#fff;background:var(--rose-600);border:0;border-radius:.75rem;box-shadow:0 0 0 2px var(--rose-300),0 10px 15px -3px rgb(225 29 72 / .3);display:inline-flex;align-items:center;gap:.5rem;cursor:pointer}
+.btn-danger:hover{background:var(--rose-500)}
+.btn-sm{min-height:var(--ctrl);padding:0 .75rem;font-size:.75rem;font-weight:700;color:var(--s700);background:#fff;border:1px solid var(--s300);border-radius:.5rem;display:inline-flex;align-items:center;gap:.375rem;cursor:pointer}
+.btn-sm:hover{background:var(--s50)}
+.icon-btn{min-height:var(--ctrl);min-width:var(--ctrl);border-radius:.5rem;border:1px solid var(--s200);background:var(--s100);color:var(--s500);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.icon-btn:hover{background:var(--s200);color:var(--s900)}
+.icon-btn:active{transform:scale(.97)}
+
+/* ── shell ──────────────────────────────────────────────────────────────── */
+.app{display:flex;flex-direction:column;min-height:100vh}
+header{display:flex;align-items:center;gap:1rem;padding:.75rem 1.25rem;background:#fff;border-bottom:1px solid var(--s200);flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:.5rem;font-weight:700}
+.logo .dot{width:1.5rem;height:1.5rem;border-radius:.5rem;background:var(--accent-500);display:grid;place-items:center;color:#fff;font-size:12px;font-weight:900}
+.spacer{flex:1}
+
+/* segmented Edit | Run — the SAME graph, two modes. */
+.seg{display:inline-flex;background:var(--s100);border:1px solid var(--s200);border-radius:.625rem;padding:2px}
+.seg button{min-height:var(--ctrl);padding:0 .875rem;font-size:.75rem;font-weight:700;border:0;background:transparent;color:var(--s600);border-radius:.5rem;cursor:pointer}
+.seg button[aria-pressed=true]{background:#fff;color:var(--s900);box-shadow:0 1px 2px rgb(0 0 0/.06)}
+
+/* ── validator banner: refuses to save a graph that can strand a task ───── */
+.validator{display:flex;align-items:center;gap:.625rem;padding:.5rem 1.25rem;font-size:.75rem;font-weight:700;border-bottom:1px solid}
+.validator.ok{background:var(--emerald-100);color:#065f46;border-color:#a7f3d0}
+.validator.bad{background:var(--rose-100);color:#9f1239;border-color:var(--rose-300)}
+
+main{flex:1;display:grid;grid-template-columns:1fr 320px;gap:0;min-height:0}
+@media (max-width:900px){main{grid-template-columns:1fr}.inspector{border-left:0;border-top:1px solid var(--s200)}}
+
+/* ── canvas ─────────────────────────────────────────────────────────────── */
+.canvas{position:relative;padding:2rem 1.25rem 1.25rem;overflow:auto}
+.lane{display:flex;align-items:stretch;gap:0;flex-wrap:nowrap;min-width:max-content;padding-bottom:1rem}
+
+.node{
+  position:relative;width:190px;background:#fff;border:1px solid var(--s200);
+  border-radius:.875rem;padding:.75rem;box-shadow:0 1px 2px rgb(0 0 0/.04);cursor:pointer;
+}
+.node[data-selected=true]{border-color:var(--s900);box-shadow:0 0 0 2px var(--s900)}
+.node[data-active=true]{border-color:var(--accent-500);box-shadow:0 0 0 2px var(--accent-100)}
+.node[data-human=true]{background:linear-gradient(180deg,#fff, var(--accent-50))}
+
+.node h3{margin:.25rem 0 .125rem;font-size:.875rem;font-weight:700}
+.role{display:inline-flex;align-items:center;gap:.25rem;padding:2px .375rem;border-radius:.375rem;font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase}
+.role.agent{background:var(--ai-50);color:var(--ai-700);border:1px solid var(--ai-100)}
+.role.human{background:var(--accent-50);color:var(--accent-700);border:1px solid var(--accent-100)}
+
+.meta{display:flex;gap:.25rem;flex-wrap:wrap;margin-top:.5rem}
+.chip{font-size:10px;line-height:14px;font-weight:700;padding:2px .375rem;border-radius:.375rem;background:var(--s100);color:var(--s600);border:1px solid var(--s200)}
+.chip.warn{background:var(--amber-100);color:#92400e;border-color:#fde68a}
+
+/* forward edge */
+.edge{display:flex;align-items:center;justify-content:center;width:44px;color:var(--s400);flex-shrink:0}
+.edge svg{width:100%;height:20px}
+
+/* run-mode: current stage */
+.pulse{position:absolute;top:-7px;right:-7px;width:14px;height:14px;border-radius:50%;background:var(--accent-500);box-shadow:0 0 0 4px var(--accent-100)}
+
+/* reject edges — return to SENDER, drawn under the lane */
+.rejects{margin-top:.5rem;border-top:1px dashed var(--s300);padding-top:.75rem}
+.rejects table{width:100%;border-collapse:collapse;font-size:11px}
+.rejects th{text-align:left;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--s500);padding:.25rem .5rem}
+.rejects td{padding:.375rem .5rem;border-top:1px solid var(--s200);color:var(--s700)}
+.rejects code{background:var(--s100);border:1px solid var(--s200);border-radius:.25rem;padding:1px .25rem}
+.hop{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--rose-500);margin-right:.375rem}
+
+/* ── inspector ──────────────────────────────────────────────────────────── */
+.inspector{background:#fff;border-left:1px solid var(--s200);padding:1rem;overflow:auto}
+.field{margin-bottom:.875rem}
+.field label{display:block;font-size:11px;font-weight:700;color:var(--s600);margin-bottom:.25rem}
+.field input,.field select{width:100%;min-height:var(--ctrl);padding:0 .625rem;font-size:.8125rem;border:1px solid var(--s300);border-radius:.5rem;background:#fff;color:var(--s900)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+hr{border:0;border-top:1px solid var(--s200);margin:1rem 0}
+
+/* ── exceptions: NOT edges. They pause the pipeline; the task stays put. ── */
+.exceptions{background:var(--surface-panel);color:#cbd5e1;padding:1rem 1.25rem;border-top:1px solid var(--surface-border)}
+.exceptions .eyebrow{color:var(--s400)}
+.exgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.625rem;margin-top:.625rem}
+.ex{background:var(--surface-console);border:1px solid var(--surface-border);border-radius:.625rem;padding:.625rem .75rem}
+.ex .name{display:flex;align-items:center;gap:.5rem;font-size:.8125rem;font-weight:700;color:#e2e8f0}
+.led{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.led.ok{background:var(--emerald-500)}
+.led.hot{background:var(--amber-500)}
+.led.open{background:var(--rose-500)}
+.ex p{margin:.375rem 0 0;font-size:11px;line-height:1.45;color:#94a3b8}
+.ex .act{margin-top:.375rem;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--sky-500)}
+
+/* ── run-mode task strip ────────────────────────────────────────────────── */
+.runbar{display:none;align-items:center;gap:1rem;padding:.625rem 1.25rem;background:var(--s900);color:#fff;flex-wrap:wrap}
+body[data-mode=run] .runbar{display:flex}
+body[data-mode=run] .inspector{display:none}
+body[data-mode=run] main{grid-template-columns:1fr}
+body[data-mode=edit] .pulse{display:none}
+.runbar a{color:var(--accent-300);font-weight:700;text-decoration:none;font-size:.75rem}
+.runbar a:hover{text-decoration:underline}
+.hops{font-size:.75rem;font-weight:700}
+.hops b{color:var(--accent-300)}
+</style>
+</head>
+<body data-mode="edit">
+<div class="app">
+
+  <header>
+    <div class="logo"><span class="dot">P</span> Piranha</div>
+    <span class="xs2" style="color:var(--s500)">Workflow</span>
+    <div class="spacer"></div>
+    <div class="seg" role="group" aria-label="Mode">
+      <button aria-pressed="true"  onclick="setMode('edit')">Edit</button>
+      <button aria-pressed="false" onclick="setMode('run')">Run</button>
+    </div>
+    <button class="btn-sm">Duplicate</button>
+    <button class="btn-primary">Save workflow</button>
+  </header>
+
+  <!-- The single most important control in the editor. A graph where some stage
+       cannot reach `merged` strands tasks in WORKING forever, invisibly. Save is
+       blocked until this is green. -->
+  <div class="validator ok">
+    <span>✓</span>
+    <span>Graph valid — every stage reachable, every stage has an enabled agent, <code class="mono">merged</code> reachable from <code class="mono">intake</code>.</span>
+  </div>
+
+  <!-- run mode only -->
+  <div class="runbar">
+    <span class="eyebrow" style="color:var(--s400)">Task</span>
+    <span class="mono" style="font-size:.8125rem">UI-HERO-TAGLINE-1783573183</span>
+    <span class="hops">hops <b>3</b> / 10</span>
+    <span class="hops">attempt <b>2</b> / 3</span>
+    <span class="spacer"></span>
+    <a href="#">open task log ↗</a>
+    <a href="#">bounce history (3) ↗</a>
+  </div>
+
+  <main>
+    <section class="canvas">
+      <div class="lane" id="lane"></div>
+
+      <div class="rejects">
+        <div class="eyebrow" style="margin-bottom:.375rem">Reject — return to sender</div>
+        <table>
+          <thead><tr><th>Agent</th><th>Received from</th><th>Reject goes back to</th><th>Typical reason</th></tr></thead>
+          <tbody>
+            <tr><td>architect</td><td>owner</td><td><code>owner</code></td><td>scenarios vague or contradictory</td></tr>
+            <tr><td>dev</td><td>architect</td><td><code>architect</code></td><td>brief wrong / incomplete</td></tr>
+            <tr><td>dev</td><td>qa <span class="xs2" style="color:var(--s500)">(after a fail)</span></td><td><code>qa</code></td><td>“your test is wrong, not my code”</td></tr>
+            <tr><td>dev</td><td>owner</td><td><code>owner</code></td><td>“that isn’t what the scenarios said”</td></tr>
+            <tr><td>qa</td><td>dev</td><td><code>dev</code></td><td>cannot verify as built</td></tr>
+          </tbody>
+        </table>
+        <p class="xs2" style="color:var(--s500);margin:.625rem .5rem 0">
+          <span class="hop"></span>Every reject is <b>one hop</b>, whatever the direction — including
+          <code>dev → qa</code>, which moves <i>forward</i> in stage order and so cannot be counted by
+          position. At <b>10 hops</b> the task goes to a human with the full bounce log. Never BLOCKED.
+        </p>
+      </div>
+    </section>
+
+    <aside class="inspector">
+      <div class="eyebrow">Stage</div>
+      <h2 style="margin:.25rem 0 1rem;font-size:1.125rem;font-weight:700">build</h2>
+
+      <div class="field">
+        <label for="f-role">Agent</label>
+        <select id="f-role"><option>dev</option><option>architect</option><option>qa</option><option>owner</option><option>+ new agent…</option></select>
+      </div>
+      <div class="field">
+        <label for="f-model">Model</label>
+        <select id="f-model"><option>sonnet</option><option>opus</option><option>haiku</option></select>
+      </div>
+      <div class="field">
+        <label for="f-wt">Worktree mode</label>
+        <select id="f-wt"><option>create</option><option>reuse</option><option>plan</option><option>none</option></select>
+      </div>
+
+      <hr>
+      <div class="eyebrow" style="margin-bottom:.625rem">Retries &amp; timeouts</div>
+      <div class="row2">
+        <div class="field"><label for="f-att">Max attempts</label><input id="f-att" type="number" value="3"></div>
+        <div class="field"><label for="f-bo">Backoff (s)</label><input id="f-bo" type="number" value="30"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="f-run">Hard timeout (min)</label><input id="f-run" type="number" value="30"></div>
+        <div class="field"><label for="f-stall">Stall kill (s)</label><input id="f-stall" type="number" value="180"></div>
+      </div>
+      <div class="field"><label for="f-lease">Lease (min)</label><input id="f-lease" type="number" value="15"></div>
+
+      <hr>
+      <div class="eyebrow" style="margin-bottom:.625rem">Caps</div>
+      <div class="row2">
+        <div class="field"><label for="f-hops">Global hop cap</label><input id="f-hops" type="number" value="10"></div>
+        <div class="field"><label for="f-rescue">Rescues</label><input id="f-rescue" type="number" value="1"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label for="f-owner">Owner bounces</label><input id="f-owner" type="number" value="2"></div>
+        <div class="field"><label for="f-merge">Merge bounces</label><input id="f-merge" type="number" value="3"></div>
+      </div>
+
+      <hr>
+      <button class="btn-danger" style="width:100%">Remove stage</button>
+      <p class="xs2" style="color:var(--s500);margin-top:.5rem">
+        Removing a stage re-runs the validator. If it orphans <code>merged</code>, the save is refused.
+      </p>
+    </aside>
+  </main>
+
+  <!-- Exceptions are RUNTIME CONDITIONS, not graph edges. They hold dispatch; the task
+       does not move. Drawing them as edges would make the workflow lie. -->
+  <section class="exceptions">
+    <div class="eyebrow">Runtime conditions — these pause the pipeline, they do not route the task</div>
+    <div class="exgrid">
+      <div class="ex">
+        <div class="name"><span class="led hot"></span> RAM above 80%</div>
+        <p>Resource gate holds dispatch. Running agents finish; nothing new spawns.</p>
+        <div class="act">Hold → retry next tick</div>
+      </div>
+      <div class="ex">
+        <div class="name"><span class="led open"></span> Claude API down</div>
+        <p>Circuit breaker opens after repeated network failures. Task keeps its stage.</p>
+        <div class="act">Backoff → half-open probe</div>
+      </div>
+      <div class="ex">
+        <div class="name"><span class="led ok"></span> Database unreachable</div>
+        <p>db-breaker pauses board reads/writes. Orchestrator stops claiming work.</p>
+        <div class="act">Pause → heal → resume</div>
+      </div>
+      <div class="ex">
+        <div class="name"><span class="led hot"></span> Agent stalled / hard timeout</div>
+        <p>No output for the stall window, or over the run cap. Process is killed.</p>
+        <div class="act">Kill → retry (attempts)</div>
+      </div>
+      <div class="ex">
+        <div class="name"><span class="led open"></span> Retries exhausted</div>
+        <p>Rescue budget spent, or hop cap reached.</p>
+        <div class="act">→ Human review</div>
+      </div>
+      <div class="ex">
+        <div class="name"><span class="led ok"></span> Project not ready</div>
+        <p>No cloned repo, unconfirmed run-config, or unverified preview.</p>
+        <div class="act">Block dispatch loudly</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+/* The graph is DATA. This mock hard-codes it; the real one loads it from the DB and the
+   same array drives both Edit and Run rendering. Field names here are placeholders —
+   the backend owns the real schema. */
+const STAGES = [
+  { id:'intake',  role:'owner',     kind:'agent', model:'opus',   caps:'bounce 2' },
+  { id:'plan',    role:'architect', kind:'agent', model:'opus',   caps:'rescue 1' },
+  { id:'build',   role:'dev',       kind:'agent', model:'sonnet', caps:'attempts 3', selected:true },
+  { id:'qa',      role:'qa',        kind:'agent', model:'sonnet', caps:'attempts 3', active:true },
+  { id:'accept',  role:'owner',     kind:'agent', model:'opus',   caps:'bounce 2' },
+  { id:'review',  role:'you',       kind:'human', model:'—',      caps:'no timeout' },
+  { id:'merge',   role:'architect', kind:'agent', model:'opus',   caps:'conflict 3' },
+  { id:'merged',  role:'—',         kind:'human', model:'—',      caps:'terminal' },
+];
+
+const ARROW = `<svg viewBox="0 0 44 20" aria-hidden="true"><line x1="2" y1="10" x2="34" y2="10" stroke="currentColor" stroke-width="1.5"/><path d="M34 5l8 5-8 5z" fill="currentColor"/></svg>`;
+
+document.getElementById('lane').innerHTML = STAGES.map((s,i) => {
+  const node = `
+    <div class="node" data-selected="${!!s.selected}" data-active="${!!s.active}" data-human="${s.kind==='human'}" tabindex="0">
+      ${s.active ? '<span class="pulse" title="current stage"></span>' : ''}
+      <span class="role ${s.kind}">${s.kind === 'human' ? 'human' : s.role}</span>
+      <h3 class="mono">${s.id}</h3>
+      <div class="micro" style="color:var(--s500)">${s.model}</div>
+      <div class="meta">
+        <span class="chip">${s.caps}</span>
+        ${s.active ? '<span class="chip warn">running 4m</span>' : ''}
+      </div>
+    </div>`;
+  return node + (i < STAGES.length - 1 ? `<div class="edge">${ARROW}</div>` : '');
+}).join('');
+
+function setMode(m){
+  document.body.dataset.mode = m;
+  document.querySelectorAll('.seg button').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.textContent.trim().toLowerCase() === m)));
+}
+</script>
+</body>
+</html>
