@@ -10,7 +10,8 @@ import { join } from 'node:path';
 import type { Task, AgentRole, AgentConfig } from '../types';
 import { getConfig } from '../runtime-context';
 import { scenariosToGherkin, getProject } from '../db/tasks';
-import { keepInContext, estimateTokens } from '../db/context';
+import { keepInContext, estimateTokens, listContext } from '../db/context';
+import type { ConsultEntry } from '../types';
 
 // Project rule files agents must obey — team conventions, functionality index, agent guides.
 // Checked in order; the first-found variants are surfaced. Extend freely.
@@ -144,6 +145,62 @@ function outcomesBlock(taskId: string, outcomes: PromptOutcome[]): string {
   ].join('\n');
 }
 
+/** One agent this stage is permitted to consult mid-task. `to` is the value the agent reports
+ *  (an entry from the stage's `asks`); `agent` is a human label for the role that will answer. */
+export interface PromptAsk { to: string; agent?: string; hint?: string }
+
+/**
+ * The block that tells an agent it MAY consult a peer mid-task, and shows any answers it has
+ * already been given. Gated on `asks`: a stage that consults no one renders nothing.
+ *
+ * A consult is not a handoff — the agent reports a question, exits, and is re-run at the SAME
+ * stage once the advisor answers. The prompt lists ONLY the peers this stage's `asks` grants, so
+ * an agent cannot reach for a role the graph never authorised.
+ */
+export function consultBlock(taskId: string, asks: PromptAsk[], consultLog: ConsultEntry[] = []): string {
+  if (!asks.length) return '';
+  const who = asks.map(a => `  - "${a.to}"${a.agent ? ` — the ${a.agent}` : ''}${a.hint ? ` (${a.hint})` : ''}`);
+  const lines = [
+    'CONSULT (optional) — you MAY ask ONE of the peers below for advice when a specific question',
+    'is blocking you and they are the right source. You then STOP; the orchestrator gets their',
+    'answer and RE-RUNS you here with it — this is NOT a handoff, your task stays at this stage.',
+    'You may consult at most twice at this stage. Report the name EXACTLY as written:',
+    ...who,
+    '',
+    `  curl -X PUT http://127.0.0.1:6952/tasks/${taskId} -H "Content-Type: application/json" -d '{"consult":{"to":"<one of the above>","question":"<your specific question>"}}'`,
+  ];
+  const answered = consultLog.filter(e => e.answer);
+  if (answered.length) {
+    lines.push('', 'ANSWERS TO YOUR EARLIER CONSULTS (already returned — act on these, do not ask again):');
+    for (const e of answered) lines.push(`  • you asked "${e.to}": ${e.question}`, `    → ${e.answer}`);
+  }
+  return lines.join('\n');
+}
+
+/** Cap on how many shared-context files a prompt lists — enough signal, not a wall of paths. */
+const CONTEXT_BLOCK_LIMIT = 8;
+
+/**
+ * The shared "files the swarm keeps using" block. Reads the project's context memory (the set
+ * search WRITES into, ranked by useCount), and hands the agent the most-used PATHS so it opens
+ * what other work already found load-bearing — never the contents. Ranked by useCount desc,
+ * capped, paths only. Empty context → no block.
+ */
+export async function contextBlock(task: Task): Promise<string> {
+  const projectId = (task as any).projectId || 'default';
+  let files;
+  try { files = await listContext(projectId); } catch { return ''; }
+  if (!files?.length) return '';
+  const ranked = [...files]
+    .sort((a, b) => (b.useCount - a.useCount) || (a.lastUsedAt < b.lastUsedAt ? 1 : -1))
+    .slice(0, CONTEXT_BLOCK_LIMIT);
+  if (!ranked.length) return '';
+  return [
+    'Files the swarm keeps using here — read these first:',
+    ...ranked.map(f => `  - ${f.path}`),
+  ].join('\n');
+}
+
 /**
  * Render an agent's template for a task.
  *
@@ -155,7 +212,12 @@ export async function renderPrompt(
   agent: AgentConfig,
   task: Task,
   stage: string,
-  opts: { promptRef?: 'default' | 'merge' | 'accept' | 'rescue'; outcomes?: PromptOutcome[] } = {},
+  opts: {
+    promptRef?: 'default' | 'merge' | 'accept' | 'rescue';
+    outcomes?: PromptOutcome[];
+    /** The peers this stage may consult (from the stage's `asks`). Absent/empty → no block. */
+    asks?: PromptAsk[];
+  } = {},
 ): Promise<string> {
   const cfg = getConfig();
   // A task escalated by a `blocked` outcome carries a BLOCKED note; give the architect its
@@ -185,6 +247,11 @@ export async function renderPrompt(
     searchProtocol: searchProtocolFor((task as any).projectId || 'default'),
     qaUrl: cfg.qa?.testUrl || '(no QA_TEST_URL configured — verify via tests only)',
     outcomes: outcomesBlock(task.id, opts.outcomes ?? []),
+    // A consult invitation (only the peers this stage's `asks` grants) plus any answers already
+    // returned — the latter is how a re-dispatched agent sees the advice it asked for.
+    consult: consultBlock(task.id, opts.asks ?? [], task.consultLog ?? []),
+    // Shared "files the swarm keeps using" — the READ side of the context memory search writes.
+    context: await contextBlock(task),
   };
 
   let out = template.replace(/\{\{(\w+)\}\}/g, (_, k) => (k in values ? values[k] : ''));
@@ -193,6 +260,14 @@ export async function renderPrompt(
   // way to finish, and the orchestrator would fail it for reporting nothing. Append it.
   if (values.outcomes && !template.includes('{{outcomes}}')) {
     out = `${out}\n\n${values.outcomes}`;
+  }
+  // Same fallback for the consult and shared-context blocks: a template that never mentions the
+  // placeholder still gets the block appended, so the feature does not depend on template edits.
+  if (values.consult && !template.includes('{{consult}}')) {
+    out = `${out}\n\n${values.consult}`;
+  }
+  if (values.context && !template.includes('{{context}}')) {
+    out = `${out}\n\n${values.context}`;
   }
 
   if (task.reviewNote) {

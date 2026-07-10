@@ -151,6 +151,13 @@ const TASKS: Col[] = [
   { name: 'handoffFrom', type: 'text' },
   // Rejects used, in any direction. At the document's hopCap the task goes to a human.
   { name: 'hops', type: 'int' },
+  // Consult (agent-to-agent question, mid-task). `consultLog` is the audit trail of every
+  // completed consult ([{from,to,question,answer,at}]); `pendingConsult` holds the request an
+  // asking agent left before it exited ({to,question}); `consultAnswer` is the transient slot a
+  // read-only advisor writes its reply into, folded into consultLog and cleared on re-dispatch.
+  { name: 'consultLog', type: 'text' },
+  { name: 'pendingConsult', type: 'text' },
+  { name: 'consultAnswer', type: 'text' },
 ];
 
 const BOARD_SETTINGS: Col[] = [
@@ -348,6 +355,10 @@ const ADDITIVE: Array<[string, Col]> = [
   ['tasks', { name: 'lastOutcome', type: 'text' }],
   ['tasks', { name: 'handoffFrom', type: 'text' }],
   ['tasks', { name: 'hops', type: 'int' }],
+  // Consult (agent-to-agent question, mid-task).
+  ['tasks', { name: 'consultLog', type: 'text' }],
+  ['tasks', { name: 'pendingConsult', type: 'text' }],
+  ['tasks', { name: 'consultAnswer', type: 'text' }],
 ];
 
 /**

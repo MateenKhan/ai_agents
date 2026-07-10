@@ -3,6 +3,7 @@ import {
   allowedOutcomes, capsFor, entryStage, isHumanGate, mayWriteVerdict, modelFor,
   nearestHumanGate, ownsBranch, placeTask, reconcileVerdict, routeOutcome, routeReject, stageById,
   takesMergeLock, worktreeFor,
+  canConsult, consultsUsed, MAX_CONSULTS_PER_STAGE, MAX_CONSULTS_PER_TASK,
 } from '../route';
 import { defaultWorkflow } from '../defaultWorkflow';
 import type { WorkflowDoc } from '../types';
@@ -275,5 +276,61 @@ describe('caps', () => {
   it('a human gate has none — you do not retry a person', () => {
     expect(capsFor(s(doc, 'review'))).toBeNull();
     expect(capsFor(s(doc, 'merged'))).toBeNull();
+  });
+});
+
+// A consult is permitted only to a peer the graph's `asks` names, and only within the caps.
+// build's asks in the shipped workflow are ['plan', 'intake'].
+describe('canConsult', () => {
+  const build = () => s(doc, 'build');
+
+  it('permits a consult to a peer named in the stage asks, within the caps', () => {
+    expect(canConsult(build(), 'plan', 0, 0)).toEqual({ kind: 'ok' });
+    expect(canConsult(build(), 'intake', 1, 3)).toEqual({ kind: 'ok' });
+  });
+
+  it('refuses a peer the stage may not ask — the graph is the permission', () => {
+    // `qa` is a real stage, but build's asks do not include it. Inverting the check (allowing
+    // anything NOT listed) would make this pass — so it proves the permission direction.
+    const r = canConsult(build(), 'qa', 0, 0);
+    expect(r.kind).toBe('not-permitted');
+    expect(r.kind === 'not-permitted' && r.allowed).toEqual(['plan', 'intake']);
+  });
+
+  it('refuses once the per-stage cap is spent, even under the task cap', () => {
+    const r = canConsult(build(), 'plan', MAX_CONSULTS_PER_STAGE, MAX_CONSULTS_PER_STAGE);
+    expect(r.kind).toBe('stage-cap');
+    expect(r.kind === 'stage-cap' && r.cap).toBe(MAX_CONSULTS_PER_STAGE);
+    // one below the cap is still allowed — proves it is `>=`, not `>`
+    expect(canConsult(build(), 'plan', MAX_CONSULTS_PER_STAGE - 1, 0)).toEqual({ kind: 'ok' });
+  });
+
+  it('refuses once the per-task cap is spent, even with stage budget to spare', () => {
+    const r = canConsult(build(), 'plan', 0, MAX_CONSULTS_PER_TASK);
+    expect(r.kind).toBe('task-cap');
+    expect(r.kind === 'task-cap' && r.cap).toBe(MAX_CONSULTS_PER_TASK);
+  });
+
+  it('a stage with no asks may consult no one', () => {
+    expect(canConsult(s(doc, 'merge'), 'build', 0, 0).kind).toBe('not-permitted'); // merge asks: []
+  });
+});
+
+describe('consultsUsed', () => {
+  const log = [
+    { from: 'build', to: 'plan', question: 'q', answer: 'a', at: '' },
+    { from: 'build', to: 'intake', question: 'q', answer: 'a', at: '' },
+    { from: 'qa', to: 'plan', question: 'q', answer: 'a', at: '' },
+  ];
+
+  it('counts per-stage off each entry\'s `from`, and the whole task in total', () => {
+    expect(consultsUsed(log, 'build')).toEqual({ stage: 2, task: 3 });
+    expect(consultsUsed(log, 'qa')).toEqual({ stage: 1, task: 3 });
+    expect(consultsUsed(log, 'plan')).toEqual({ stage: 0, task: 3 });
+  });
+
+  it('treats a null/empty log as zero', () => {
+    expect(consultsUsed(null, 'build')).toEqual({ stage: 0, task: 0 });
+    expect(consultsUsed([], 'build')).toEqual({ stage: 0, task: 0 });
   });
 });

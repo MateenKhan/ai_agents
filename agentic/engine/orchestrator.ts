@@ -69,6 +69,7 @@ import { loadWorkflow } from '../workflow/store';
 import {
   placeTask, routeOutcome, routeReject, nearestHumanGate, allowedOutcomes, reconcileVerdict,
   mayWriteVerdict, takesMergeLock, worktreeFor as worktreeForStage, modelFor as modelForStage, capsFor,
+  stageById, canConsult, consultsUsed,
 } from '../workflow/route';
 import type { Stage as WfStage, WorkflowDoc } from '../workflow/types';
 import {
@@ -646,9 +647,13 @@ async function dispatch(task: Task, route: Routed, name: string): Promise<void> 
   try {
     // The agent is told the outcome words it may report, and never a stage name.
     const doc = await workflowFor(projectOf(task));
+    // The peers this stage may consult, resolved from its `asks` (each entry is a stage id whose
+    // agent advises). Labelled with that stage's role so the prompt names who answers.
+    const asks = (stage.asks ?? []).map(id => ({ to: id, agent: stageById(doc, id)?.agentRef ?? undefined }));
     prompt = await renderPrompt(ac, task, stage.id, {
       promptRef: stage.promptRef,
       outcomes: allowedOutcomes(doc, stage.id),
+      asks,
     });
   }
   catch (e: any) { await scheduleRetry(task.id, attempts, `prompt render failed: ${e?.message || e}`); return; }
@@ -873,6 +878,110 @@ function reportedOutcome(doc: WorkflowDoc, stage: WfStage, fresh: Task): { outco
   return { outcome: null, legacy: false };
 }
 
+/**
+ * A read-only ADVISOR answers a peer's consult. Spawned with worktree 'none' (no branch, no
+ * commits), on the target stage's model, and WAITED for — its onExit resolves the promise. The
+ * advisor writes its reply via `{"consultAnswer":…}`, which we read back off the task.
+ *
+ * DEPTH-1 lives here: the advisor's prompt offers no consult, and this run never goes through
+ * handleAgentExit, so an advisor can never itself trigger another consult.
+ */
+async function runAdvisor(name: string, task: Task, target: WfStage, ac: AgentConfig, model: string, pc: NonNullable<Task['pendingConsult']>): Promise<string> {
+  const role = (target.agentRef ?? ac.role) as AgentRole;
+  const prompt = [
+    `You are the ${role.toUpperCase()}, acting as a READ-ONLY ADVISOR. A peer agent working on`,
+    `task ${task.id} ("${task.title}") is blocked and has asked you a question. ANSWER it — do not`,
+    'do their work, do not write, edit, commit, or check out anything. You are advice, not hands.',
+    '',
+    'THEIR QUESTION:',
+    pc.question || '(no question text was given — give your best, specific guidance for this task)',
+    '',
+    'Use the shared code index to ground your answer, then reply concisely and concretely (cite',
+    'files as path:line where you can). When done, POST your answer and STOP — report NOTHING else',
+    '(no outcome, no verdict, no stage change):',
+    `  curl -X PUT http://127.0.0.1:6952/tasks/${task.id} -H "Content-Type: application/json" -d '{"consultAnswer":"<your answer>"}'`,
+  ].join('\n');
+
+  const skip = await skipPermissionsEnabled();
+  agentTaskMap.set(name, task.id);
+  log(task.id, `🔎 advisor ${role} (${model}) as ${name} — answering a peer's consult`, 'info');
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const done = () => { if (settled) return; settled = true; agentTaskMap.delete(name); resolve(); };
+    spawnHeadlessAgent({
+      agentName: name, taskId: task.id, role, prompt, model, worktree: 'none',
+      skipPermissions: skip, onExit: () => done(),
+    }).then(ok => { if (!ok) done(); }).catch(() => done());
+  });
+  const fresh = await getTask(task.id);
+  const answer = fresh?.consultAnswer?.trim();
+  return answer || '(the advisor returned no answer)';
+}
+
+/**
+ * Handle a pending consult on `task` at `stage`: validate it against the stage's `asks` and the
+ * caps, run the advisor, record the answer, and re-dispatch the SAME stage. A consult is not a
+ * hop and does not move the task; it also refunds its attempt so it never eats the retry budget.
+ */
+async function handleConsult(doc: WorkflowDoc, task: Task, stage: WfStage): Promise<void> {
+  breakerSuccess(); // the agent reached the API to post its consult — not an outage
+  const pc = task.pendingConsult!;
+  const clog = task.consultLog ?? [];
+  const used = consultsUsed(clog, stage.id);
+
+  // Re-dispatch the asking stage, clearing the pending consult. Refund the attempt dispatch()
+  // spent: a consult round-trip is not a failed run and must not consume the stage's budget.
+  const redispatch = async (note: string, type: 'info' | 'warning' = 'info') => {
+    await updateTask(task.id, {
+      pendingConsult: null, consultAnswer: null,
+      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
+      attempts: Math.max(0, (task.attempts || 1) - 1),
+    });
+    log(task.id, note, type);
+  };
+
+  const decision = canConsult(stage, pc.to, used.stage, used.task);
+  if (decision.kind !== 'ok') {
+    const why =
+      decision.kind === 'not-permitted' ? `"${stage.id}" may only consult: ${decision.allowed.join(', ') || 'no one'}`
+      : decision.kind === 'stage-cap' ? `consult cap for this stage reached (${decision.cap})`
+      : `consult cap for this task reached (${decision.cap})`;
+    await redispatch(`💬 ignoring consult to "${pc.to}" — ${why}; re-running "${stage.id}"`, 'warning');
+    return;
+  }
+
+  // `pc.to` is an entry from the stage's `asks` — a stage id whose agent is the advisor.
+  const target = stageById(doc, pc.to);
+  const advisorRole = target?.agentRef ?? null;
+  const agents = await agentMap();
+  const ac = advisorRole ? agents[advisorRole] : undefined;
+  if (!target || !ac || !ac.enabled) {
+    await redispatch(`💬 cannot consult "${pc.to}" — no runnable agent backs it; re-running "${stage.id}"`, 'warning');
+    return;
+  }
+
+  // Defer when there is no slot OR the resource gate is closed: an advisor is another agent
+  // process, so spawning one while RAM/CPU is saturated is exactly what canSpawn exists to
+  // prevent. Keep the pending consult so it retries on a later, healthier tick.
+  const name = (canSpawn(agentTaskMap.size) && getAvailableAgent()) || null;
+  if (!name) {
+    await updateTask(task.id, { started: null, claimedBy: null, leaseExpiresAt: null });
+    log(task.id, `💬 consult to "${pc.to}" deferred — no free slot or resources are tight; will retry`, 'info');
+    return;
+  }
+
+  const answer = await runAdvisor(name, task, target, ac, modelFor(target, ac), pc);
+  const entry = { from: stage.id, to: pc.to, question: pc.question, answer, at: new Date().toISOString() };
+  await updateTask(task.id, {
+    consultLog: [...clog, entry],
+    pendingConsult: null, consultAnswer: null,
+    started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
+    attempts: Math.max(0, (task.attempts || 1) - 1), // the consult round-trip is free
+  });
+  log(task.id, `💬 consulted "${pc.to}" (${advisorRole}) — answer stored; re-running "${stage.id}"`, 'success');
+  setStatus(`Consulted ${advisorRole} for "${task.title}" — resuming ${stage.id}`, true);
+}
+
 async function handleAgentExit(name: string, taskId: string, route: Routed, r: RunResult, verdictBefore: QaVerdict = null): Promise<void> {
   agentTaskMap.delete(name);
   const stage = route.stage;
@@ -910,6 +1019,14 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
   }
 
   if (r.failure === 'none') {
+    // CONSULT — the agent asked a peer for advice and exited (freeing its slot). This is neither
+    // an outcome nor a reject: run a read-only advisor, fold its answer into the log, and re-run
+    // THIS stage. Handled before the "reported nothing" path, since a consult reports no outcome.
+    if (fresh.pendingConsult && fresh.pendingConsult.to) {
+      await handleConsult(doc, fresh, stage);
+      return;
+    }
+
     const { outcome, legacy } = reportedOutcome(doc, stage, fresh);
 
     // The agent exited cleanly but reported nothing. Before blaming it, rule out an INFRA

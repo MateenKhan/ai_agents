@@ -1,12 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Project a task onto the workflow graph.
+// Project a task onto the workflow document.
 //
 // Pure, so the read-only "where is my task" view can be tested without a DOM. The rules are
 // small but easy to get subtly wrong, and a wrong answer here means the popup confidently
 // shows a task at the wrong stage.
+//
+// The graph is now the engine's `WorkflowDoc`: routing lives in each stage's `outcomes`, not in
+// a separate `edges` array. The happy path is the chain of FIRST outcomes from the entry — the
+// same order the pipeline runs when nothing rejects.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { WorkflowGraph } from './types';
+import type { WorkflowDoc } from './workflowApi';
 import type { RunSnapshot, RunState } from './WorkflowEditor';
 
 /** Minimal shape needed from a board task. Kept structural so this file imports no UI types. */
@@ -22,17 +26,20 @@ export interface TaskLike {
 }
 
 /**
- * The stage order, walked forward from `entry` along accept edges. A stage may have at most
- * one successor (the validator enforces it), so the walk is deterministic. Guarded against a
- * cycle: a malformed graph must not hang the browser.
+ * The stage order, walked forward from `entry` along each stage's FIRST outcome (its happy
+ * path). A malformed document can branch or loop; the walk follows one successor per stage and
+ * is guarded against a cycle so it can never hang the browser.
  */
-export function stageOrder(graph: WorkflowGraph): string[] {
+export function stageOrder(doc: WorkflowDoc): string[] {
   const next = new Map<string, string>();
-  for (const [from, to] of graph.edges) if (!next.has(from)) next.set(from, to);
+  for (const s of doc.stages) {
+    const first = (s.outcomes ?? [])[0];
+    if (first && !next.has(s.id)) next.set(s.id, first.to);
+  }
 
   const order: string[] = [];
   const seen = new Set<string>();
-  let cur: string | undefined = graph.entry;
+  let cur: string | undefined = doc.entry;
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     order.push(cur);
@@ -48,8 +55,8 @@ export function stageOrder(graph: WorkflowGraph): string[] {
  * carries `stage: 'merge'` must not render as though it were mid-merge.
  * BLOCKED marks the current stage as failed rather than running, because nothing is running.
  */
-export function runSnapshotForTask(graph: WorkflowGraph, task: TaskLike): RunSnapshot {
-  const order = stageOrder(graph);
+export function runSnapshotForTask(doc: WorkflowDoc, task: TaskLike): RunSnapshot {
+  const order = stageOrder(doc);
   const stages: Record<string, { state: RunState; note?: string }> = {};
 
   const idx = task.stage ? order.indexOf(task.stage) : -1;
@@ -83,8 +90,9 @@ export function runSnapshotForTask(graph: WorkflowGraph, task: TaskLike): RunSna
 }
 
 /**
- * Edge state, for the animated wires. An edge is `traversed` when work has already flowed
- * along it, and `current` when it leads into the stage running right now.
+ * Edge state, for the animated wires. An edge (a stage → one of its outcomes) is `traversed`
+ * when work has already flowed along it, and `current` when it leads into the stage running
+ * right now.
  */
 export function edgeState(
   run: RunSnapshot,

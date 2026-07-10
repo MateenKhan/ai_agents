@@ -147,6 +147,59 @@ export function nearestHumanGate(doc: WorkflowDoc, from: string): string | null 
   return stageById(doc, from)?.behaviour === 'human-gate' ? from : null;
 }
 
+// ── consult: an agent asks another agent, mid-task ────────────────────────────
+//
+// A consult does NOT move the task. The asking agent reports a question and exits, freeing its
+// slot; a read-only advisor answers; the asking stage re-runs with the answer injected. Two
+// hard rules keep it from becoming a back channel that routes work around the graph:
+//   • PERMISSION — the target must be in this stage's `asks` list. The graph grants it.
+//   • CAPS — at most two consults at any one stage, five across the whole task, so a task can
+//     never loop consulting forever instead of finishing.
+// (DEPTH-1 — an advisor may not itself consult — is enforced by the orchestrator, which never
+// offers a consult to an advisor run; it is not a routing decision, so it is not modelled here.)
+
+/** At most this many consults may be spent at a single stage. */
+export const MAX_CONSULTS_PER_STAGE = 2;
+/** At most this many consults may be spent across a whole task. */
+export const MAX_CONSULTS_PER_TASK = 5;
+
+export type ConsultDecision =
+  /** Permitted — run the advisor. */
+  | { kind: 'ok' }
+  /** `to` is not in this stage's `asks`. The graph did not grant this consult. */
+  | { kind: 'not-permitted'; allowed: string[] }
+  /** This stage has already spent its consults. */
+  | { kind: 'stage-cap'; cap: number }
+  /** The task has spent its consults across every stage. */
+  | { kind: 'task-cap'; cap: number };
+
+/**
+ * May the agent at `stage` consult `to`, given how many consults have already been spent at
+ * this stage and across the task? Pure — the orchestrator supplies the counts.
+ */
+export function canConsult(
+  stage: Stage,
+  to: string,
+  consultsUsedThisStage: number,
+  consultsUsedThisTask: number,
+): ConsultDecision {
+  const allowed = stage.asks ?? [];
+  if (!allowed.includes(to)) return { kind: 'not-permitted', allowed };
+  if (consultsUsedThisTask >= MAX_CONSULTS_PER_TASK) return { kind: 'task-cap', cap: MAX_CONSULTS_PER_TASK };
+  if (consultsUsedThisStage >= MAX_CONSULTS_PER_STAGE) return { kind: 'stage-cap', cap: MAX_CONSULTS_PER_STAGE };
+  return { kind: 'ok' };
+}
+
+/** Consults already spent, from the task's consult log: per the given stage, and in total.
+ *  Per-stage is counted off each entry's `from` (the stage the asking agent was at). */
+export function consultsUsed(
+  consultLog: ReadonlyArray<{ from: string }> | null | undefined,
+  stageId: string,
+): { stage: number; task: number } {
+  const log = consultLog ?? [];
+  return { stage: log.filter(e => e.from === stageId).length, task: log.length };
+}
+
 // ── what a stage is allowed to do ─────────────────────────────────────────────
 
 /** Only a `verify` stage may write `qaVerdict`. Two verify stages would overwrite each other. */

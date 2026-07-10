@@ -1,27 +1,23 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// WorkflowEditor — a real React component.
+// WorkflowEditor — a real React component, now drawing the ENGINE's document.
 //
-// The design mock injected a <script> carrying the whole app as top-level `const`s and
-// relied on global ids (#canvas, #nodes) and global functions for inline onclick. That
-// cannot live in this app:
+// The data model IS `WorkflowDoc` from agentic/workflow (imported via workflowApi). There is no
+// browser copy of the schema: the graph you draw here is the graph the orchestrator runs.
 //
-//   • Top-level `const STAGES` lands in the global lexical environment. Unmounting cannot
-//     un-declare it, so the SECOND mount threw `Identifier 'STAGES' has already been
-//     declared`. React StrictMode mounts → unmounts → mounts in dev, so it died on load.
-//   • `#canvas`, `#nodes`, `#saveBtn` are unscoped ids that collide with the host app.
-//   • The caps inputs were bound to nothing and could never round-trip.
-//   • Boot wrote localStorage before the seeded graph was read back, so localStorage always
-//     beat `initialGraph` and the database became decorative.
+//   • A node is a `Stage`. Its powers come from `behaviour`, never from its id.
+//   • An edge is an `Outcome`: the stage routes to `outcome.to`, and the wire is labelled with
+//     `outcome.when` — the word the agent reports. A stage may have several (branching).
+//   • Reject is return-to-sender (one hop), drawn as an overlay. Asks are a permission list of
+//     other agent stages this one may consult, drawn as a second overlay.
 //
-// Everything below is refs + state. Two instances can coexist. Mounting twice is a no-op.
+// Everything below is refs + state; two instances can coexist and mounting twice is a no-op.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import type { Ask, Corner, Edge, Side, Stage, StageCaps, WorkflowGraph } from './types';
-import { AGENT_ROLES, DEFAULT_CAPS, MODELS } from './types';
-import { validateGraph } from './validate';
-import { defaultGraph } from './defaultGraph';
+import type { Behaviour, Corner, Outcome, Side, Stage, StageCaps, WorkflowDoc } from './workflowApi';
+import { BEHAVIOURS, DEFAULT_CAPS, isAgentBehaviour, validateWorkflow } from './workflowApi';
+import { defaultWorkflow } from '../../../../agentic/workflow/defaultWorkflow';
 import {
   NODE_W, autoLayout, autoSides, backOff, bezier, cornerAnchor, midpoint,
   nearestCorner, nearestSide, sideAnchor, clamp, type Anchor, type Box,
@@ -40,14 +36,16 @@ export interface RunSnapshot {
 }
 
 export interface WorkflowEditorProps {
-  /** Seed graph, normally from the database. Reactive: changing it reloads the canvas. */
-  graph?: WorkflowGraph;
+  /** Seed document, normally from the server. Reactive: changing it reloads the canvas. */
+  doc?: WorkflowDoc;
   /** Fired on every edit. Debounced by the caller if it wants to autosave. */
-  onChange?: (graph: WorkflowGraph) => void;
-  /** Fired when Save is pressed. Only ever called with a graph that passes validation. */
-  onSave?: (graph: WorkflowGraph) => void | Promise<void>;
+  onChange?: (doc: WorkflowDoc) => void;
+  /** Fired when Save is pressed. Only ever called with a document that passes validation. */
+  onSave?: (doc: WorkflowDoc) => void | Promise<void>;
   /** Present ⇒ Run mode is offered. Absent ⇒ edit only. */
   run?: RunSnapshot;
+  /** Stage ids a live task is standing on. Shown as locked; the caller enforces the rule. */
+  occupied?: string[];
   /** View-only: no ports, no dragging, no inspector, no Save. Pan and zoom still work. */
   readOnly?: boolean;
   className?: string;
@@ -74,8 +72,7 @@ interface Drag {
 
 type Selection =
   | { kind: 'stage'; id: string }
-  | { kind: 'edge'; index: number }
-  | { kind: 'ask'; index: number }
+  | { kind: 'outcome'; stageId: string; index: number }
   | { kind: 'reject'; stageId: string }
   | null;
 
@@ -83,6 +80,8 @@ const SIDES: Side[] = ['top', 'right', 'bottom', 'left'];
 const CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br'];
 /** Node height is uniform; measuring every card per frame was the mock's real cost. */
 const NODE_H = 92;
+/** UI convenience list. `model` is a free string in the schema, so this only seeds the picker. */
+const MODELS = ['opus', 'sonnet', 'haiku'] as const;
 
 const RUN_BADGE: Record<RunState, string> = {
   pending: 'pending',
@@ -92,8 +91,15 @@ const RUN_BADGE: Record<RunState, string> = {
   timeout: '⏱ timed out',
 };
 
-export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run, readOnly = false, className, style }: WorkflowEditorProps) {
-  const [graph, setGraph] = useState<WorkflowGraph>(() => graphProp ?? defaultGraph());
+/** The layout coords for a stage, tolerant of a document whose stages carry no `ui`. */
+function posOf(s: Stage): { x: number; y: number } {
+  return { x: s.ui?.x ?? 0, y: s.ui?.y ?? 0 };
+}
+
+const isPassive = (b: Behaviour) => !isAgentBehaviour(b);
+
+export default function WorkflowEditor({ doc: docProp, onChange, onSave, run, occupied = [], readOnly = false, className, style }: WorkflowEditorProps) {
+  const [doc, setDoc] = useState<WorkflowDoc>(() => docProp ?? defaultWorkflow());
   const [mode, setMode] = useState<Mode>(readOnly && run ? 'run' : 'edit');
   const [sel, setSel] = useState<Selection>({ kind: 'stage', id: 'build' });
   const [showRejects, setShowRejects] = useState(false);
@@ -103,127 +109,185 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const nodeSeq = useRef(1);
+  const occupiedSet = useMemo(() => new Set(occupied), [occupied]);
 
   // Reactive seed. The mock read its seed once, off a global, and then let localStorage win.
-  useEffect(() => { if (graphProp) setGraph(graphProp); }, [graphProp]);
+  useEffect(() => { if (docProp) setDoc(docProp); }, [docProp]);
 
   // onChange must not fire during render, and must not fire for the initial state.
   const firstRun = useRef(true);
   useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return; }
-    onChange?.(graph);
-  }, [graph, onChange]);
+    onChange?.(doc);
+  }, [doc, onChange]);
 
-  const validation = useMemo(() => validateGraph(graph), [graph]);
+  const validation = useMemo(() => validateWorkflow(doc), [doc]);
   const offenders = useMemo(() => new Set(validation.stageIssues.map(i => i.stageId)), [validation]);
+  const terminalId = useMemo(() => doc.stages.find(s => s.behaviour === 'terminal')?.id, [doc.stages]);
 
-  const byId = useCallback((id: string) => graph.stages.find(s => s.id === id), [graph.stages]);
+  const byId = useCallback((id: string) => doc.stages.find(s => s.id === id), [doc.stages]);
   const boxOf = useCallback((id: string): Box | null => {
     const s = byId(id);
-    return s ? { x: s.x, y: s.y, h: NODE_H } : null;
+    return s ? { ...posOf(s), h: NODE_H } : null;
   }, [byId]);
 
-  const mutate = useCallback((fn: (g: WorkflowGraph) => WorkflowGraph) => setGraph(g => fn(structuredClone(g))), []);
+  const mutate = useCallback((fn: (d: WorkflowDoc) => WorkflowDoc) => setDoc(d => fn(structuredClone(d))), []);
 
   // ── stage editing ──────────────────────────────────────────────────────────
   const patchStage = useCallback((id: string, patch: Partial<Stage>) => {
-    mutate(g => {
-      const s = g.stages.find(x => x.id === id);
+    mutate(d => {
+      const s = d.stages.find(x => x.id === id);
       if (s) Object.assign(s, patch);
-      return g;
+      return d;
+    });
+  }, [mutate]);
+
+  const moveStage = useCallback((id: string, x: number, y: number) => {
+    mutate(d => {
+      const s = d.stages.find(x => x.id === id);
+      if (s) s.ui = { ...(s.ui ?? {}), x, y };
+      return d;
     });
   }, [mutate]);
 
   const patchCaps = useCallback((id: string, key: keyof StageCaps, value: number) => {
-    mutate(g => {
-      const s = g.stages.find(x => x.id === id);
+    mutate(d => {
+      const s = d.stages.find(x => x.id === id);
       if (s?.caps) s.caps[key] = value;
-      return g;
+      return d;
     });
   }, [mutate]);
 
-  /** Switching kind must add or strip the model and caps — a human has neither. */
-  const setKind = useCallback((id: string, kind: Stage['kind']) => {
-    mutate(g => {
-      const s = g.stages.find(x => x.id === id);
-      if (!s) return g;
-      s.kind = kind;
-      if (kind === 'human') { s.model = null; s.caps = null; }
-      else { s.model = s.model ?? 'sonnet'; s.caps = s.caps ?? { ...DEFAULT_CAPS }; }
-      return g;
+  /** Switching behaviour must add or strip the agent, model and caps a passive stage has none of. */
+  const setBehaviour = useCallback((id: string, behaviour: Behaviour) => {
+    mutate(d => {
+      const s = d.stages.find(x => x.id === id);
+      if (!s) return d;
+      s.behaviour = behaviour;
+      if (isPassive(behaviour)) {
+        // You do not retry a person, and a terminal is the end.
+        s.agentRef = null;
+        s.model = null;
+        s.caps = null;
+        delete s.worktree;
+        if (behaviour === 'terminal') s.outcomes = [];
+      } else {
+        s.agentRef = s.agentRef ?? 'dev';
+        s.model = s.model ?? 'sonnet';
+        s.caps = s.caps ?? { ...DEFAULT_CAPS };
+      }
+      return d;
     });
   }, [mutate]);
 
   const renameStage = useCallback((oldId: string, raw: string) => {
     const newId = raw.trim();
     if (!newId || newId === oldId) return;
-    if (graph.stages.some(s => s.id === newId)) return; // validator would flag it; refuse quietly
-    mutate(g => {
-      const s = g.stages.find(x => x.id === oldId);
-      if (s) s.id = newId;
-      g.edges = g.edges.map(e => [e[0] === oldId ? newId : e[0], e[1] === oldId ? newId : e[1], e[2], e[3]] as Edge);
-      g.asks = g.asks.map(a => [a[0] === oldId ? newId : a[0], a[1] === oldId ? newId : a[1], a[2], a[3]] as Ask);
-      for (const x of g.stages) if (x.reject === oldId) x.reject = newId;
-      if (g.entry === oldId) g.entry = newId;
-      if (g.terminal === oldId) g.terminal = newId;
-      return g;
+    if (doc.stages.some(s => s.id === newId)) return; // validator would flag it; refuse quietly
+    mutate(d => {
+      for (const s of d.stages) {
+        if (s.id === oldId) s.id = newId;
+        for (const o of s.outcomes ?? []) if (o.to === oldId) o.to = newId;
+        if (s.reject === oldId) s.reject = newId;
+        if (Array.isArray(s.asks)) s.asks = s.asks.map(a => (a === oldId ? newId : a));
+      }
+      if (d.entry === oldId) d.entry = newId;
+      return d;
     });
     setSel({ kind: 'stage', id: newId });
-  }, [graph.stages, mutate]);
+  }, [doc.stages, mutate]);
 
   const addStage = useCallback(() => {
     const id = `stage-${nodeSeq.current++}`;
-    mutate(g => {
-      g.stages.push({ id, role: 'dev', kind: 'agent', model: 'sonnet', caps: { ...DEFAULT_CAPS }, x: (-view.px + 320) / view.s, y: (-view.py + 140) / view.s });
-      return g;
+    mutate(d => {
+      d.stages.push({
+        id, behaviour: 'generic', agentRef: 'dev', model: 'sonnet', caps: { ...DEFAULT_CAPS },
+        asks: [], outcomes: [],
+        ui: { x: (-view.px + 320) / view.s, y: (-view.py + 140) / view.s },
+      });
+      return d;
     });
     setSel({ kind: 'stage', id }); // arrives disconnected; the validator lights it up
   }, [mutate, view]);
 
   const removeStage = useCallback((id: string) => {
-    mutate(g => {
-      g.stages = g.stages.filter(s => s.id !== id);
-      g.edges = g.edges.filter(e => e[0] !== id && e[1] !== id);
-      g.asks = g.asks.filter(a => a[0] !== id && a[1] !== id);
-      for (const s of g.stages) if (s.reject === id) delete s.reject;
-      return g;
+    mutate(d => {
+      d.stages = d.stages.filter(s => s.id !== id);
+      for (const s of d.stages) {
+        s.outcomes = (s.outcomes ?? []).filter(o => o.to !== id);
+        if (s.reject === id) s.reject = null;
+        if (Array.isArray(s.asks)) s.asks = s.asks.filter(a => a !== id);
+      }
+      return d;
     });
     setSel(null);
   }, [mutate]);
 
-  const addEdge = useCallback((from: string, to: string, fromSide?: Side, toSide?: Side) => {
-    mutate(g => {
-      if (!g.edges.some(e => e[0] === from && e[1] === to)) g.edges.push([from, to, fromSide, toSide]);
-      return g;
+  const addOutcome = useCallback((from: string, to: string, side?: Side) => {
+    mutate(d => {
+      const s = d.stages.find(x => x.id === from);
+      if (!s || from === to) return d;
+      s.outcomes = s.outcomes ?? [];
+      if (s.outcomes.some(o => o.to === to)) return d; // a duplicate destination adds no route
+      // A fresh outcome needs a word; the validator flags a blank one, so seed a unique default.
+      const base = 'out';
+      let when = base;
+      let n = 1;
+      while (s.outcomes.some(o => o.when === when)) when = `${base}-${++n}`;
+      s.outcomes.push({ when, to, side });
+      return d;
     });
   }, [mutate]);
 
-  const addAsk = useCallback((from: string, to: string, fc?: Corner, tc?: Corner) => {
-    mutate(g => {
-      if (!g.asks.some(a => a[0] === from && a[1] === to)) g.asks.push([from, to, fc ?? 'tr', tc ?? 'tl']);
-      return g;
+  const patchOutcome = useCallback((stageId: string, index: number, patch: Partial<Outcome>) => {
+    mutate(d => {
+      const s = d.stages.find(x => x.id === stageId);
+      const o = s?.outcomes?.[index];
+      if (o) Object.assign(o, patch);
+      return d;
+    });
+  }, [mutate]);
+
+  const removeOutcome = useCallback((stageId: string, index: number) => {
+    mutate(d => {
+      const s = d.stages.find(x => x.id === stageId);
+      if (s?.outcomes) s.outcomes.splice(index, 1);
+      return d;
+    });
+  }, [mutate]);
+
+  const addAsk = useCallback((from: string, to: string) => {
+    mutate(d => {
+      const s = d.stages.find(x => x.id === from);
+      if (!s || from === to) return d;
+      s.asks = s.asks ?? [];
+      if (!s.asks.includes(to)) s.asks.push(to);
+      return d;
     });
     setShowAsks(true);
   }, [mutate]);
 
+  const removeAsk = useCallback((from: string, to: string) => {
+    mutate(d => {
+      const s = d.stages.find(x => x.id === from);
+      if (s?.asks) s.asks = s.asks.filter(a => a !== to);
+      return d;
+    });
+  }, [mutate]);
+
   const deleteSelection = useCallback(() => {
     if (!sel) return;
-    if (sel.kind === 'edge') mutate(g => { g.edges.splice(sel.index, 1); return g; });
-    else if (sel.kind === 'ask') mutate(g => { g.asks.splice(sel.index, 1); return g; });
-    else if (sel.kind === 'reject') mutate(g => {
-      const s = g.stages.find(x => x.id === sel.stageId);
-      if (s) { delete s.reject; delete s.rejSide; delete s.rejToSide; }
-      return g;
-    });
+    if (sel.kind === 'outcome') { removeOutcome(sel.stageId, sel.index); setSel(null); }
+    else if (sel.kind === 'reject') { patchStage(sel.stageId, { reject: null }); setSel(null); }
     else if (sel.kind === 'stage') removeStage(sel.id);
-    if (sel.kind !== 'stage') setSel(null);
-  }, [sel, mutate, removeStage]);
+  }, [sel, removeOutcome, patchStage, removeStage]);
 
   const arrange = useCallback(() => {
-    mutate(g => {
-      const pos = autoLayout(g.stages.map(s => s.id), g.edges, g.entry);
-      for (const s of g.stages) Object.assign(s, pos[s.id]);
-      return g;
+    mutate(d => {
+      const edges = d.stages.flatMap(s => (s.outcomes ?? []).map(o => [s.id, o.to] as [string, string]));
+      const pos = autoLayout(d.stages.map(s => s.id), edges, d.entry);
+      for (const s of d.stages) s.ui = { ...(s.ui ?? {}), ...pos[s.id] };
+      return d;
     });
   }, [mutate]);
 
@@ -252,8 +316,9 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
     e.stopPropagation();
     const s = byId(id);
     if (!s) return;
+    const p = posOf(s);
     setSel({ kind: 'stage', id });
-    setDrag({ kind: 'node', id, ox: s.x, oy: s.y, sx: e.clientX, sy: e.clientY });
+    setDrag({ kind: 'node', id, ox: p.x, oy: p.y, sx: e.clientX, sy: e.clientY });
     capture(canvasRef.current, e.pointerId);
   };
 
@@ -273,7 +338,7 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
     if (drag.kind === 'node' && drag.id) {
       const dx = (e.clientX - (drag.sx ?? 0)) / view.s;
       const dy = (e.clientY - (drag.sy ?? 0)) / view.s;
-      patchStage(drag.id, { x: (drag.ox ?? 0) + dx, y: (drag.oy ?? 0) + dy });
+      moveStage(drag.id, (drag.ox ?? 0) + dx, (drag.oy ?? 0) + dy);
       return;
     }
     const under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
@@ -283,15 +348,15 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!drag) return;
-    const { kind, from, fromSide, fromCorner, dropTarget } = drag;
+    const { kind, from, fromSide, dropTarget } = drag;
     if (from && dropTarget && (kind === 'edge' || kind === 'reject' || kind === 'ask')) {
       const w = toWorld(e.clientX, e.clientY);
       const tb = boxOf(dropTarget);
       if (tb) {
-        if (kind === 'ask') addAsk(from, dropTarget, fromCorner, nearestCorner(tb, w.x, w.y));
-        else if (kind === 'edge') addEdge(from, dropTarget, fromSide, nearestSide(tb, w.x, w.y));
+        if (kind === 'ask') addAsk(from, dropTarget);
+        else if (kind === 'edge') addOutcome(from, dropTarget, fromSide);
         else {
-          patchStage(from, { reject: dropTarget, rejSide: fromSide, rejToSide: nearestSide(tb, w.x, w.y) });
+          patchStage(from, { reject: dropTarget });
           setShowRejects(true);
         }
       }
@@ -309,9 +374,10 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
 
   const fitView = useCallback(() => {
     const el = canvasRef.current;
-    if (!el || !graph.stages.length) return;
-    const xs = graph.stages.map(s => s.x);
-    const ys = graph.stages.map(s => s.y);
+    if (!el || !doc.stages.length) return;
+    const pts = doc.stages.map(posOf);
+    const xs = pts.map(p => p.x);
+    const ys = pts.map(p => p.y);
     const minX = Math.min(...xs); const maxX = Math.max(...xs) + NODE_W;
     const minY = Math.min(...ys); const maxY = Math.max(...ys) + NODE_H;
     const pad = 60;
@@ -321,12 +387,11 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
       px: (el.clientWidth - (maxX - minX) * s) / 2 - (minX - pad / 2) * s,
       py: (el.clientHeight - (maxY - minY) * s) / 2 - (minY - pad / 2) * s,
     });
-  }, [graph.stages]);
+  }, [doc.stages]);
 
   // Frame the graph once, as soon as the canvas actually has a size. On first paint inside a
   // flex parent its clientWidth is still 0, so fitView would divide by zero and clamp to the
-  // minimum zoom — which is exactly what showed a 40% view of a clipped graph. Refit only
-  // until it succeeds; after that the viewport belongs to the user's pan and zoom.
+  // minimum zoom. Refit only until it succeeds; after that the viewport belongs to the user.
   const fitted = useRef(false);
   useEffect(() => {
     const el = canvasRef.current;
@@ -368,11 +433,11 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
     return { d: bezier(p1, p2), p1, mid: midpoint(p1, p2) };
   };
 
-  const askPath = (from: string, to: string, fc?: Corner, tc?: Corner) => {
+  const askPath = (from: string, to: string, fc?: Corner) => {
     const a = boxOf(from); const b = boxOf(to);
     if (!a || !b) return null;
     const p1 = cornerAnchor(a, fc ?? 'tr');
-    const p2 = backOff(cornerAnchor(b, tc ?? 'tl'), 10);
+    const p2 = backOff(cornerAnchor(b, 'tl'), 10);
     return { d: bezier(p1, p2), p1, mid: midpoint(p1, p2) };
   };
 
@@ -388,7 +453,7 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
 
   const selectedStage = sel?.kind === 'stage' ? byId(sel.id) : undefined;
 
-  const handleSave = () => { if (validation.ok) void onSave?.(graph); };
+  const handleSave = () => { if (validation.ok) void onSave?.(doc); };
 
   return (
     <div className={`pwf${className ? ` ${className}` : ''}`} data-mode={mode} style={style}>
@@ -413,22 +478,22 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
         )}
       </header>
 
-      {/* The control that stops a graph stranding tasks. Save is disabled until it is green.
+      {/* The control that stops a document stranding tasks. Save is disabled until it is green.
           Hidden when read-only: a viewer cannot fix the graph, so the bar would only be noise. */}
       {!readOnly && (
       <div className={`pwf-validator ${validation.ok ? 'ok' : 'bad'}`} aria-live="polite">
         {validation.ok ? (
-          <><span className="pwf-okmark">✓</span><span>Graph valid — every stage reachable, and <code>{graph.terminal}</code> reachable from <code>{graph.entry}</code>.</span></>
+          <><span className="pwf-okmark">✓</span><span>Workflow valid — every stage reachable, and <code>{terminalId}</code> reachable from <code>{doc.entry}</code>.</span></>
         ) : (
           <>
             <span className="pwf-badmark">!</span>
-            <span>Save blocked — {validation.stageIssues.length || validation.graphErrors.length} problem{(validation.stageIssues.length || validation.graphErrors.length) > 1 ? 's' : ''} would strand tasks.</span>
+            <span>Save blocked — {validation.stageIssues.length || validation.docErrors.length} problem{(validation.stageIssues.length || validation.docErrors.length) > 1 ? 's' : ''} would strand tasks.</span>
             {validation.stageIssues.map(i => (
               <button key={i.stageId} type="button" className="pwf-offender" title={i.reasons.join(' · ')} onClick={() => setSel({ kind: 'stage', id: i.stageId })}>
                 {i.stageId} ↗
               </button>
             ))}
-            {validation.graphErrors.map(e => <span key={e} className="pwf-xs2">{e}</span>)}
+            {validation.docErrors.map(e => <span key={e} className="pwf-xs2">{e}</span>)}
           </>
         )}
       </div>
@@ -438,7 +503,7 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
         <div className="pwf-runbar">
           <span className="pwf-eyebrow">Task</span>
           <span className="pwf-mono">{run.taskId}</span>
-          <span className="pwf-hops">hops <b>{run.hops}</b> / {graph.hopCap}</span>
+          <span className="pwf-hops">hops <b>{run.hops}</b> / {doc.hopCap}</span>
           <span className="pwf-spacer" />
           {run.logHref && <a href={run.logHref}>open task log ↗</a>}
         </div>
@@ -471,25 +536,29 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
                 <marker id="pwf-aha" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--pwf-ai-500)" /></marker>
               </defs>
 
-              {graph.edges.map((e, i) => {
-                const g = edgePath(e[0], e[1], e[2], e[3], 'acc');
+              {/* Every outcome is one wire: this stage → outcome.to, labelled with the word the
+                  agent reports. A stage may have several. */}
+              {doc.stages.flatMap(s => (s.outcomes ?? []).map((o, i) => {
+                const g = edgePath(s.id, o.to, o.side, undefined, 'acc');
                 if (!g) return null;
-                const isSel = sel?.kind === 'edge' && sel.index === i;
-                // In run mode the wire tells the story: emerald where work has flowed, an
-                // animated dash into the stage running right now.
-                const flow = mode === 'run' && run ? edgeState(run, e[0], e[1]) : 'idle';
+                const isSel = sel?.kind === 'outcome' && sel.stageId === s.id && sel.index === i;
+                const flow = mode === 'run' && run ? edgeState(run, s.id, o.to) : 'idle';
                 return (
-                  <g key={`e${i}`} className={`pwf-route pwf-eg ${flow}${isSel ? ' sel' : ''}`} onPointerDown={ev => { ev.stopPropagation(); if (!readOnly) setSel({ kind: 'edge', index: i }); }}>
+                  <g key={`e${s.id}-${i}`} className={`pwf-route pwf-eg ${flow}${isSel ? ' sel' : ''}`} onPointerDown={ev => { ev.stopPropagation(); if (!readOnly) setSel({ kind: 'outcome', stageId: s.id, index: i }); }}>
                     <path className="pwf-hit" d={g.d} />
                     <path className="pwf-wire" d={g.d} markerEnd="url(#pwf-ah)" />
+                    {mode === 'edit' && <text className="pwf-elabel" x={g.mid.x} y={g.mid.y} textAnchor="middle">{o.when}</text>}
                   </g>
                 );
-              })}
+              }))}
 
-              {mode === 'edit' && showRejects && graph.stages.map(s => {
-                const target = s.reject ?? graph.edges.find(e => e[1] === s.id)?.[0];
+              {mode === 'edit' && showRejects && doc.stages.map(s => {
+                // Draw an explicit reject target, or the implicit return-to-sender (any stage
+                // whose outcome routes here).
+                const sender = doc.stages.find(x => (x.outcomes ?? []).some(o => o.to === s.id))?.id;
+                const target = s.reject ?? sender;
                 if (!target || target === s.id) return null;
-                const g = edgePath(s.id, target, s.rejSide, s.rejToSide, 'rej');
+                const g = edgePath(s.id, target, s.ui?.rejectSide, undefined, 'rej');
                 if (!g) return null;
                 const isSel = sel?.kind === 'reject' && sel.stageId === s.id;
                 return (
@@ -500,61 +569,63 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
                 );
               })}
 
-              {mode === 'edit' && showAsks && graph.asks.map((a, i) => {
-                const g = askPath(a[0], a[1], a[2], a[3]);
+              {mode === 'edit' && showAsks && doc.stages.flatMap(s => (s.asks ?? []).map((to, i) => {
+                const g = askPath(s.id, to, s.ui?.askCorner);
                 if (!g) return null;
-                const isSel = sel?.kind === 'ask' && sel.index === i;
                 return (
-                  <g key={`a${i}`} className={`pwf-route pwf-ask${isSel ? ' sel' : ''}`} onPointerDown={ev => { ev.stopPropagation(); setSel({ kind: 'ask', index: i }); }}>
+                  <g key={`a${s.id}-${i}`} className="pwf-route pwf-ask">
                     <path className="pwf-hit" d={g.d} />
                     <path className="pwf-wire" d={g.d} markerEnd="url(#pwf-aha)" />
                   </g>
                 );
-              })}
+              }))}
 
               {rubberBand() && <path className={`pwf-tmp pwf-tmp-${drag?.kind}`} d={rubberBand()!} />}
             </svg>
 
-            {graph.stages.map(s => {
+            {doc.stages.map(s => {
               const rs = run?.stages[s.id]?.state;
+              const agent = isAgentBehaviour(s.behaviour);
+              const p = posOf(s);
               return (
                 <div
                   key={s.id}
                   className="pwf-node"
                   data-id={s.id}
-                  data-human={s.kind === 'human'}
+                  data-human={!agent}
                   data-selected={sel?.kind === 'stage' && sel.id === s.id}
                   data-offender={offenders.has(s.id)}
+                  data-occupied={occupiedSet.has(s.id) || undefined}
                   data-drop={drag?.dropTarget === s.id ? drag.kind : undefined}
                   data-run={mode === 'run' ? rs : undefined}
-                  style={{ left: s.x, top: s.y }}
+                  style={{ left: p.x, top: p.y }}
                   tabIndex={0}
                   role="button"
-                  aria-label={`Stage ${s.id}, ${s.kind === 'human' ? 'human' : s.role}`}
+                  aria-label={`Stage ${s.id}, ${agent ? s.agentRef ?? 'agent' : s.behaviour}`}
                   onPointerDown={e => onPointerDownNode(e, s.id)}
                 >
                   {mode === 'edit' && !readOnly && SIDES.map(side => (
                     <span key={`p${side}`}>
-                      <span className={`pwf-port acc s-${side}`} title="drag: accept route" onPointerDown={e => onPointerDownPort(e, s.id, 'edge', side)} />
+                      <span className={`pwf-port acc s-${side}`} title="drag: outcome route" onPointerDown={e => onPointerDownPort(e, s.id, 'edge', side)} />
                       <span className={`pwf-port rej s-${side}`} title="drag: reject route" onPointerDown={e => onPointerDownPort(e, s.id, 'reject', side)} />
                     </span>
                   ))}
-                  {mode === 'edit' && !readOnly && s.kind !== 'human' && CORNERS.map(c => (
+                  {mode === 'edit' && !readOnly && agent && CORNERS.map(c => (
                     <span key={`c${c}`} className={`pwf-port ask c-${c}`} title="drag: consult another agent" onPointerDown={e => onPointerDownPort(e, s.id, 'ask', undefined, c)} />
                   ))}
 
                   {mode === 'run' && rs === 'running' && <span className="pwf-pulse" aria-hidden="true" />}
                   {mode === 'run' && rs && <span className="pwf-runbadge">{RUN_BADGE[rs]}</span>}
                   <div className="pwf-node-head">
-                    <span className={`pwf-role ${s.kind}`}>{s.kind === 'human' ? 'human' : s.role}</span>
+                    <span className={`pwf-role ${agent ? 'agent' : 'human'}`}>{agent ? s.agentRef ?? 'agent' : s.behaviour}</span>
                   </div>
                   <h3 className="pwf-mono">{s.id}</h3>
-                  {/* A human has no model and no retries. Nothing to show. */}
-                  {s.kind === 'agent' && <div className="pwf-micro pwf-muted">{s.model}</div>}
+                  {/* A passive stage has no model and no retries. Nothing to show. */}
+                  {agent && <div className="pwf-micro pwf-muted">{s.model}</div>}
                   <div className="pwf-meta">
-                    {s.kind === 'agent' && s.caps
+                    {agent && s.caps
                       ? <span className="pwf-chip">attempts {s.caps.attempts}</span>
-                      : <span className="pwf-chip">no timeout</span>}
+                      : <span className="pwf-chip">{s.behaviour}</span>}
                   </div>
                 </div>
               );
@@ -572,22 +643,23 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
         {mode === 'edit' && !readOnly && (
           <aside className="pwf-inspector">
             {!selectedStage ? (
-              <p className="pwf-empty">Select a stage to edit its agent, routes and caps.<br /><br />Every stage must stay on a path from <code>{graph.entry}</code> to <code>{graph.terminal}</code>.</p>
+              <p className="pwf-empty">Select a stage to edit its behaviour, agent, outcomes and caps.<br /><br />Every stage must stay on a path from <code>{doc.entry}</code> to <code>{terminalId ?? '—'}</code>.</p>
             ) : (
               <StageForm
                 key={selectedStage.id}
                 stage={selectedStage}
-                graph={graph}
+                doc={doc}
                 issues={validation.stageIssues.find(i => i.stageId === selectedStage.id)?.reasons ?? []}
                 onRename={renameStage}
                 onPatch={patchStage}
                 onPatchCaps={patchCaps}
-                onSetKind={setKind}
-                onAddEdge={addEdge}
-                onRemoveEdge={(to) => mutate(g => { g.edges = g.edges.filter(e => !(e[0] === selectedStage.id && e[1] === to)); return g; })}
+                onSetBehaviour={setBehaviour}
+                onAddOutcome={(to) => addOutcome(selectedStage.id, to)}
+                onPatchOutcome={(index, patch) => patchOutcome(selectedStage.id, index, patch)}
+                onRemoveOutcome={(index) => removeOutcome(selectedStage.id, index)}
                 onAddAsk={(to) => addAsk(selectedStage.id, to)}
-                onRemoveAsk={(to) => mutate(g => { g.asks = g.asks.filter(a => !(a[0] === selectedStage.id && a[1] === to)); return g; })}
-                onHopCap={(n) => mutate(g => { g.hopCap = n; return g; })}
+                onRemoveAsk={(to) => removeAsk(selectedStage.id, to)}
+                onHopCap={(n) => mutate(d => { d.hopCap = n; return d; })}
                 onRemove={() => removeStage(selectedStage.id)}
               />
             )}
@@ -602,14 +674,15 @@ export default function WorkflowEditor({ graph: graphProp, onChange, onSave, run
 
 interface StageFormProps {
   stage: Stage;
-  graph: WorkflowGraph;
+  doc: WorkflowDoc;
   issues: string[];
   onRename: (oldId: string, newId: string) => void;
   onPatch: (id: string, patch: Partial<Stage>) => void;
   onPatchCaps: (id: string, key: keyof StageCaps, value: number) => void;
-  onSetKind: (id: string, kind: Stage['kind']) => void;
-  onAddEdge: (from: string, to: string) => void;
-  onRemoveEdge: (to: string) => void;
+  onSetBehaviour: (id: string, behaviour: Behaviour) => void;
+  onAddOutcome: (to: string) => void;
+  onPatchOutcome: (index: number, patch: Partial<Outcome>) => void;
+  onRemoveOutcome: (index: number) => void;
   onAddAsk: (to: string) => void;
   onRemoveAsk: (to: string) => void;
   onHopCap: (n: number) => void;
@@ -623,14 +696,17 @@ const CAP_FIELDS: Array<[keyof StageCaps, string]> = [
   ['stallKillSec', 'Stall kill (s)'],
   ['rescues', 'Rescues'],
   ['bounces', 'Owner bounces'],
+  ['conflicts', 'Merge conflicts'],
 ];
 
-function StageForm({ stage, graph, issues, onRename, onPatch, onPatchCaps, onSetKind, onAddEdge, onRemoveEdge, onAddAsk, onRemoveAsk, onHopCap, onRemove }: StageFormProps) {
+function StageForm({ stage, doc, issues, onRename, onPatch, onPatchCaps, onSetBehaviour, onAddOutcome, onPatchOutcome, onRemoveOutcome, onAddAsk, onRemoveAsk, onHopCap, onRemove }: StageFormProps) {
   const s = stage;
-  const senders = graph.edges.filter(e => e[1] === s.id).map(e => e[0]);
-  const accepts = graph.edges.filter(e => e[0] === s.id).map(e => e[1]);
-  const asks = graph.asks.filter(a => a[0] === s.id).map(a => a[1]);
-  const others = graph.stages.filter(x => x.id !== s.id);
+  const agent = isAgentBehaviour(s.behaviour);
+  const outcomes = s.outcomes ?? [];
+  const asks = s.asks ?? [];
+  const senders = doc.stages.filter(x => (x.outcomes ?? []).some(o => o.to === s.id)).map(x => x.id);
+  const others = doc.stages.filter(x => x.id !== s.id);
+  const outcomeTargets = others.filter(x => !outcomes.some(o => o.to === x.id));
 
   return (
     <div>
@@ -646,61 +722,81 @@ function StageForm({ stage, graph, issues, onRename, onPatch, onPatchCaps, onSet
       </label>
 
       <label className="pwf-field">
-        <span>Kind</span>
-        <select value={s.kind} onChange={e => onSetKind(s.id, e.target.value as Stage['kind'])}>
-          <option value="agent">agent</option>
-          <option value="human">human</option>
+        <span>Behaviour <span className="pwf-xs2 pwf-muted">— decides the stage's powers, not its name</span></span>
+        <select value={s.behaviour} onChange={e => onSetBehaviour(s.id, e.target.value as Behaviour)}>
+          {BEHAVIOURS.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
       </label>
 
-      <label className="pwf-field">
-        <span>Agent</span>
-        <select value={s.role} onChange={e => onPatch(s.id, { role: e.target.value })}>
-          {[...AGENT_ROLES, 'you', '—'].map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
-      </label>
+      {/* A passive stage (human-gate, terminal) runs no agent: no role, no model, no retries. */}
+      {agent && (
+        <>
+          <label className="pwf-field">
+            <span>Agent</span>
+            <input value={s.agentRef ?? ''} onChange={e => onPatch(s.id, { agentRef: e.target.value })} placeholder="role in the agents table" />
+          </label>
 
-      {/* A human gate has no model and no retry budget. Do not offer to retry a person. */}
-      {s.kind === 'agent' && (
-        <label className="pwf-field">
-          <span>Model</span>
-          <select value={s.model ?? ''} onChange={e => onPatch(s.id, { model: e.target.value })}>
-            {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </label>
+          <label className="pwf-field">
+            <span>Model</span>
+            <select value={s.model ?? ''} onChange={e => onPatch(s.id, { model: e.target.value })}>
+              {[...MODELS, ...(s.model && !MODELS.includes(s.model as typeof MODELS[number]) ? [s.model] : [])].map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>
+        </>
       )}
 
       <hr />
-      <div className="pwf-eyebrow">Accept route → on success</div>
-      <div className="pwf-chips">
-        {accepts.length === 0
-          ? <span className="pwf-xs2 pwf-muted">none — terminal stage</span>
-          : accepts.map(t => (
-            <span key={t} className="pwf-chip acc">→ {t}
-              <button type="button" aria-label={`Remove accept route to ${t}`} onClick={() => onRemoveEdge(t)}>×</button>
-            </span>
+      <div className="pwf-eyebrow">Outcomes — the words this stage may report</div>
+      {s.behaviour === 'terminal' ? (
+        <p className="pwf-xs2 pwf-muted">A terminal stage is the end. It routes nowhere.</p>
+      ) : (
+        <>
+          {outcomes.length === 0 && <p className="pwf-xs2 pwf-muted">none — work stops here until you add one</p>}
+          {outcomes.map((o, i) => (
+            <div key={i} className="pwf-outcome">
+              <div className="pwf-row2">
+                <label className="pwf-field">
+                  <span>when</span>
+                  <input className="pwf-mono" value={o.when} onChange={e => onPatchOutcome(i, { when: e.target.value })} />
+                </label>
+                <label className="pwf-field">
+                  <span>→ to</span>
+                  <select value={o.to} onChange={e => onPatchOutcome(i, { to: e.target.value })}>
+                    <option value="">— pick —</option>
+                    {others.map(x => <option key={x.id} value={x.id}>{x.id}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label className="pwf-field">
+                <span>hint <span className="pwf-xs2 pwf-muted">— shown in the agent's prompt</span></span>
+                <input value={o.hint ?? ''} onChange={e => onPatchOutcome(i, { hint: e.target.value || undefined })} />
+              </label>
+              <button type="button" className="pwf-btn-sm" aria-label={`Remove outcome ${o.when}`} onClick={() => onRemoveOutcome(i)}>Remove outcome</button>
+              <hr />
+            </div>
           ))}
-      </div>
-      {accepts.length === 0 && (
-        <select className="pwf-mini" value="" onChange={e => e.target.value && onAddEdge(s.id, e.target.value)}>
-          <option value="">+ add accept target…</option>
-          {others.map(x => <option key={x.id} value={x.id}>{x.id}</option>)}
-        </select>
+          {outcomeTargets.length > 0 && (
+            <select className="pwf-mini" value="" onChange={e => e.target.value && onAddOutcome(e.target.value)}>
+              <option value="">+ add outcome to…</option>
+              {outcomeTargets.map(x => <option key={x.id} value={x.id}>{x.id}</option>)}
+            </select>
+          )}
+        </>
       )}
 
       <hr />
       <div className="pwf-eyebrow">Reject route ↩ return to sender</div>
-      <select className="pwf-mini" value={s.reject ?? ''} onChange={e => onPatch(s.id, { reject: e.target.value || undefined })}>
+      <select className="pwf-mini" value={s.reject ?? ''} onChange={e => onPatch(s.id, { reject: e.target.value || null })}>
         <option value="">↩ sender{senders.length ? ` (${senders.join(', ')})` : ''}</option>
         {/* Only real senders. Anything else would let a task skip a stage by rejecting. */}
         {senders.map(x => <option key={x} value={x}>{x}</option>)}
       </select>
       <p className="pwf-xs2 pwf-muted">One hop, not a routing edge. Every reject counts toward the hop cap, in any direction.</p>
 
-      {s.kind === 'agent' && (
+      {agent && (
         <>
           <hr />
-          <div className="pwf-eyebrow">Ask / consult</div>
+          <div className="pwf-eyebrow">Ask / consult <span className="pwf-xs2 pwf-muted">— agents this stage may consult mid-run</span></div>
           <div className="pwf-chips">
             {asks.length === 0
               ? <span className="pwf-xs2 pwf-muted">none</span>
@@ -712,12 +808,12 @@ function StageForm({ stage, graph, issues, onRename, onPatch, onPatchCaps, onSet
           </div>
           <select className="pwf-mini" value="" onChange={e => e.target.value && onAddAsk(e.target.value)}>
             <option value="">+ ask another agent…</option>
-            {others.filter(x => x.kind !== 'human' && !asks.includes(x.id)).map(x => <option key={x.id} value={x.id}>{x.id}</option>)}
+            {others.filter(x => isAgentBehaviour(x.behaviour) && !asks.includes(x.id)).map(x => <option key={x.id} value={x.id}>{x.id}</option>)}
           </select>
         </>
       )}
 
-      {s.kind === 'agent' && s.caps && (
+      {agent && s.caps && (
         <>
           <hr />
           <div className="pwf-eyebrow">Retries &amp; caps</div>
@@ -741,7 +837,7 @@ function StageForm({ stage, graph, issues, onRename, onPatch, onPatchCaps, onSet
       {/* Global, not per-stage: one reject anywhere is one hop. */}
       <label className="pwf-field">
         <span>Global hop cap <span className="pwf-xs2 pwf-muted">— applies to the whole workflow</span></span>
-        <input type="number" min={1} value={graph.hopCap} onChange={e => onHopCap(Number(e.target.value))} />
+        <input type="number" min={1} value={doc.hopCap} onChange={e => onHopCap(Number(e.target.value))} />
       </label>
 
       <hr />

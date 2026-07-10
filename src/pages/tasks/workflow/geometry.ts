@@ -5,7 +5,7 @@
 // eye.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Side, Corner } from './types';
+import type { Side, Corner } from '../../../../agentic/workflow/types';
 
 export const NODE_W = 200;
 

@@ -3,8 +3,8 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { StrictMode } from 'react';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import WorkflowEditor from '../WorkflowEditor';
-import { defaultGraph } from '../defaultGraph';
-import { DEFAULT_CAPS } from '../types';
+import { defaultWorkflow } from '../../../../../agentic/workflow/defaultWorkflow';
+import { DEFAULT_CAPS } from '../workflowApi';
 
 afterEach(cleanup);
 
@@ -45,14 +45,14 @@ describe('seeding', () => {
     }
   });
 
-  it('the graph prop is reactive — it does not read a seed once and then ignore it', () => {
-    const g = defaultGraph();
-    const { rerender } = render(<WorkflowEditor graph={g} />);
+  it('the doc prop is reactive — it does not read a seed once and then ignore it', () => {
+    const d = defaultWorkflow();
+    const { rerender } = render(<WorkflowEditor doc={d} />);
     expect(screen.queryByLabelText(/^Stage extra,/)).toBeNull();
 
-    const g2 = structuredClone(g);
-    g2.stages.push({ id: 'extra', role: 'dev', kind: 'agent', model: 'sonnet', caps: { ...DEFAULT_CAPS }, x: 0, y: 0 });
-    rerender(<WorkflowEditor graph={g2} />);
+    const d2 = structuredClone(d);
+    d2.stages.push({ id: 'extra', behaviour: 'generic', agentRef: 'dev', model: 'sonnet', caps: { ...DEFAULT_CAPS }, asks: [], outcomes: [], ui: { x: 0, y: 0 } });
+    rerender(<WorkflowEditor doc={d2} />);
     expect(screen.getByLabelText(/^Stage extra,/)).toBeTruthy();
   });
 
@@ -67,14 +67,14 @@ describe('the validator gates Save', () => {
   it('Save is enabled for the shipped pipeline', () => {
     render(<WorkflowEditor />);
     expect(screen.getByRole('button', { name: 'Save workflow' })).not.toHaveProperty('disabled', true);
-    expect(screen.getByText(/Graph valid/)).toBeTruthy();
+    expect(screen.getByText(/Workflow valid/)).toBeTruthy();
   });
 
   it('Save is disabled, and never calls onSave, when a stage would strand tasks', () => {
     const onSave = vi.fn();
-    const g = defaultGraph();
-    g.edges = g.edges.filter(e => e[0] !== 'qa');   // qa now leads nowhere
-    render(<WorkflowEditor graph={g} onSave={onSave} />);
+    const d = defaultWorkflow();
+    d.stages.find(s => s.id === 'qa')!.outcomes = [];   // qa now leads nowhere
+    render(<WorkflowEditor doc={d} onSave={onSave} />);
 
     const save = screen.getByRole('button', { name: 'Save workflow' }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
@@ -85,13 +85,13 @@ describe('the validator gates Save', () => {
   });
 
   it('names the offending stages as buttons that focus them', () => {
-    const g = defaultGraph();
-    g.edges = g.edges.filter(e => e[0] !== 'qa');
-    render(<WorkflowEditor graph={g} />);
+    const d = defaultWorkflow();
+    d.stages.find(s => s.id === 'qa')!.outcomes = [];
+    render(<WorkflowEditor doc={d} />);
     expect(screen.getByRole('button', { name: 'qa ↗' })).toBeTruthy();
   });
 
-  it('Save hands the caller the graph, not a downloaded file', () => {
+  it('Save hands the caller the document, not a downloaded file', () => {
     const onSave = vi.fn();
     render(<WorkflowEditor onSave={onSave} />);
     fireEvent.click(screen.getByRole('button', { name: 'Save workflow' }));
@@ -100,58 +100,103 @@ describe('the validator gates Save', () => {
   });
 });
 
-describe('human stages have no model and no retries', () => {
-  it('the review card shows no model', () => {
+describe('passive stages have no model and no retries', () => {
+  it('the review card shows its behaviour, not a model', () => {
     render(<WorkflowEditor />);
     const review = screen.getByLabelText(/^Stage review, human/);
     expect(review.textContent).not.toContain('sonnet');
-    expect(review.textContent).toContain('no timeout');
+    expect(review.textContent).toContain('human-gate');
   });
 
-  it('the inspector hides Model and the caps grid for a human stage', () => {
+  it('the inspector hides Model and the caps grid for a passive stage', () => {
     render(<WorkflowEditor />);
     fireEvent.pointerDown(screen.getByLabelText(/^Stage review, human/));
     expect(screen.queryByText('Model')).toBeNull();
     expect(screen.queryByText('Max attempts')).toBeNull();
   });
 
-  it('switching an agent to human strips its model and caps', () => {
+  it('switching an agent behaviour to human-gate strips its model and caps', () => {
     const onChange = vi.fn();
     render(<WorkflowEditor onChange={onChange} />);
     fireEvent.pointerDown(screen.getByLabelText(/^Stage build, dev/));
-    fireEvent.change(screen.getByDisplayValue('agent'), { target: { value: 'human' } });
+    fireEvent.change(screen.getByLabelText(/Behaviour/), { target: { value: 'human-gate' } });
 
-    const g = onChange.mock.calls.at(-1)![0];
-    const build = g.stages.find((s: { id: string }) => s.id === 'build');
+    const d = onChange.mock.calls.at(-1)![0];
+    const build = d.stages.find((s: { id: string }) => s.id === 'build');
     expect(build.model).toBeNull();
     expect(build.caps).toBeNull();
+    expect(build.agentRef).toBeNull();
   });
 });
 
 // The mock rendered a caps editor whose inputs were bound to nothing: `value="3"` with no
 // handler. Nothing could round-trip. This is the fix.
 describe('caps are real numbers that round-trip', () => {
-  it('editing max attempts updates the graph', () => {
+  it('editing max attempts updates the document', () => {
     const onChange = vi.fn();
     render(<WorkflowEditor onChange={onChange} />);
     fireEvent.pointerDown(screen.getByLabelText(/^Stage build, dev/));
 
-    const input = screen.getByDisplayValue(String(DEFAULT_CAPS.attempts));
-    fireEvent.change(input, { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText('Max attempts'), { target: { value: '7' } });
 
-    const g = onChange.mock.calls.at(-1)![0];
-    expect(g.stages.find((s: { id: string }) => s.id === 'build').caps.attempts).toBe(7);
+    const d = onChange.mock.calls.at(-1)![0];
+    expect(d.stages.find((s: { id: string }) => s.id === 'build').caps.attempts).toBe(7);
   });
 
-  it('the hop cap lives on the graph, not on a stage', () => {
+  it('the hop cap lives on the document, not on a stage', () => {
     const onChange = vi.fn();
     render(<WorkflowEditor onChange={onChange} />);
     fireEvent.pointerDown(screen.getByLabelText(/^Stage build, dev/));
 
-    fireEvent.change(screen.getByDisplayValue('10'), { target: { value: '4' } });
-    const g = onChange.mock.calls.at(-1)![0];
-    expect(g.hopCap).toBe(4);
-    expect(g.stages.every((s: { caps?: Record<string, unknown> | null }) => !s.caps || !('hopCap' in s.caps))).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Global hop cap/), { target: { value: '4' } });
+    const d = onChange.mock.calls.at(-1)![0];
+    expect(d.hopCap).toBe(4);
+    expect(d.stages.every((s: { caps?: Record<string, unknown> | null }) => !s.caps || !('hopCap' in s.caps))).toBe(true);
+  });
+});
+
+describe('editing outcomes', () => {
+  it('editing an outcome word updates the document', () => {
+    const onChange = vi.fn();
+    render(<WorkflowEditor onChange={onChange} />);
+    fireEvent.pointerDown(screen.getByLabelText(/^Stage build, dev/));
+
+    // build's first outcome is `done → qa`.
+    const whenInput = screen.getByDisplayValue('done');
+    fireEvent.change(whenInput, { target: { value: 'shipped' } });
+
+    const d = onChange.mock.calls.at(-1)![0];
+    const build = d.stages.find((s: { id: string }) => s.id === 'build');
+    expect(build.outcomes[0].when).toBe('shipped');
+  });
+
+  it('removing an outcome that strands a stage blocks Save', () => {
+    render(<WorkflowEditor />);
+    fireEvent.pointerDown(screen.getByLabelText(/^Stage qa, /));
+
+    // qa reaches the terminal only through its outcomes. Remove them all.
+    for (const btn of screen.queryAllByRole('button', { name: /Remove outcome/ })) {
+      fireEvent.click(btn);
+    }
+    expect((screen.getByRole('button', { name: 'Save workflow' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Save blocked/)).toBeTruthy();
+  });
+});
+
+describe('renaming a stage rewrites every reference to it', () => {
+  it('outcomes that pointed to the old id now point to the new one', () => {
+    const onChange = vi.fn();
+    render(<WorkflowEditor onChange={onChange} />);
+    fireEvent.pointerDown(screen.getByLabelText(/^Stage qa, /));
+
+    // Rename qa → checks. build (done→qa) and others route to qa.
+    fireEvent.blur(screen.getByLabelText('Stage name'), { target: { value: 'checks' } });
+
+    const d = onChange.mock.calls.at(-1)![0];
+    const build = d.stages.find((s: { id: string }) => s.id === 'build');
+    expect(build.outcomes.some((o: { to: string }) => o.to === 'checks')).toBe(true);
+    expect(build.outcomes.some((o: { to: string }) => o.to === 'qa')).toBe(false);
+    expect(d.stages.some((s: { id: string }) => s.id === 'checks')).toBe(true);
   });
 });
 
@@ -160,8 +205,11 @@ describe('reject targets offered in the inspector', () => {
     render(<WorkflowEditor />);
     fireEvent.pointerDown(screen.getByLabelText(/^Stage build, dev/));
 
+    // The reject <select> is the one whose first option is the return-to-sender default.
+    const rejectSelect = Array.from(document.querySelectorAll('select'))
+      .find(sel => sel.querySelector('option')?.textContent?.startsWith('↩'));
+    const options = Array.from(rejectSelect!.querySelectorAll('option')).map(o => o.textContent);
     // `plan → build` exists, so plan is offerable. `merged` never hands to build.
-    const options = Array.from(document.querySelectorAll('.pwf-mini option')).map(o => o.textContent);
     expect(options).toContain('plan');
     expect(options).not.toContain('merged');
   });
@@ -181,7 +229,7 @@ describe('readOnly', () => {
 
   it('hides the validator bar — a viewer cannot fix the graph', () => {
     render(<WorkflowEditor readOnly run={run} />);
-    expect(screen.queryByText(/Graph valid/)).toBeNull();
+    expect(screen.queryByText(/Workflow valid/)).toBeNull();
     expect(screen.queryByText(/Save blocked/)).toBeNull();
   });
 
@@ -205,8 +253,7 @@ describe('readOnly', () => {
   });
 
   // Without a `run`, readOnly stays in EDIT mode — so these cases are the only ones that
-  // actually exercise the readOnly guards. With a run, run mode hides the same controls for a
-  // different reason, and the tests above would pass even if readOnly did nothing at all.
+  // actually exercise the readOnly guards.
   describe('readOnly without a run — edit mode, but locked', () => {
     it('still hides Save, Add stage, the inspector and the ports', () => {
       render(<WorkflowEditor readOnly />);

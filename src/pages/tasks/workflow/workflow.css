@@ -161,6 +161,17 @@
   100% { box-shadow: 0 0 0 0 rgb(255 59 29 / 0); }
 }
 
+/* The word an agent reports, ridden along its outcome wire. */
+.pwf .pwf-elabel { fill: var(--pwf-s500); font: 900 10px ui-monospace, monospace; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.pwf .pwf-eg.sel .pwf-elabel { fill: var(--pwf-s900); }
+
+/* One outcome row in the inspector. */
+.pwf .pwf-outcome { border-left: 2px solid var(--pwf-s200); padding-left: .5rem; margin-bottom: .25rem; }
+.pwf .pwf-outcome hr { margin: .5rem 0; }
+
+/* A stage a live task is standing on. Editing it is refused by the server. */
+.pwf .pwf-node[data-occupied] { box-shadow: 0 0 0 2px var(--pwf-accent-300); }
+
 /* Wires carry the same story. `current` flows into the stage running now. */
 .pwf .pwf-eg.traversed .pwf-wire { stroke: var(--pwf-emerald-500); stroke-width: 2.25; }
 .pwf .pwf-eg.current .pwf-wire { stroke: var(--pwf-accent-500); stroke-width: 2.5; stroke-dasharray: 6 5; animation: pwf-flow 1s linear infinite; }

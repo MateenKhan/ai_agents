@@ -191,10 +191,14 @@ function rowToTask(r: any): Task {
     // with no scenarios (and therefore un-dispatchable) forever.
     scenarios: coerceScenarios(parseMaybeJson(r.scenarios)),
     stageTimings: parseObj(r.stageTimings),
+    // Consult (agent-to-agent question, mid-task). consultLog is a JSON array; pendingConsult is
+    // a JSON object or null; consultAnswer is a plain string.
+    consultLog: (() => { const v = parseMaybeJson(r.consultLog); return Array.isArray(v) ? v : []; })(),
+    pendingConsult: (() => { const v = parseMaybeJson(r.pendingConsult); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; })(),
   };
 }
 
-const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath,intent,ownerNote,ownerBounces,lastOutcome,handoffFrom,hops';
+const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath,intent,ownerNote,ownerBounces,lastOutcome,handoffFrom,hops,consultLog,pendingConsult,consultAnswer';
 
 function toRow(t: Partial<Task>): any[] {
   return [
@@ -208,6 +212,8 @@ function toRow(t: Partial<Task>): any[] {
     t.projectId ?? 'default', t.control ?? null, t.mergeBounces ?? 0, t.rescueCount ?? 0,
     t.logPath ?? null, t.intent ?? null, t.ownerNote ?? null, t.ownerBounces ?? 0,
     t.lastOutcome ?? null, t.handoffFrom ?? null, t.hops ?? 0,
+    JSON.stringify(t.consultLog ?? []), t.pendingConsult ? JSON.stringify(t.pendingConsult) : null,
+    t.consultAnswer ?? null,
   ];
 }
 

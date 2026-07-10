@@ -71,6 +71,7 @@
     "db:annotate": "cross-env DB_FILE=local.db tsx db/index.ts annotate",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "typecheck": "tsc -b && tsc --noEmit -p agentic/tsconfig.json && tsc --noEmit -p db/tsconfig.json",
     "typecheck:engine": "tsc --noEmit -p agentic/tsconfig.json && tsc --noEmit -p db/tsconfig.json",
     "agents": "kill-port 6951 6952 && concurrently --restart-tries 5 --restart-after 5000 \"pnpm exec vite\" \"pnpm:db:server:stable\" \"pnpm:db:orchestrator:stable\" --names \"vite,db,ai\" --prefix-colors \"cyan,magenta,green\"",
@@ -88,6 +89,7 @@
     "react-router-dom": "^7.13.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^26.1.0",

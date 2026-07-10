@@ -95,6 +95,51 @@ describe('the outcomes block', () => {
   });
 });
 
+// A consult lets an agent ask a peer mid-task — but only a peer the stage's `asks` names.
+describe('the consult block', () => {
+  it('lists ONLY the agents passed as asks, with the consult curl', async () => {
+    const out = await renderPrompt(agent('dev'), task(), 'build', {
+      outcomes: allowedOutcomes(doc, 'build'),
+      asks: [{ to: 'plan', agent: 'architect' }, { to: 'intake', agent: 'owner' }],
+    });
+    expect(out).toContain('CONSULT');
+    expect(out).toContain('- "plan"');
+    expect(out).toContain('- "intake"');
+    expect(out).toContain('"consult"');
+    // a peer NOT granted must never appear — inverting the gate would leak it
+    expect(out).not.toContain('- "qa"');
+  });
+
+  it('lists only the single granted peer when asks has one entry', async () => {
+    const out = await renderPrompt(agent('dev'), task(), 'build', {
+      outcomes: allowedOutcomes(doc, 'build'),
+      asks: [{ to: 'plan', agent: 'architect' }],
+    });
+    expect(out).toContain('- "plan"');
+    expect(out).not.toContain('- "intake"');
+  });
+
+  it('is absent entirely when the stage grants no asks', async () => {
+    const out = await renderPrompt(agent('dev'), task(), 'build', {
+      outcomes: allowedOutcomes(doc, 'build'),
+      asks: [],
+    });
+    expect(out).not.toContain('CONSULT');
+    expect(out).not.toContain('"consult"');
+  });
+
+  it('renders a stored answer back into the re-dispatched prompt', async () => {
+    const t = task({ consultLog: [{ from: 'build', to: 'plan', question: 'which file?', answer: 'edit foo.ts', at: '2020' }] });
+    const out = await renderPrompt(agent('dev'), t, 'build', {
+      outcomes: allowedOutcomes(doc, 'build'),
+      asks: [{ to: 'plan', agent: 'architect' }],
+    });
+    expect(out).toContain('ANSWERS TO YOUR EARLIER CONSULTS');
+    expect(out).toContain('which file?');
+    expect(out).toContain('edit foo.ts');
+  });
+});
+
 // One role, several stages. The STAGE picks the template, because the name no longer can.
 describe('promptRef picks the template', () => {
   it('the owner gets its intake template at intake and its accept template at accept', async () => {

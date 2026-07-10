@@ -127,6 +127,36 @@ export interface Task {
    *  by the orchestrator: null/absent = run normally; 'paused' = hold from dispatch;
    *  'stop' = kill any live agent now and stay out of dispatch until resumed. */
   control?: string | null;
+
+  // ── consult (agent-to-agent question, mid-task) ──────────────────────────────
+  /** Audit trail of every completed consult on this task. Written by the control plane
+   *  (the orchestrator) after an advisor answers; agents may never write it directly. */
+  consultLog?: ConsultEntry[];
+  /** The consult an asking agent requested before it exited, awaiting an advisor run. Set
+   *  from the `{"consult":{…}}` PUT verb; cleared once the answer is folded into consultLog. */
+  pendingConsult?: PendingConsult | null;
+  /** Transient slot a read-only advisor writes its reply into. The orchestrator reads it back,
+   *  appends it to consultLog, and clears it before re-dispatching the asking stage. */
+  consultAnswer?: string | null;
+}
+
+/** One completed consult: who asked (their stage), whom they asked, the question and the
+ *  answer the advisor returned. */
+export interface ConsultEntry {
+  /** The stage the asking agent was at — also how per-stage consult caps are counted. */
+  from: string;
+  /** The consulted target: an entry from the asking stage's `asks` list. */
+  to: string;
+  question: string;
+  answer: string;
+  at: string;
+}
+
+/** A consult an agent has requested but not yet had answered. */
+export interface PendingConsult {
+  /** An entry from the asking stage's `asks` list (a stage id whose agent advises). */
+  to: string;
+  question: string;
 }
 
 /** Editable per-role configuration, seeded from defaults and stored in the agents table. */

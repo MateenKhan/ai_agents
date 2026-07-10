@@ -19,3 +19,7 @@ db/backend.json
 
 # Cloned user projects (never commit)
 projects/
+
+# Playwright artifacts
+test-results/
+playwright-report/

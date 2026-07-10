@@ -1451,10 +1451,26 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             delete body.reject;
           }
 
+          // `{"consult":{"to","question"}}` — ask another agent for advice mid-task. Stored as a
+          // PENDING consult; the orchestrator validates it against the stage's `asks` + the caps,
+          // runs a read-only advisor, folds the answer into consultLog, and re-runs this stage.
+          // It is NOT an outcome and NOT a reject — the task stays exactly where it is.
+          if (body.consult !== undefined) {
+            const c = body.consult;
+            if (c && typeof c === 'object' && typeof c.to === 'string' && c.to.trim()) {
+              body.pendingConsult = {
+                to: String(c.to).trim(),
+                question: typeof c.question === 'string' ? c.question : '',
+              };
+            }
+            delete body.consult;
+          }
+
           // CONTROL-PLANE ONLY. `handoffFrom` decides where a reject lands and `hops` is the
           // budget that stops it looping — an agent able to write either could choose where its
-          // own reject goes, and reset the cap that stops it doing so forever.
-          for (const owned of ['handoffFrom', 'hops']) {
+          // own reject goes, and reset the cap that stops it doing so forever. `consultLog` is the
+          // consult audit trail the orchestrator maintains; an agent must not rewrite its history.
+          for (const owned of ['handoffFrom', 'hops', 'consultLog']) {
             if (owned in body) {
               console.warn(`[db-server] task ${taskId}: ignoring agent-supplied "${owned}" (control-plane only)`);
               delete body[owned];

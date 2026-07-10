@@ -205,6 +205,38 @@ describe('acquireLock / releaseLock (merge lock)', () => {
   });
 });
 
+// The consult columns are JSON-encoded through toRow and parsed back in rowToTask. A misaligned
+// COLS/toRow position would surface here as a value landing in the wrong column.
+describe('consult columns round-trip', () => {
+  it('stores and reads back consultLog + pendingConsult intact', async () => {
+    await createTask({
+      id: 'consult1', title: 'c', status: 'WORKING',
+      consultLog: [{ from: 'build', to: 'plan', question: 'q', answer: 'a', at: '2020-01-01' }],
+      pendingConsult: { to: 'plan', question: 'why' },
+    });
+    const t = await getTask('consult1');
+    expect(t!.consultLog).toEqual([{ from: 'build', to: 'plan', question: 'q', answer: 'a', at: '2020-01-01' }]);
+    expect(t!.pendingConsult).toEqual({ to: 'plan', question: 'why' });
+  });
+
+  it('defaults to an empty log and a null pending consult', async () => {
+    await createTask({ id: 'consult2', title: 'c2', status: 'WORKING' });
+    const t = await getTask('consult2');
+    expect(t!.consultLog).toEqual([]);
+    expect(t!.pendingConsult ?? null).toBeNull();
+  });
+
+  it('does not bleed consult data into neighbouring columns (hops stays a number)', async () => {
+    await createTask({
+      id: 'consult3', title: 'c3', status: 'WORKING', hops: 2,
+      consultLog: [{ from: 'qa', to: 'plan', question: 'q', answer: 'a', at: '2020' }],
+    });
+    const t = await getTask('consult3');
+    expect(t!.hops).toBe(2);
+    expect(t!.consultLog).toHaveLength(1);
+  });
+});
+
 describe('workers heartbeat + staleness', () => {
   it('a freshly-registered/heartbeat worker is not stale; a wide window makes it stale', async () => {
     await registerWorker('wkr-1');
