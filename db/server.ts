@@ -2147,7 +2147,12 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const wtProject = projectIdOf(req);
       const repoRoot = await projectRepoPath(wtProject);
       const list = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' });
-      const wtDir = join(repoRoot, '.worktrees');
+      // git prints worktree paths with FORWARD slashes (C:/code/...) even on Windows, while
+      // path.join produces BACKslashes (C:\code\...). Comparing them with startsWith silently
+      // matched nothing, so the UI showed "no worktrees" while they sat right there on disk.
+      // Normalise both to forward slashes before comparing.
+      const norm = (p: string) => p.replace(/\\/g, '/');
+      const wtDir = norm(join(repoRoot, '.worktrees'));
       const tasks = await getAllTasks(wtProject);
       const byId = new Map(tasks.map((t: any) => [t.id, t]));
       const out: any[] = [];
@@ -2157,7 +2162,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const hm = block.match(/^HEAD (.+)$/m);
         if (!pm) continue;
         const path = pm[1].trim();
-        if (!path.startsWith(wtDir)) continue; // only agent worktrees
+        if (!norm(path).startsWith(wtDir)) continue; // only agent worktrees
         const ref = (bm ? bm[1].trim() : '').replace('refs/heads/', '');
         const name = path.split(/[\\/]/).pop() || '';
         const isPlan = name.startsWith('plan-');
