@@ -1,0 +1,30 @@
+/* The bite loop. Teeth close, a cyan spark fires ON contact, teeth open. The spark is
+   timed to the closed frame — off before and after — so it reads as impact, not a glow. */
+
+.pz-load-up { animation: pz-load-up 1s cubic-bezier(.4, 0, .2, 1) infinite; }
+.pz-load-lo { animation: pz-load-lo 1s cubic-bezier(.4, 0, .2, 1) infinite; }
+.pz-load-spark { animation: pz-load-spark 1s ease-out infinite; transform-origin: 50px 50px; }
+
+@keyframes pz-load-up {
+  0%, 100% { transform: translateY(-14px); }
+  42%      { transform: translateY(2px); }
+  52%      { transform: translateY(0); }
+}
+@keyframes pz-load-lo {
+  0%, 100% { transform: translateY(14px); }
+  42%      { transform: translateY(-2px); }
+  52%      { transform: translateY(0); }
+}
+@keyframes pz-load-spark {
+  0%, 34% { opacity: 0; transform: scale(.2); }
+  44%     { opacity: 1; transform: scale(1); }
+  60%     { opacity: 0; transform: scale(1.6); }
+  100%    { opacity: 0; transform: scale(1.6); }
+}
+
+/* Motion off: show the jaws parted, no chewing. It still reads as "waiting". */
+@media (prefers-reduced-motion: reduce) {
+  .pz-load-up { transform: translateY(-8px); animation: none; }
+  .pz-load-lo { transform: translateY(8px); animation: none; }
+  .pz-load-spark { animation: none; opacity: 0; }
+}

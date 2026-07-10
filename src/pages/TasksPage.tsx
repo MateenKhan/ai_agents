@@ -18,6 +18,7 @@ import { useToast } from './tasks/components/Toast';
 import { useConfirm } from './tasks/components/ConfirmProvider';
 import { ProjectBar } from './tasks/components/ProjectBar';
 import { AgentTank } from '../components/piranha/AgentTank';
+import { PiranhaLoader } from '../components/piranha/PiranhaLoader';
 import { useProjects } from './tasks/projectContext';
 import type { Task, Column } from './tasks/types';
 import { loadColumns, saveColumns, BOARD_COLUMNS_EVENT } from './tasks/boardConfig';
@@ -276,9 +277,8 @@ const TasksPage: React.FC = () => {
 
   if (loading && tasks.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-100 gap-4">
-        <div className="w-12 h-12 border-4 border-accent-500 border-t-transparent rounded-full animate-spin" />
-        <p className="eyebrow">Waking the swarm…</p>
+      <div className="flex items-center justify-center min-h-screen bg-slate-100">
+        <PiranhaLoader size={64} label="Waking the swarm…" />
       </div>
     );
   }
@@ -292,11 +292,17 @@ const TasksPage: React.FC = () => {
               const Icon = t.icon;
               const active = activeTab === t.id;
               return (
-                <button
+                // A tab used to be a <button> that wrapped the close affordance — interactive
+                // content nested inside interactive content, which is invalid HTML and confuses
+                // screen readers. This wrapper is now inert (a plain div): the select action and
+                // the close action are two sibling <button>s, each natively keyboard-reachable,
+                // so neither has to fake key handling or stop event propagation. It stays
+                // `relative` and carries all the tab chrome (background, border, the -mb-px /
+                // border-b-white seam) so the shared-layout motion accents still anchor to the
+                // full tab box — spanning past the close button, exactly as before.
+                <div
                   key={t.id}
-                  data-feature-id={`tasks-tab-${t.id}`}
-                  onClick={() => setActiveTab(t.id)}
-                  className={`relative -mb-px shrink-0 flex items-center gap-1.5 px-2 min-h-control text-micro font-bold uppercase tracking-normal rounded-t-lg border transition-colors ${active
+                  className={`relative -mb-px shrink-0 flex items-center min-h-control text-micro font-bold uppercase tracking-normal rounded-t-lg border transition-colors ${active
                     ? 'z-10 bg-white border-slate-300 border-b-white text-accent-700 shadow-sm'
                     : 'border-transparent text-slate-500 sm:hover:text-slate-900 sm:hover:bg-slate-50'}`}
                 >
@@ -317,28 +323,31 @@ const TasksPage: React.FC = () => {
                       />
                     </>
                   )}
-                  <Icon size={15} className={active ? 'text-accent-600' : ''} />
-                  {t.label}
-                  {/* The close affordance is the widest thing in a tab — a 36px hit target × 4
-                      closeable tabs was 144px, more than every label combined. It now appears
-                      only on the ACTIVE tab, the way browser tabs do: you cannot close what you
-                      are not looking at, and Settings → Visible Tabs still hides any of them.
-                      Rendered conditionally rather than hidden by a hover variant, so it never
-                      occupies width it isn't using. */}
+                  <button
+                    data-feature-id={`tasks-tab-${t.id}`}
+                    onClick={() => setActiveTab(t.id)}
+                    className="self-stretch flex items-center gap-1.5 pl-2 pr-2"
+                  >
+                    <Icon size={15} className={active ? 'text-accent-600' : ''} />
+                    {t.label}
+                  </button>
+                  {/* The close affordance is the widest thing in a tab, so it appears only on the
+                      ACTIVE tab, the way browser tabs do: you cannot close what you are not looking
+                      at, and Settings → Visible Tabs still hides any of them. Rendered conditionally
+                      rather than hidden by a hover variant, so it never occupies width it isn't using.
+                      Its right margin (mr-1) plus the select button's pr-2 reproduce the old spacing
+                      the -mr-1/ml-0.5 pair used to fake. */}
                   {t.closeable && active && (
-                    <span
-                      role="button"
-                      tabIndex={0}
+                    <button
                       data-feature-id={`tasks-tab-close-${t.id}`}
                       aria-label={`Hide ${t.label} — restore from Settings`}
-                      onClick={(e) => { e.stopPropagation(); hideTab(t.id); }}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); hideTab(t.id); } }}
-                      className="flex items-center justify-center w-5 h-5 -mr-1 ml-0.5 rounded text-slate-400 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
+                      onClick={() => hideTab(t.id)}
+                      className="flex items-center justify-center w-5 h-5 mr-1 rounded text-slate-400 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
                     >
                       <X size={12} />
-                    </span>
+                    </button>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
@@ -434,23 +443,23 @@ const TasksPage: React.FC = () => {
         )}
 
         {activeTab === 'context' ? (
-          <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading context…</div>}>
+          <Suspense fallback={<div className="p-10 flex justify-center"><PiranhaLoader size={40} label="Loading context…" /></div>}>
             <ContextTab activeId={activeId} view={contextView} onViewChange={setContextView} />
           </Suspense>
         ) : activeTab === 'analytics' ? (
-          <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading analytics…</div>}>
+          <Suspense fallback={<div className="p-10 flex justify-center"><PiranhaLoader size={40} label="Loading analytics…" /></div>}>
             <AnalyticsTab tasks={tasks} />
           </Suspense>
         ) : activeTab === 'logs' ? (
-          <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading logs…</div>}>
+          <Suspense fallback={<div className="p-10 flex justify-center"><PiranhaLoader size={40} label="Loading logs…" /></div>}>
             <LogsTab initialAgent={logsAgent} />
           </Suspense>
         ) : activeTab === 'db' ? (
-          <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading database…</div>}>
+          <Suspense fallback={<div className="p-10 flex justify-center"><PiranhaLoader size={40} label="Loading database…" /></div>}>
             <DbTab />
           </Suspense>
         ) : activeTab === 'agents' ? (
-          <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-400">Loading agents…</div>}>
+          <Suspense fallback={<div className="p-10 flex justify-center"><PiranhaLoader size={40} label="Loading agents…" /></div>}>
             <AgentsTab />
           </Suspense>
         ) : (

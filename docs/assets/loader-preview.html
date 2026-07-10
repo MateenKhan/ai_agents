@@ -1,0 +1,157 @@
+<title>Piranha — loaders</title>
+
+<style>
+  :root {
+    --page:#EEF1F5; --card:#FFFFFF; --line:#E2E8F0; --ink:#0F172A; --muted:#64748B;
+    --accent:#FF3B1D; --ink2:#0A0E14; --live:#22D3EE;
+    --sans: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){:root{--page:#07090D;--card:#0E131B;--line:rgba(245,247,250,.10);--ink:#F5F7FA;--muted:#8A94A6;}}
+  :root[data-theme="dark"]{--page:#07090D;--card:#0E131B;--line:rgba(245,247,250,.10);--ink:#F5F7FA;--muted:#8A94A6;}
+  :root[data-theme="light"]{--page:#EEF1F5;--card:#FFFFFF;--line:#E2E8F0;--ink:#0F172A;--muted:#64748B;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);font-family:var(--sans);line-height:1.6}
+  .wrap{max-width:960px;margin:0 auto;padding:clamp(2rem,5vw,3.5rem) 1.5rem 4rem}
+  .eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 1rem}
+  h1{font-size:clamp(1.8rem,4.5vw,2.6rem);font-weight:800;letter-spacing:-.025em;margin:0 0 .8rem}
+  h1 .dot{color:var(--accent)}
+  .lede{max-width:60ch;color:var(--muted);margin:0 0 2.5rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.25rem}
+  .card{border:1px solid var(--line);border-radius:8px;background:var(--card);overflow:hidden}
+  .stage{aspect-ratio:16/10;display:grid;place-items:center;background:
+    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb,var(--accent) 5%,transparent), transparent 70%),
+    color-mix(in srgb,var(--card) 60%,var(--page))}
+  .stage.dark{background:var(--ink2)}
+  .meta{padding:1rem 1.15rem}
+  .meta h2{margin:0 0 .2rem;font-size:.98rem;font-weight:700}
+  .meta p{margin:0;font-size:.82rem;color:var(--muted)}
+  .spec{margin-top:.6rem;font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .row{display:flex;align-items:center;gap:2rem;justify-content:center}
+  .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-top:.8rem;text-align:center}
+  footer{margin-top:3rem;padding-top:1.5rem;border-top:1px solid var(--line);color:var(--muted);font-size:.88rem;max-width:62ch}
+  footer b{color:var(--ink);font-weight:600}
+
+  /* ── chomp (the built loader) ─────────────────────────── */
+  .chomp .up{animation:chUp 1s cubic-bezier(.4,0,.2,1) infinite}
+  .chomp .lo{animation:chLo 1s cubic-bezier(.4,0,.2,1) infinite}
+  .chomp .spark{animation:chSpark 1s ease-out infinite;transform-origin:50px 50px}
+  @keyframes chUp{0%,100%{transform:translateY(-14px)}42%{transform:translateY(2px)}52%{transform:translateY(0)}}
+  @keyframes chLo{0%,100%{transform:translateY(14px)}42%{transform:translateY(-2px)}52%{transform:translateY(0)}}
+  @keyframes chSpark{0%,34%{opacity:0;transform:scale(.2)}44%{opacity:1;transform:scale(1)}60%{opacity:0;transform:scale(1.6)}100%{opacity:0;transform:scale(1.6)}}
+
+  /* ── converge & fuse (boot option) ────────────────────── */
+  .cf .sw{transform-origin:60px 60px;animation:cfIn 2.6s cubic-bezier(.55,.02,.35,1) infinite;animation-delay:calc(var(--i)*.05s)}
+  @keyframes cfIn{
+    0%{transform:rotate(var(--a)) translateX(58px) scale(1);opacity:0}
+    12%{opacity:1}
+    56%{transform:rotate(var(--a)) translateX(14px) scale(.7);opacity:1}
+    66%{transform:rotate(var(--a)) translateX(2px) scale(.12);opacity:0}
+    100%{transform:rotate(var(--a)) translateX(2px) scale(.12);opacity:0}
+  }
+  .cf .fuse{animation:cfFuse 2.6s cubic-bezier(.2,.8,.3,1) infinite}
+  @keyframes cfFuse{0%,58%{opacity:0;transform:translate(60px,60px) scale(.3)}68%{opacity:1;transform:translate(60px,60px) scale(1.14)}75%{transform:translate(60px,60px) scale(1)}90%{opacity:1}100%{opacity:0}}
+  .cf .cfSpark{animation:cfSpark 2.6s ease-out infinite}
+  @keyframes cfSpark{0%,64%{opacity:0;r:0}70%{opacity:1;r:5}88%{opacity:.85;r:3}100%{opacity:0;r:3}}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Piranha · loaders</p>
+    <h1>The teeth, chewing<span class="dot">.</span></h1>
+    <p class="lede">
+      Left: the loader that's <b>already in the app</b> — the favicon teeth biting, a cyan spark on
+      contact. Small, cheap, on-brand, legible at any size. Right: the bigger option for the
+      <b>boot screen only</b> — a swarm converging into the mark. Everywhere else uses the chomp.
+    </p>
+  </header>
+
+  <div class="grid">
+    <!-- sizes of the built loader -->
+    <div class="card">
+      <div class="stage">
+        <div class="row">
+          <div>
+            <svg class="chomp" width="40" height="40" viewBox="0 0 100 100">
+              <g class="up" fill="#FF3B1D"><path d="M18 26 L28 52 L38 26 Z"/><path d="M36 26 L46 52 L56 26 Z"/><path d="M54 26 L64 52 L74 26 Z"/></g>
+              <g class="lo" fill="#FF3B1D"><path d="M27 74 L37 48 L47 74 Z"/><path d="M45 74 L55 48 L65 74 Z"/><path d="M63 74 L73 48 L83 74 Z"/></g>
+              <circle class="spark" cx="50" cy="50" r="4" fill="#22D3EE"/>
+            </svg>
+            <div class="lbl">40</div>
+          </div>
+          <div>
+            <svg class="chomp" width="64" height="64" viewBox="0 0 100 100">
+              <g class="up" fill="#FF3B1D"><path d="M18 26 L28 52 L38 26 Z"/><path d="M36 26 L46 52 L56 26 Z"/><path d="M54 26 L64 52 L74 26 Z"/></g>
+              <g class="lo" fill="#FF3B1D"><path d="M27 74 L37 48 L47 74 Z"/><path d="M45 74 L55 48 L65 74 Z"/><path d="M63 74 L73 48 L83 74 Z"/></g>
+              <circle class="spark" cx="50" cy="50" r="4" fill="#22D3EE"/>
+            </svg>
+            <div class="lbl">64</div>
+          </div>
+        </div>
+      </div>
+      <div class="meta">
+        <h2>Chomp — shipped</h2>
+        <p>Tab fallbacks at 40px, boot at 64px. This is <code>PiranhaLoader</code>.</p>
+        <div class="spec">SVG + CSS · ~1KB · any size</div>
+      </div>
+    </div>
+
+    <!-- on a dark ground -->
+    <div class="card">
+      <div class="stage dark">
+        <svg class="chomp" width="72" height="72" viewBox="0 0 100 100">
+          <g class="up" fill="#FF3B1D"><path d="M18 26 L28 52 L38 26 Z"/><path d="M36 26 L46 52 L56 26 Z"/><path d="M54 26 L64 52 L74 26 Z"/></g>
+          <g class="lo" fill="#FF3B1D"><path d="M27 74 L37 48 L47 74 Z"/><path d="M45 74 L55 48 L65 74 Z"/><path d="M63 74 L73 48 L83 74 Z"/></g>
+          <circle class="spark" cx="50" cy="50" r="4.5" fill="#22D3EE"/>
+        </svg>
+      </div>
+      <div class="meta">
+        <h2>On deep water</h2>
+        <p>Same loader on the dark ground. The red carries; the spark reads.</p>
+        <div class="spec">theme-safe</div>
+      </div>
+    </div>
+
+    <!-- converge & fuse -->
+    <div class="card">
+      <div class="stage">
+        <svg class="cf" width="120" height="120" viewBox="0 0 120 120">
+          <defs>
+            <symbol id="f" viewBox="0 0 24 12">
+              <path fill="#FF3B1D" d="M2 6 C5 2,15 2,19 5 L19 7 C15 10,5 10,2 6 Z"/>
+              <path fill="#FF3B1D" d="M19 5 L24 2 L22.4 6 L24 10 L19 7 Z"/>
+              <circle fill="#22D3EE" cx="6.2" cy="5.3" r="1.05"/>
+            </symbol>
+          </defs>
+          <g class="sw" style="--a:0deg;--i:0"><use href="#f" x="48" y="54" width="24" height="12"/></g>
+          <g class="sw" style="--a:45deg;--i:1"><use href="#f" x="48" y="54" width="24" height="12"/></g>
+          <g class="sw" style="--a:90deg;--i:2"><use href="#f" x="48" y="54" width="24" height="12"/></g>
+          <g class="sw" style="--a:135deg;--i:3"><use href="#f" x="48" y="54" width="24" height="12"/></g>
+          <g class="sw" style="--a:180deg;--i:4"><use href="#f" x="48" y="54" width="24" height="12"/></g>
+          <g class="sw" style="--a:225deg;--i:5"><use href="#f" x="48" y="54" width="24" height="12"/></g>
+          <g class="sw" style="--a:270deg;--i:6"><use href="#f" x="48" y="54" width="24" height="12"/></g>
+          <g class="sw" style="--a:315deg;--i:7"><use href="#f" x="48" y="54" width="24" height="12"/></g>
+          <g class="fuse" fill="#FF3B1D">
+            <path d="M-19 -13 L-13 3 L-7 -13 Z"/><path d="M-8 -13 L-2 3 L4 -13 Z"/><path d="M3 -13 L9 3 L15 -13 Z"/>
+            <path d="M-14 13 L-8 -3 L-2 13 Z"/><path d="M-3 13 L3 -3 L9 13 Z"/>
+            <circle class="cfSpark" cx="-2" cy="0" r="3" fill="#22D3EE"/>
+          </g>
+        </svg>
+      </div>
+      <div class="meta">
+        <h2>Converge &amp; fuse — boot only</h2>
+        <p>Eight fish swim in, snap into the mark. Bigger moment, one screen.</p>
+        <div class="spec">optional · not built yet</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>
+      <b>swarm-attack.html is not a loader.</b> It's a whole demo page — the full detailed fish,
+      sliders, debug buttons. You can't import a web page into React, and the detailed fish is
+      unreadable below ~40px anyway. The loader had to be its own small component, which it is.
+      Tell me if you want the <b>converge &amp; fuse</b> on the boot screen; the chomp handles the rest.
+    </p>
+  </footer>
+</div>

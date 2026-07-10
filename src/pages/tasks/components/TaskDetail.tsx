@@ -8,6 +8,7 @@ import { API_BASE } from '../../../apiBase';
 import type { Task, TaskControlAction } from '../types';
 import { COLUMNS } from '../types';
 import { SlideOver } from './SlideOver';
+import { btnPrimaryCaps } from '../ui';
 import TaskWorkflowDialog from '../workflow/TaskWorkflowDialog';
 
 interface TaskDetailProps {
@@ -311,7 +312,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
           )}
           <button
             onClick={() => { onEdit(task); onClose(); }}
-            className="flex-1 flex items-center justify-center gap-1.5 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl active:bg-slate-950 sm:hover:bg-slate-800 transition-colors"
+            className={`flex-1 ${btnPrimaryCaps}`}
           >
             <Edit2 size={14} /> Edit
           </button>

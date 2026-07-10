@@ -26,6 +26,10 @@ export const iconBtnDanger = 'icon-btn-danger';
 export const btnPrimarySm = 'btn-primary-sm';
 /** Compact secondary button for toolbars/dense rows. */
 export const btnSm = 'btn-sm';
+/** Tier 2 — routine primary in the UPPERCASE "stamped" look (board/detail action rows). Ink, no shadow. */
+export const btnPrimaryCaps = 'btn-primary-caps';
+/** Neutral secondary in the UPPERCASE look — the caps sibling of btnGhost. */
+export const btnGhostCaps = 'btn-ghost-caps';
 /** Square icon-only button — ONE geometry for the header cluster and toolbars.
  *  Semantic controls layer colour on top: `${iconBtn} bg-emerald-50 text-emerald-700 …` */
 export const iconBtn = 'icon-btn';

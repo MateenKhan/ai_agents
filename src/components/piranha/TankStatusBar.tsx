@@ -16,7 +16,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Bell, WifiOff } from 'lucide-react';
-import { API_BASE, withProject } from '../../apiBase';
+import { API_BASE, getActiveProject, withProject } from '../../apiBase';
 import { humanizeStatusMessage } from '../../pages/tasks/statusMessages';
 
 interface Counts { pending: number; working: number; testing: number; done: number }
@@ -37,6 +37,24 @@ function ago(ts: string | number): string {
   return `${Math.round(s / 3600)}h ago`;
 }
 
+// A monotonic id for an event. The server sends a row id; ts is the fallback for any
+// synthetic line that lacks one.
+const eventKey = (e: OrchEvent): number => e.id ?? (Date.parse(String(e.ts)) || 0);
+
+// The "seen" marker has to survive remounts and can't be a count: /system-status returns a
+// fixed ~15-row window, so events.length is pinned and a count-based unread reads the
+// component lifecycle, not the feed. We persist the newest id the user has viewed instead.
+// Per-project because the feed is project-scoped (withProject).
+const seenKeyFor = () => `piranha.eventsSeen:${getActiveProject()}`;
+function readSeen(): number {
+  try { return Number(localStorage.getItem(seenKeyFor())) || 0; }
+  catch { return 0; }
+}
+function writeSeen(v: number): void {
+  try { localStorage.setItem(seenKeyFor(), String(v)); }
+  catch { /* private mode: unread just won't persist */ }
+}
+
 export function TankStatusBar({ working, muted, reduced, onToggleMuted }: {
   working: number;
   /** the user's stored preference — pauses the swim, never the information */
@@ -47,7 +65,7 @@ export function TankStatusBar({ working, muted, reduced, onToggleMuted }: {
 }) {
   const [s, setS] = useState<Status | null>(null);
   const [open, setOpen] = useState(false);
-  const [seen, setSeen] = useState(0);
+  const [seen, setSeen] = useState<number>(() => readSeen());
   const [offline, setOffline] = useState(false);
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -83,25 +101,53 @@ export function TankStatusBar({ working, muted, reduced, onToggleMuted }: {
   }, [open]);
 
   const events = s?.events ?? [];
-  const unread = Math.max(0, events.length - seen);
+  const unread = events.filter(e => eventKey(e) > seen).length;
   const c = s?.counts;
   const up = s?.orchestrator?.up ?? false;
 
+  // Degrade through what actually exists: live work → the last thing that happened → an
+  // invitation for a first-timer, rather than a status report about a system they haven't
+  // touched. The orchestrator line is kept only when the board holds tasks but the feed is
+  // empty, so we never tell someone with queued work "no tasks yet".
+  const recent = events.find(e => e.msg?.trim());
+  const total = c ? c.pending + c.working + c.testing + c.done : 0;
   const line = working > 0
     ? `${working} ${working === 1 ? 'agent' : 'agents'} working`
-    : (s?.orchestrator && humanizeStatusMessage(s.orchestrator.statusLine)) || 'Idle — nothing to dispatch';
+    : recent
+      ? `Last: ${humanizeStatusMessage(recent.msg)} · ${ago(recent.ts)}`
+      : total === 0
+        ? 'No tasks yet — hit + to feed the swarm.'
+        : (s?.orchestrator && humanizeStatusMessage(s.orchestrator.statusLine)) || 'Idle — nothing to dispatch';
 
   // The tank clips its children (overflow-hidden), so the popover is portalled to <body>
   // and positioned against the bell. A bigger z-index alone can't escape a clipping ancestor.
   useLayoutEffect(() => {
-    if (!open || !btnRef.current) return;
-    const r = btnRef.current.getBoundingClientRect();
-    setAnchor({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
+    if (!open) return;
+    const place = () => {
+      const b = btnRef.current;
+      if (!b) return;
+      const r = b.getBoundingClientRect();
+      setAnchor({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
+    };
+    place();
+    // A layout keyed on [open] alone freezes the anchor the moment it mounts; the bell moves
+    // under it on any resize or scroll. Recompute against the live button rect instead.
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
   }, [open]);
 
   const openPop = () => {
-    setOpen(o => !o);
-    if (!open) setSeen(events.length);
+    const next = !open;
+    setOpen(next);
+    if (next) {
+      const w = events.reduce((m, e) => Math.max(m, eventKey(e)), 0);
+      setSeen(w);
+      writeSeen(w);
+    }
   };
 
   const alarm = offline
@@ -121,7 +167,12 @@ export function TankStatusBar({ working, muted, reduced, onToggleMuted }: {
         ) : (
           <span
             className={`shrink-0 w-1.5 h-1.5 rounded-full ${
-              working > 0 || up ? 'bg-cyan-400 shadow-[0_0_0_3px_rgba(34,211,238,.28)] animate-pulse' : 'bg-slate-300'
+              working > 0
+                // a pulse is reserved for genuinely active work; a steady "up" reads as anxiety
+                ? 'bg-cyan-400 shadow-[0_0_0_3px_rgba(34,211,238,.28)] animate-pulse'
+                : up
+                  ? 'bg-cyan-400 shadow-[0_0_0_3px_rgba(34,211,238,.28)]'
+                  : 'bg-slate-300'
             }`}
           />
         )}
@@ -132,17 +183,17 @@ export function TankStatusBar({ working, muted, reduced, onToggleMuted }: {
         {c && (
           <div className="shrink-0 flex items-center gap-0.5">
             {([
-              ['Pend', c.pending, false],
-              ['Work', c.working, true],
-              ['Rev', c.testing, false],
+              ['Pending', c.pending, false],
+              ['Working', c.working, true],
+              ['Review', c.testing, false],
               ['Done', c.done, false],
             ] as const).map(([label, n, hot]) => (
               <span
                 key={label}
                 className={`flex items-baseline gap-1 px-1.5 py-0.5 rounded ${hot ? 'bg-accent-100' : ''}`}
               >
-                <b className={`text-[11px] font-extrabold tabular-nums ${hot ? 'text-accent-700' : 'text-slate-700'}`}>{n}</b>
-                <span className={`text-[8px] font-mono uppercase tracking-wider ${hot ? 'text-accent-600' : 'text-slate-400'}`}>
+                <b className={`text-2xs font-extrabold tabular-nums ${hot ? 'text-accent-700' : 'text-slate-700'}`}>{n}</b>
+                <span className={`text-micro font-mono uppercase tracking-wider ${hot ? 'text-accent-600' : 'text-slate-500'}`}>
                   {label}
                 </span>
               </span>
@@ -173,7 +224,7 @@ export function TankStatusBar({ working, muted, reduced, onToggleMuted }: {
             <div
               ref={popRef}
               style={{ top: anchor.top, right: anchor.right }}
-              className="fixed w-[320px] max-w-[80vw] z-[100] rounded-lg bg-slate-900 text-slate-100 border border-slate-700 shadow-2xl overflow-hidden"
+              className="fixed w-[320px] max-w-[80vw] z-[100] rounded-lg bg-surface-panel text-slate-100 border border-slate-700 shadow-2xl overflow-hidden"
             >
               <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-700/70">
                 <span className="flex-1 text-[9px] font-mono uppercase tracking-[0.13em] text-slate-400">Recent events</span>

@@ -120,6 +120,22 @@
            active:bg-slate-100 sm:hover:bg-slate-50 transition-colors disabled:opacity-50
            inline-flex items-center justify-center gap-1.5;
   }
+  /* ── UPPERCASE caps variants ── the "stamped" action look on the board/detail action rows
+     (Edit / Clear / lifecycle controls). The uppercase + tracking is the whole identity there,
+     so these can't fold into .btn-primary/.btn-ghost without regressing to lowercase. Same
+     tier-2 ink / neutral roles as their non-caps siblings — NOT a new danger level. Lighter
+     footprint than .btn-primary on purpose: no shadow, tighter type, because these sit in dense
+     toolbars, never as a page's hero CTA. */
+  .btn-primary-caps {
+    @apply min-h-control-lg px-4 text-xs font-bold uppercase tracking-wide text-white bg-slate-900 rounded-xl
+           active:bg-slate-950 sm:hover:bg-slate-800 transition-colors disabled:opacity-50
+           inline-flex items-center justify-center gap-1.5;
+  }
+  .btn-ghost-caps {
+    @apply min-h-control-lg px-4 text-xs font-bold uppercase tracking-wide text-slate-700 bg-white border border-slate-300 rounded-xl
+           active:bg-slate-100 sm:hover:bg-slate-50 transition-colors disabled:opacity-50
+           inline-flex items-center justify-center gap-1.5;
+  }
   /* ── Square icon-only button — the app's most repeated shape (header cluster, toolbars).
      ONE geometry for every icon button. Semantic controls (orchestrator = green, record =
      red) layer their COLOUR on top of this, so the row never mixes heights or radii.

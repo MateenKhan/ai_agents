@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import type { Task, Column, TaskControlAction } from '../types';
 import { COLUMNS } from '../types';
 import { TaskCard } from './TaskCard';
+import { btnGhostCaps } from '../ui';
 import { Plus, Trash2, X } from 'lucide-react';
 
 interface DragState {
@@ -243,7 +244,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
             <button
               data-feature-id="tasks-bulk-clear"
               onClick={clearSelection}
-              className="flex items-center gap-1.5 px-4 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-white text-slate-700 border border-slate-300 rounded-xl active:bg-slate-100 sm:hover:bg-slate-50 transition-colors"
+              className={btnGhostCaps}
             >
               <X size={14} /> Clear
             </button>
