@@ -1494,18 +1494,22 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  // The ONE door to the code index. Searching also records who searched, remembers the files
+  // that actually matched in the project's shared context, bumps their use counts, and evicts
+  // by least-frequently-used. See db/searchContext.ts. None of that can be skipped, because
+  // there is no other way in.
   if (req.method === 'POST' && (req.url || '').split('?')[0] === '/search') {
     try {
       const body = JSON.parse(await readBody(req));
-      // Attribute index usage to the calling agent (audit: who uses the DB vs greps)
-      if (body.agentName) {
-        try {
-          const { recordDbUsage } = await import('./tasks.js');
-          await recordDbUsage(body.agentName, body.taskId ?? null, body.query ?? '');
-        } catch { /* audit must never break search */ }
-      }
-      const results = await semanticSearch(body.query, body.topK ?? 10, projectIdOf(req, body));
-      res.end(JSON.stringify({ results }));
+      const { searchWithContext } = await import('./searchContext.js');
+      const { results, remembered, evicted } = await searchWithContext({
+        query: body.query,
+        topK: body.topK ?? 10,
+        projectId: projectIdOf(req, body),
+        agentName: body.agentName ?? null,
+        taskId: body.taskId ?? null,
+      });
+      res.end(JSON.stringify({ results, remembered, evicted }));
     } catch (e: any) {
       res.statusCode = 500;
       res.end(JSON.stringify({ error: e.message }));

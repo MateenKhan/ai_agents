@@ -62,16 +62,56 @@ describe('touch (read from memory)', () => {
   });
 });
 
-describe('LRU cap enforcement', () => {
-  it('evicts least-recently-used UNPINNED files when over cap', async () => {
-    // cap 250: three 100-token files → one must be evicted, the oldest-used.
+describe('cap enforcement — least-FREQUENTLY-used', () => {
+  it('with equal use counts, the least recently used goes first', async () => {
+    // cap 250: three 100-token files → one must be evicted. Nothing has been used twice, so
+    // recency is the only signal and this behaves exactly like the old LRU.
     await keepInContext({ projectId: P, path: 'old.ts', tokens: 100, addedBy: 'agent-1', cap: 1_000_000 });
     await keepInContext({ projectId: P, path: 'mid.ts', tokens: 100, addedBy: 'agent-1', cap: 1_000_000 });
     await keepInContext({ projectId: P, path: 'new.ts', tokens: 100, addedBy: 'agent-1', cap: 250 });
     const paths = (await listContext(P)).map(f => f.path).sort();
-    expect(paths).toEqual(['mid.ts', 'new.ts']); // old.ts evicted (LRU)
+    expect(paths).toEqual(['mid.ts', 'new.ts']);
     expect((await contextStats(P)).totalTokens).toBe(200);
     expect((await getContextOps(P)).some(o => o.op === 'evict' && o.path === 'old.ts')).toBe(true);
+  });
+
+  // The reason `useCount` exists as a column. Pure LRU threw away the file every agent keeps
+  // returning to, simply because one unrelated search touched something else more recently.
+  it('a heavily-used OLD file survives, and a rarely-used RECENT one is evicted', async () => {
+    await keepInContext({ projectId: P, path: 'hot.ts', tokens: 100, addedBy: 'agent-1', cap: 1_000_000 });
+    await touchContext(P, 'hot.ts', 'agent-2');     // useCount 2
+    await touchContext(P, 'hot.ts', 'agent-3');     // useCount 3
+
+    await keepInContext({ projectId: P, path: 'cool.ts', tokens: 100, addedBy: 'agent-1', cap: 1_000_000 });   // useCount 1
+    await keepInContext({ projectId: P, path: 'newest.ts', tokens: 100, addedBy: 'agent-1', cap: 250 });       // useCount 1
+
+    const paths = (await listContext(P)).map(f => f.path).sort();
+    // Under the old LRU, `hot.ts` had the oldest lastUsedAt and would have been the victim.
+    expect(paths).toEqual(['hot.ts', 'newest.ts']);
+    expect((await getContextOps(P)).some(o => o.op === 'evict' && o.path === 'cool.ts')).toBe(true);
+  });
+
+  it('frequency beats recency even when the frequent file is by far the oldest', async () => {
+    await keepInContext({ projectId: P, path: 'core.ts', tokens: 100, addedBy: 'agent-1', cap: 1_000_000 });
+    for (const a of ['agent-1', 'agent-2', 'agent-3', 'agent-4']) await touchContext(P, 'core.ts', a);
+
+    await keepInContext({ projectId: P, path: 'a.ts', tokens: 100, addedBy: 'agent-1', cap: 1_000_000 });
+    await keepInContext({ projectId: P, path: 'b.ts', tokens: 100, addedBy: 'agent-1', cap: 1_000_000 });
+    await keepInContext({ projectId: P, path: 'c.ts', tokens: 100, addedBy: 'agent-1', cap: 250 });
+
+    const paths = (await listContext(P)).map(f => f.path);
+    expect(paths).toContain('core.ts');
+    expect(paths).toHaveLength(2);
+  });
+
+  it('a user pin still outranks everything, however cold', async () => {
+    await keepInContext({ projectId: P, path: 'pinned.ts', tokens: 100, addedBy: 'user', pinned: true, cap: 1_000_000 });
+    await keepInContext({ projectId: P, path: 'busy.ts', tokens: 100, addedBy: 'agent-1', cap: 1_000_000 });
+    for (const a of ['agent-1', 'agent-2']) await touchContext(P, 'busy.ts', a);
+    await keepInContext({ projectId: P, path: 'spill.ts', tokens: 100, addedBy: 'agent-1', cap: 150 });
+
+    const paths = (await listContext(P)).map(f => f.path);
+    expect(paths).toContain('pinned.ts');   // never evicted, whatever its use count
   });
 
   it('never evicts pinned files even when over cap', async () => {

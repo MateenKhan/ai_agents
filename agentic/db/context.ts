@@ -215,9 +215,17 @@ export async function enforceCap(projectId: string, cap = DEFAULT_CONTEXT_CAP): 
     }
   };
 
-  // Pass 1 — plain LRU cache entries.
+  // Pass 1 — unpinned entries, LEAST-FREQUENTLY-USED first.
+  //
+  // This used to be pure LRU, ordered by `lastUsedAt` alone, which threw away the file every
+  // agent keeps coming back to simply because a one-off search touched something else more
+  // recently. `useCount` existed as a column and decided nothing. Frequency first, recency as
+  // the tie-break: a file read once and never again is the first to go; a file the whole
+  // pipeline depends on survives.
   await evictRows(
-    await s.all(`SELECT * FROM context_files WHERE projectId=? AND pinned=0 ORDER BY lastUsedAt ASC`, [projectId]) as any[],
+    await s.all(
+      `SELECT * FROM context_files WHERE projectId=? AND pinned=0 ORDER BY useCount ASC, lastUsedAt ASC`,
+      [projectId]) as any[],
     `over cap (${cap})`,
   );
 
@@ -225,7 +233,7 @@ export async function enforceCap(projectId: string, cap = DEFAULT_CONTEXT_CAP): 
   if (totalTokens > cap) {
     await evictRows(
       await s.all(
-        `SELECT * FROM context_files WHERE projectId=? AND pinned=1 AND (addedBy IS NULL OR addedBy <> 'user') ORDER BY lastUsedAt ASC`,
+        `SELECT * FROM context_files WHERE projectId=? AND pinned=1 AND (addedBy IS NULL OR addedBy <> 'user') ORDER BY useCount ASC, lastUsedAt ASC`,
         [projectId]) as any[],
       `over cap (${cap}) — evicting system auto-pin`,
     );
