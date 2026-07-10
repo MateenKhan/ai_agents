@@ -1,0 +1,19 @@
+{
+  "//": "Typechecks the db-server + query layer, which the root tsconfig (include:['src']) never covered. Imports agentic/ across the boundary, so it includes both.",
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["**/*.ts", "../agentic/**/*.ts"]
+}

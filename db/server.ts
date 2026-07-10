@@ -403,8 +403,25 @@ async function runDbIntegrityCheck(): Promise<void> {
   if (!isRebuilding('default') && !indexResponds('default')) rebuildIndex('is corrupt', 'default');
 }
 
-// Timer callbacks: swallow rejections so one failed probe can't kill the process.
-const tickIntegrity = () => { void runDbIntegrityCheck().catch(e => console.error('[db-server] integrity check failed:', e)); };
+// The integrity check must survive a throw without killing the process — but a check that
+// KEEPS throwing means the health monitor is dead, and a dead monitor cannot honestly report
+// "healthy". A single transient failure is tolerated; a persistent one is escalated to an
+// un-missable warning, because that is exactly the case that once went unnoticed for minutes
+// (an undefined `isPostgres` threw every tick while the board still served as if fine).
+let monitorFailures = 0;
+const tickIntegrity = () => {
+  void runDbIntegrityCheck()
+    .then(() => { monitorFailures = 0; })
+    .catch(e => {
+      monitorFailures++;
+      const detail = e?.message || e;
+      if (monitorFailures >= 3) {
+        console.error(`[db-server] HEALTH MONITOR DOWN — the integrity check has failed ${monitorFailures} times in a row (${detail}). Board health is UNKNOWN, not necessarily healthy. Fix the monitor.`);
+      } else {
+        console.error(`[db-server] integrity check failed (${monitorFailures}/3): ${detail}`);
+      }
+    });
+};
 setInterval(tickIntegrity, 30_000);
 setTimeout(tickIntegrity, 3_000); // one early check shortly after boot
 

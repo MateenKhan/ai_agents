@@ -71,6 +71,8 @@
     "db:annotate": "cross-env DB_FILE=local.db tsx db/index.ts annotate",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc -b && tsc --noEmit -p agentic/tsconfig.json && tsc --noEmit -p db/tsconfig.json",
+    "typecheck:engine": "tsc --noEmit -p agentic/tsconfig.json && tsc --noEmit -p db/tsconfig.json",
     "agents": "kill-port 6951 6952 && concurrently --restart-tries 5 --restart-after 5000 \"pnpm exec vite\" \"pnpm:db:server:stable\" \"pnpm:db:orchestrator:stable\" --names \"vite,db,ai\" --prefix-colors \"cyan,magenta,green\"",
     "agents:vps": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run agents"
   },
@@ -88,6 +90,7 @@
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.1.0",
     "@types/pg": "^8.11.10",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

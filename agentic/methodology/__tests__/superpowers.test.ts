@@ -21,12 +21,21 @@ describe('skillsForRole', () => {
 });
 
 describe('superpowersPreamble', () => {
-  it('names the role and its skills, and mentions superpowers', () => {
+  it('names the role and its skills', () => {
     const p = superpowersPreamble('dev');
-    expect(p).toContain('SUPERPOWERS');
     expect(p).toContain('"dev"');
     expect(p).toContain('test-driven-development');
   });
+
+  // It must NOT assert the skills are installed — they usually are not, and a false claim sends
+  // the agent hunting for skills that do not exist. The claim is conditional.
+  it('is conditional, never asserting the skills are present', () => {
+    const p = superpowersPreamble('dev');
+    expect(p).toMatch(/\bIF\b/);
+    expect(p).toMatch(/if they are not installed/i);
+    expect(p).not.toMatch(/library is installed in this environment/);
+  });
+
   it('is non-empty for a custom role too', () => {
     expect(superpowersPreamble('reviewer').length).toBeGreaterThan(0);
     expect(superpowersPreamble('reviewer')).toContain('brainstorming');

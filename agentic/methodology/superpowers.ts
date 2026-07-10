@@ -38,14 +38,20 @@ export function skillsForRole(role: string): string[] {
   return ROLE_SKILLS[role] ?? DEFAULT_SKILLS;
 }
 
-/** The prompt preamble injected ahead of a role's template. */
+/** The prompt preamble injected ahead of a role's template.
+ *
+ *  It used to ASSERT "the superpowers skill library is installed", then order the agent to
+ *  consult it. When the skills are not installed — which is the common case; a fresh box has
+ *  none — that is a false claim that sends the agent hunting for skills that do not exist, or
+ *  makes it perform compliance ("Using the test-driven-development skill") over nothing. The
+ *  wording is now CONDITIONAL: if the skills are present, lead with them; the methodology the
+ *  templates already carry (write the failing test, make it pass, refactor) stands regardless. */
 export function superpowersPreamble(role: string): string {
   const skills = skillsForRole(role);
   return [
-    'SUPERPOWERS — the superpowers skill library is installed in this environment.',
-    `For this "${role}" role, lead with these skills: ${skills.join(', ')}.`,
-    'Consult the relevant skill BEFORE acting, follow it, and state which skill you are using.',
-    'These skills define HOW you work; the task brief below defines WHAT you deliver.',
+    `METHODOLOGY — IF the "superpowers" skills are available in this environment, lead this "${role}" role with: ${skills.join(', ')}.`,
+    'Consult the relevant skill before acting and follow it. If they are not installed, ignore this and follow the methodology in the brief below.',
+    'Either way: skills define HOW you work; the task brief defines WHAT you deliver.',
   ].join('\n');
 }
 
