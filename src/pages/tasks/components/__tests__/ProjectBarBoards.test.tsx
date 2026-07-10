@@ -2,8 +2,8 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { ToastProvider } from '../components/Toast';
-import { ConfirmProvider } from '../components/ConfirmProvider';
+import { ToastProvider } from '../Toast';
+import { ConfirmProvider } from '../ConfirmProvider';
 
 // ProjectBar fires toasts (delete feedback) and opens a typed confirm before deleting a
 // project, so it needs both providers. Render through this, never bare.
@@ -16,7 +16,7 @@ const renderBar = () => render(
 );
 
 // Mock the projects context so the bar renders without any network/fetch.
-vi.mock('../projectContext', () => ({
+vi.mock('../../projectContext', () => ({
   useProjects: () => ({
     projects: [{ id: 'default', name: 'Default' }],
     activeId: 'default',
@@ -29,8 +29,8 @@ vi.mock('../projectContext', () => ({
   }),
 }));
 
-import { ProjectBar } from '../components/ProjectBar';
-import { BOARD_COLUMNS_EVENT } from '../boardConfig';
+import { ProjectBar } from '../ProjectBar';
+import { BOARD_COLUMNS_EVENT } from '../../boardConfig';
 
 afterEach(cleanup);
 beforeEach(() => localStorage.clear());

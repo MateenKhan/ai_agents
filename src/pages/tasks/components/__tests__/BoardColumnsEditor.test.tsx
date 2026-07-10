@@ -2,9 +2,9 @@
 import React, { useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { render, screen, fireEvent, cleanup, within } from '@testing-library/react';
-import { BoardColumnsEditor } from '../components/BoardColumnsEditor';
-import { DEFAULT_COLUMNS } from '../boardConfig';
-import type { Column } from '../types';
+import { BoardColumnsEditor } from '../BoardColumnsEditor';
+import { DEFAULT_COLUMNS } from '../../boardConfig';
+import type { Column } from '../../types';
 
 afterEach(cleanup);
 

@@ -2,10 +2,10 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { SettingsModal } from '../components/SettingsModal';
-import { DEFAULT_COLUMNS } from '../boardConfig';
-import type { TabId } from '../tabsConfig';
-import type { Column } from '../types';
+import { SettingsModal } from '../SettingsModal';
+import { DEFAULT_COLUMNS } from '../../boardConfig';
+import type { TabId } from '../../tabsConfig';
+import type { Column } from '../../types';
 
 afterEach(cleanup);
 

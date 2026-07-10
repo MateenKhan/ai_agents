@@ -2,8 +2,8 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { TaskBoard } from '../components/TaskBoard';
-import type { Column, Task } from '../types';
+import { TaskBoard } from '../TaskBoard';
+import type { Column, Task } from '../../types';
 
 afterEach(cleanup);
 

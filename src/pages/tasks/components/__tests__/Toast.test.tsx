@@ -37,6 +37,14 @@ function mount() {
   );
 }
 
+/** Mount with direct access to the toast API, for cases a button click can't express. */
+function mountApi() {
+  let api!: ReturnType<typeof useToast>;
+  const Grab = () => { api = useToast(); return null; };
+  render(<ToastProvider><Grab /></ToastProvider>);
+  return () => api;
+}
+
 describe('ToastProvider / useToast', () => {
   it('shows a success toast with title and message', () => {
     mount();
@@ -78,5 +86,65 @@ describe('ToastProvider / useToast', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * The live-region contract.
+ *
+ * Toasts are the only channel that tells a user an agent edited or merged their repo, so
+ * announcement is a safety property, not polish. The rule screen readers enforce: a live
+ * region must EXIST BEFORE its content changes. A node that arrives already carrying
+ * aria-live is not reliably announced — the reader subscribed to regions at parse time.
+ *
+ * These tests pin structure only. They CANNOT prove a screen reader speaks; that still
+ * needs a real assistive-technology pass.
+ *
+ * (Plain DOM assertions — this repo has no jest-dom matchers, and these do not justify a
+ * new dev dependency.)
+ */
+describe('ToastProvider live regions', () => {
+  it('renders both live regions before any toast exists', () => {
+    mountApi();
+    // Present, empty, subscribed. This is the whole point.
+    const assertive = screen.getByRole('alert');
+    const polite = screen.getByRole('status');
+    expect(assertive.getAttribute('aria-live')).toBe('assertive');
+    expect(polite.getAttribute('aria-live')).toBe('polite');
+    expect(assertive.textContent).toBe('');
+    expect(polite.textContent).toBe('');
+  });
+
+  it('overrides the implicit aria-atomic of role=alert/status', () => {
+    mountApi();
+    // role=alert and role=status both imply aria-atomic=true. Left implicit, one new toast
+    // re-announces every toast still on screen — a merge failure buried under four successes.
+    expect(screen.getByRole('alert').getAttribute('aria-atomic')).toBe('false');
+    expect(screen.getByRole('status').getAttribute('aria-atomic')).toBe('false');
+  });
+
+  it('routes an error into the assertive region and success into the polite one', () => {
+    const api = mountApi();
+    act(() => { api().error('Merge failed', 'conflict in db/server.ts'); });
+    act(() => { api().success('Task merged', 'PIR-14'); });
+
+    const assertive = screen.getByRole('alert');
+    const polite = screen.getByRole('status');
+
+    expect(assertive.textContent).toContain('Merge failed');
+    expect(assertive.textContent).not.toContain('Task merged');
+
+    expect(polite.textContent).toContain('Task merged');
+    expect(polite.textContent).not.toContain('Merge failed');
+  });
+
+  it('does not put aria-live or a role on the toast row itself', () => {
+    const api = mountApi();
+    act(() => { api().info('Indexing', 'piranha'); });
+    const row = document.querySelector('[data-feature-id="toast"]')!;
+    expect(row.hasAttribute('aria-live')).toBe(false);
+    expect(row.hasAttribute('role')).toBe(false);
+    // The row stays atomic so it is read as one unit, not word by word.
+    expect(row.getAttribute('aria-atomic')).toBe('true');
   });
 });
