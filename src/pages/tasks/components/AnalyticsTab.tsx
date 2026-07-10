@@ -100,7 +100,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
   const neverSearched = [...claimedAgents].filter(a => !(dbUsage ?? []).some(u => u.agentName === a));
 
   return (
-    <div className="p-3 sm:p-4 space-y-4 pb-24 h-[calc(100dvh-170px)] overflow-y-auto custom-scrollbar" data-feature-id="tasks-analytics-tab">
+    <div className="p-3 sm:p-4 space-y-4 pb-24 h-full overflow-y-auto custom-scrollbar" data-feature-id="tasks-analytics-tab">
       {/* Headline stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Defined" value={tasks.length} sub={`${byStatus['AVAILABLE'] || 0} available, ${byStatus['TODO'] || 0} todo`} />

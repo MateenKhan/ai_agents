@@ -11,8 +11,20 @@ import { createPortal } from 'react-dom';
  * aria-label — otherwise migrating `title=` -> <Tooltip> would silently strip the
  * name that screen readers announce. An explicit aria-label on the child always wins.
  *
+ * PLACEMENT: `side` is a preference, not an instruction. A tooltip that renders above a
+ * trigger sitting 34px from the top of the viewport lands off-screen, and portalling to
+ * <body> does not save it — nothing clipped it, there was simply nowhere to be. So the
+ * side flips when the preferred one does not fit, and the horizontal centre is clamped so
+ * a tooltip on the leftmost control cannot run off the edge either.
+ *
  * Usage: <Tooltip label="Refresh"><button …/></Tooltip>
  */
+
+/** Enough for one line of `text-2xs` plus padding, plus the 8px gap. Measuring the tooltip
+ *  would need it mounted first, which means a frame of it drawn in the wrong place. */
+const NEEDED = 34;
+const EDGE = 8;
+
 export function Tooltip({
   label,
   children,
@@ -22,13 +34,22 @@ export function Tooltip({
   children: ReactNode;
   side?: 'top' | 'bottom';
 }) {
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number; side: 'top' | 'bottom' } | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
 
   const show = useCallback(() => {
     const r = ref.current?.getBoundingClientRect();
     if (!r) return;
-    setPos({ x: r.left + r.width / 2, y: side === 'top' ? r.top : r.bottom });
+    const fitsAbove = r.top >= NEEDED;
+    const fitsBelow = window.innerHeight - r.bottom >= NEEDED;
+    // Prefer `side`; fall back to the other only when it actually has room. When neither
+    // fits (a control in a viewport shorter than ~70px) keep the preference — clipped is
+    // still better than flipping to a side that is equally clipped.
+    const place: 'top' | 'bottom' =
+      side === 'top' ? (fitsAbove || !fitsBelow ? 'top' : 'bottom')
+        : (fitsBelow || !fitsAbove ? 'bottom' : 'top');
+    const cx = Math.min(Math.max(r.left + r.width / 2, EDGE), window.innerWidth - EDGE);
+    setPos({ x: cx, y: place === 'top' ? r.top : r.bottom, side: place });
   }, [side]);
   const hide = useCallback(() => setPos(null), []);
 
@@ -52,11 +73,12 @@ export function Tooltip({
       {labelled}
       {pos && label && createPortal(
         <div
+          data-side={pos.side}
           style={{
             position: 'fixed',
             left: pos.x,
-            top: side === 'top' ? pos.y - 8 : pos.y + 8,
-            transform: side === 'top' ? 'translate(-50%, -100%)' : 'translate(-50%, 0)',
+            top: pos.side === 'top' ? pos.y - 8 : pos.y + 8,
+            transform: pos.side === 'top' ? 'translate(-50%, -100%)' : 'translate(-50%, 0)',
           }}
           className="z-[200] pointer-events-none px-2 py-1 rounded-md bg-slate-900 text-white text-2xs font-semibold whitespace-nowrap shadow-lg"
           role="tooltip"

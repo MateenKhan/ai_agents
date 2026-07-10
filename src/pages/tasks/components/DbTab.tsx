@@ -3,7 +3,7 @@ import { Tooltip } from './Tooltip';
 import { Database, Search, Trash2, Edit2, Plus, ChevronLeft, ChevronRight, X, Save, AlertTriangle, ArrowUp, ArrowDown, PencilLine } from 'lucide-react';
 import { API_BASE as API } from '../../../apiBase';
 import { Modal } from './Modal';
-import { btnDangerSm, iconBtnDanger } from '../ui';
+import { btnDangerSm, btnPrimarySm, btnSm, iconBtnDanger } from '../ui';
 
 /**
  * DB Browser tab — clean paginated view over the allowlisted SQLite tables
@@ -153,7 +153,7 @@ export default function DbTab() {
   const pages = Math.max(1, Math.ceil(total / PAGE));
 
   return (
-    <div className="p-3 sm:p-4 space-y-3" data-feature-id="tasks-db-tab">
+    <div className="h-full overflow-y-auto custom-scrollbar p-3 sm:p-4 space-y-3" data-feature-id="tasks-db-tab">
       {/* Table chips + search */}
       <div className="flex items-center gap-2 flex-wrap">
         {(tables ?? []).map(t => (
@@ -182,7 +182,7 @@ export default function DbTab() {
           <button
             onClick={() => setEditing({})}
             data-feature-id="db-add-row"
-            className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors"
+            className={btnPrimarySm}
           >
             <Plus size={14} /> Row
           </button>
@@ -210,8 +210,7 @@ export default function DbTab() {
                 placeholder="new value (empty = null)"
                 className="px-3 min-h-control text-xs font-mono bg-white border border-slate-300 rounded-lg text-slate-900 w-44"
               />
-              <button onClick={bulkUpdate} disabled={busy || !bulkEdit.col}
-                className="px-3 min-h-control text-xs font-bold bg-slate-900 text-white rounded-lg disabled:opacity-40 hover:bg-slate-800">
+              <button onClick={bulkUpdate} disabled={busy || !bulkEdit.col} className={btnPrimarySm}>
                 Apply to {selected.size}
               </button>
               <button onClick={() => setBulkEdit(null)} className="px-2 min-h-control text-xs font-bold text-slate-600 hover:text-slate-900">Cancel</button>
@@ -301,12 +300,10 @@ export default function DbTab() {
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-500">{total} rows · page {page}/{pages}</p>
         <div className="flex gap-2">
-          <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}
-            className="flex items-center gap-1 px-3 min-h-control text-xs font-bold bg-white border border-slate-300 rounded-lg disabled:opacity-40 hover:bg-slate-50 text-slate-700 transition-colors">
+          <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))} className={btnSm}>
             <ChevronLeft size={14} /> Prev
           </button>
-          <button disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}
-            className="flex items-center gap-1 px-3 min-h-control text-xs font-bold bg-white border border-slate-300 rounded-lg disabled:opacity-40 hover:bg-slate-50 text-slate-700 transition-colors">
+          <button disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)} className={btnSm}>
             Next <ChevronRight size={14} />
           </button>
         </div>

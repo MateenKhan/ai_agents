@@ -9,7 +9,7 @@ import { API_BASE as API } from '../../../apiBase';
 // Same skill map the orchestrator injects into prompts (dependency-free module) — so
 // the UI shows exactly which superpowers each role runs, with no drift.
 import { skillsForRole, SKILL_DESCRIPTIONS } from '../../../../agentic/methodology/superpowers';
-import { btnPrimary, btnPrimarySm, btnGhost, inputCls, selectCls, textareaCls, selectSm, iconBtnDanger } from '../ui';
+import { btnPrimary, btnPrimarySm, btnSm, btnDangerSm, btnGhost, inputCls, selectCls, textareaCls, selectSm, iconBtnDanger } from '../ui';
 
 /**
  * Agents tab — edit the pipeline's role config (prompt + model + worktree + enabled),
@@ -28,12 +28,11 @@ const MODELS: { v: string; label: string }[] = [
 // Small skill chip — one superpowers skill the role leads with.
 function SkillChip({ name }: { name: string }) {
   return (
-    <span
-      title={SKILL_DESCRIPTIONS[name] || 'superpowers skill'}
-      className="inline-flex items-center gap-1 text-micro font-semibold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200"
-    >
-      <Sparkles size={9} /> {name}
-    </span>
+    <Tooltip label={SKILL_DESCRIPTIONS[name] || 'superpowers skill'}>
+      <span className="inline-flex items-center gap-1 text-micro font-semibold text-ai-700 px-1.5 py-0.5 bg-ai-50 rounded border border-ai-200">
+        <Sparkles size={9} /> {name}
+      </span>
+    </Tooltip>
   );
 }
 const WORKTREES = [
@@ -103,9 +102,10 @@ export default function AgentsTab() {
   const reset = async () => {
     const ok = await confirm({
       title: 'Reset to shipped defaults?',
-      message: 'Reset all built-in roles to their shipped default prompts, models and workspaces. Custom agents are kept.',
-      confirmLabel: 'Reset',
-      tone: 'default',
+      message: 'Every built-in role\'s prompt, model and workspace is overwritten with the shipped defaults. Your edits to them are gone for good. Custom agents are kept.',
+      confirmLabel: 'Reset defaults',
+      tone: 'danger',
+      requireType: 'reset',
     });
     if (!ok) return;
     try { await fetch(`${API}/agents/reset`, { method: 'POST' }); load(); toast.success('Agents reset to defaults'); }
@@ -230,13 +230,16 @@ export default function AgentsTab() {
   );
 
   return (
-    <div className="p-3 sm:p-4 space-y-4" data-feature-id="tasks-agents-tab">
+    <div className="h-full overflow-y-auto custom-scrollbar p-3 sm:p-4 space-y-4" data-feature-id="tasks-agents-tab">
       <div className="flex items-center gap-2 flex-wrap">
         <p className="text-sm text-slate-600">Configure each role's model, prompt, and workspace. Edits apply within ~10s.</p>
         <div className="ml-auto flex gap-2">
-          <button onClick={() => setWorkspaceOpen(true)} data-feature-id="agents-workspace-btn" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-white text-accent-700 border border-accent-300 rounded-lg hover:bg-accent-50"><WorkflowIcon size={14} /> Workspace</button>
+          {/* The pipeline these roles run through. It is a page, not a popup: it needs the whole
+              viewport, and it is not a per-agent setting. */}
+          <a href="/workflow" data-feature-id="agents-workflow-link" className={btnSm}><WorkflowIcon size={14} /> Edit workflow</a>
+          <button onClick={() => setWorkspaceOpen(true)} data-feature-id="agents-workspace-btn" className={btnSm}><WorkflowIcon size={14} /> Workspace</button>
           <button onClick={addCustom} className={btnPrimarySm}><Plus size={14} /> Custom agent</button>
-          <button onClick={reset} className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold bg-white text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50"><RotateCcw size={14} /> Reset defaults</button>
+          <button onClick={reset} data-feature-id="agents-reset-btn" className={btnDangerSm}><RotateCcw size={14} /> Reset defaults</button>
         </div>
       </div>
 
@@ -371,41 +374,51 @@ export default function AgentsTab() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {agents.map(a => (
             <div key={a.role} className={`bg-white border-2 rounded-xl p-4 space-y-3 shadow-sm ${a.enabled ? 'border-slate-200' : 'border-slate-200 opacity-60'}`}>
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 flex items-center justify-center bg-accent-50 border border-accent-200 rounded-lg"><Bot size={18} className="text-accent-600" /></div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900">{a.label || a.role} {a.isSystem ? '' : <span className="text-micro font-bold text-accent-600">CUSTOM</span>}</h3>
-                  <p className="text-2xs font-mono text-slate-500">{a.role}</p>
+              {/* The card is TWO rows now: identity + configuration, then the prompt.
+                  It was four — name, role id, config, superpowers — each a full-width band
+                  carrying one short value. The role id is a subtitle, not a section, so it sits
+                  beside the name; model/worktree/skills sit under it, because "which model,
+                  which worktree, which skills" is one answer to one question: how is this role
+                  set up. Every band removed is a band of prompt. */}
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 shrink-0 flex items-center justify-center bg-accent-50 border border-accent-200 rounded-lg"><Bot size={18} className="text-accent-600" /></div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="flex items-baseline gap-2 flex-wrap text-sm font-bold text-slate-900">
+                    <span className="truncate">{a.label || a.role}</span>
+                    <span className="text-2xs font-mono font-semibold text-slate-500">{a.role}</span>
+                    {!a.isSystem && <span className="text-micro font-bold text-accent-600">CUSTOM</span>}
+                  </h3>
+                  <div className="mt-1.5 flex items-center gap-x-3 gap-y-1.5 flex-wrap text-xs">
+                    {/* Inline model picker — change the model without opening the editor */}
+                    <label className="flex items-center gap-1 text-slate-700">
+                      <Cpu size={12} className="text-accent-500" />
+                      <select
+                        value={a.model}
+                        onChange={e => setModel(a, e.target.value)}
+                        data-feature-id={`agent-model-${a.role}`}
+                        className={`${selectSm} w-auto`}
+                      >
+                        {/* Include the current value even if it's a custom/unknown model string. */}
+                        {!MODELS.some(m => m.v === a.model) && <option value={a.model}>{a.model}</option>}
+                        {MODELS.map(m => <option key={m.v} value={m.v}>{m.v}</option>)}
+                      </select>
+                    </label>
+                    <span className="flex items-center gap-1 text-slate-700"><GitBranch size={12} className="text-emerald-500" /> {a.worktreeMode}</span>
+                    <span className="w-px h-4 bg-slate-200 shrink-0" aria-hidden="true" />
+                    {/* The chips lost their "SUPERPOWERS" eyebrow when that row went; the group
+                        keeps the name, so it is not lost on anyone who cannot see the divider. */}
+                    <span role="group" aria-label="Superpowers skills" className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      {skillsForRole(a.role).map(s => <SkillChip key={s} name={s} />)}
+                    </span>
+                  </div>
                 </div>
-                <div className="ml-auto flex items-center gap-1.5">
+                <div className="shrink-0 flex items-center gap-1.5">
                   <Tooltip label={a.enabled ? 'Enabled' : 'Disabled'}><button onClick={() => toggle(a)} className={`p-2 rounded-lg border transition-colors ${a.enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}><Power size={14} /></button></Tooltip>
                   <Tooltip label="Edit"><button onClick={() => setEditing(a)} className="p-2 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"><Save size={14} /></button></Tooltip>
                   {!a.isSystem && <Tooltip label="Delete"><button onClick={() => del(a.role)} className={iconBtnDanger}><Trash2 size={14} /></button></Tooltip>}
                 </div>
               </div>
-              <div className="flex items-center gap-3 text-xs">
-                {/* Inline model picker — change the model without opening the editor */}
-                <label className="flex items-center gap-1 text-slate-700">
-                  <Cpu size={12} className="text-accent-500" />
-                  <select
-                    value={a.model}
-                    onChange={e => setModel(a, e.target.value)}
-                    data-feature-id={`agent-model-${a.role}`}
-                    className={`${selectSm} w-auto`}
-                  >
-                    {/* Include the current value even if it's a custom/unknown model string. */}
-                    {!MODELS.some(m => m.v === a.model) && <option value={a.model}>{a.model}</option>}
-                    {MODELS.map(m => <option key={m.v} value={m.v}>{m.v}</option>)}
-                  </select>
-                </label>
-                <span className="flex items-center gap-1 text-slate-700"><GitBranch size={12} className="text-emerald-500" /> {a.worktreeMode}</span>
-              </div>
-              {/* Superpowers — the skills this role leads with (from the shared skill map) */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="eyebrow">Superpowers</span>
-                {skillsForRole(a.role).map(s => <SkillChip key={s} name={s} />)}
-              </div>
-              <p className="text-2xs text-slate-500 font-mono bg-slate-50 border border-slate-200 rounded-lg p-2 line-clamp-3 whitespace-pre-wrap">{a.promptTemplate}</p>
+              <p className="text-2xs text-slate-500 font-mono bg-slate-50 border border-slate-200 rounded-lg p-2 line-clamp-[10] whitespace-pre-wrap">{a.promptTemplate}</p>
             </div>
           ))}
         </div>

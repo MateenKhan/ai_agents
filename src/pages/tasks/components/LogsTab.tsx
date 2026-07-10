@@ -121,7 +121,7 @@ export default function LogsTab({ initialAgent }: { initialAgent?: string | null
   );
 
   return (
-    <div className="p-3 sm:p-4 h-[calc(100dvh-170px)] flex flex-col" data-feature-id="tasks-logs-tab">
+    <div className="p-3 sm:p-4 h-full flex flex-col" data-feature-id="tasks-logs-tab">
       <LogConsole
         lines={active ? lines : []}
         parsed

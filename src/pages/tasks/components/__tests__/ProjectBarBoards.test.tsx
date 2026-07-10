@@ -2,17 +2,21 @@
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '../Toast';
 import { ConfirmProvider } from '../ConfirmProvider';
 
-// ProjectBar fires toasts (delete feedback) and opens a typed confirm before deleting a
-// project, so it needs both providers. Render through this, never bare.
+// ProjectBar fires toasts (delete feedback), opens a typed confirm before deleting a project,
+// and its brand mark is a <Link> to /features — which throws without a router in context.
+// Render through this, never bare.
 const renderBar = () => render(
-  <ToastProvider>
-    <ConfirmProvider>
-      <ProjectBar />
-    </ConfirmProvider>
-  </ToastProvider>,
+  <MemoryRouter>
+    <ToastProvider>
+      <ConfirmProvider>
+        <ProjectBar />
+      </ConfirmProvider>
+    </ToastProvider>
+  </MemoryRouter>,
 );
 
 // Mock the projects context so the bar renders without any network/fetch.

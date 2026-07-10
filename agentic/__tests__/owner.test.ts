@@ -8,8 +8,6 @@ import { buildConfig, setConfig, getConfig } from '../index';
 import { createTask, getTask, updateTask, coerceScenarios } from '../db/tasks';
 import { getAgents } from '../db/agents';
 import { DEFAULT_AGENTS } from '../db/defaults';
-import { nextRoute } from '../engine/orchestrator';
-import type { Task, Stage } from '../types';
 
 const tempDbPath = join(tmpdir(), `mc-owner-${randomBytes(6).toString('hex')}.db`);
 
@@ -189,67 +187,6 @@ describe('owner role registration', () => {
   });
 });
 
-// A stage that nextRoute() cannot route is a task stuck in WORKING forever: never dispatched,
-// never dead-lettered, invisible. That has happened once already (architect invented
-// stage="blocked"). Adding two stages is exactly when it happens again.
-const task = (stage: Stage | null): Task => ({ id: 't', title: 'T', status: 'WORKING', stage } as Task);
-const setToggles = (tg: Record<string, unknown>) => {
-  const cfg = getConfig();
-  cfg.toggles = { ...(cfg.toggles || {}), ...tg } as any;
-  setConfig(cfg);
-};
-
-describe('nextRoute with the owner enabled', () => {
-  beforeAll(() => setToggles({ enableOwner: true, enableArchitect: true, enableQa: true }));
-
-  it('sends a brand-new task to the owner intake gate, not straight to the architect', () => {
-    expect(nextRoute(task(null))).toEqual({ role: 'owner', stage: 'intake' });
-  });
-
-  it('routes the accept gate to the owner', () => {
-    expect(nextRoute(task('accept'))).toEqual({ role: 'owner', stage: 'accept' });
-  });
-
-  it('leaves the rest of the pipeline exactly as it was', () => {
-    expect(nextRoute(task('plan'))).toEqual({ role: 'architect', stage: 'plan' });
-    expect(nextRoute(task('build'))).toEqual({ role: 'dev', stage: 'build' });
-    expect(nextRoute(task('qa'))).toEqual({ role: 'qa', stage: 'qa' });
-    expect(nextRoute(task('merge'))).toEqual({ role: 'architect', stage: 'merge' });
-    expect(nextRoute(task('rescue'))).toEqual({ role: 'architect', stage: 'rescue' });
-  });
-
-  it('does not dispatch the human gates', () => {
-    // 'review' is parked by dispatchPending, 'merged' is terminal.
-    expect(nextRoute(task('review'))).toBeNull();
-    expect(nextRoute(task('merged'))).toBeNull();
-  });
-});
-
-describe('nextRoute with the owner disabled', () => {
-  beforeAll(() => setToggles({ enableOwner: false, enableArchitect: true, enableQa: true }));
-  afterAll(() => setToggles({ enableOwner: true }));
-
-  it('a new task goes straight to the architect — the old behaviour, unchanged', () => {
-    expect(nextRoute(task(null))).toEqual({ role: 'architect', stage: 'plan' });
-  });
-
-  it('an in-flight accept task is NOT routed here (dispatchPending converts it to review)', () => {
-    // It must return null rather than route to a disabled owner — and dispatchPending's
-    // escape hatch is what stops that null from becoming a permanent stall.
-    expect(nextRoute(task('accept'))).toBeNull();
-  });
-
-  it('intake falls through to the architect rather than stalling', () => {
-    expect(nextRoute(task('intake'))).toEqual({ role: 'architect', stage: 'plan' });
-  });
-});
-
-describe('nextRoute with the owner enabled but no architect', () => {
-  beforeAll(() => setToggles({ enableOwner: true, enableArchitect: false, enableQa: true }));
-  afterAll(() => setToggles({ enableOwner: true, enableArchitect: true }));
-
-  it('intake still runs, then falls through the missing architect to the dev', () => {
-    expect(nextRoute(task('intake'))).toEqual({ role: 'owner', stage: 'intake' });
-    expect(nextRoute(task('plan'))).toEqual({ role: 'dev', stage: 'build' });
-  });
-});
+// The hard-coded routing table these tests pinned is gone: routing is now graph-driven, and
+// agentic/workflow/__tests__/route.test.ts covers it — including the case that matters most,
+// where renaming `qa` to `tapora` leaves it holding the QA powers.

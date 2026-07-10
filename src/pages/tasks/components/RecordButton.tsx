@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Circle, Square, Mic, MicOff, Settings2 } from 'lucide-react';
+import { Circle, Square, Mic, MicOff } from 'lucide-react';
 import {
   ScreenRecorder, downloadBlob, isSupported, isUserCancel,
   availableTiers, defaultTier, estimateBitrate, FPS_OPTIONS, QUALITY_TIERS,
@@ -7,11 +7,18 @@ import {
 } from '../services/screenRecorder';
 import { useToast } from './Toast';
 import { Tooltip } from './Tooltip';
-import { iconBtn } from '../ui';
+import { iconBtn, btnPrimarySm } from '../ui';
 
 /**
  * Manual screen-recorder control for the board's action cluster.
- * Idle → mic toggle + quality popover + record icon. Recording → pulsing dot + MM:SS, click to stop.
+ *
+ * ONE button. It used to be three siblings — mic toggle, quality popover, record — which read
+ * as three unrelated features sitting in a row of unrelated features. Mic and quality are not
+ * actions; they are settings for the one action, and settings for an action belong inside it.
+ *
+ * Idle → a record dot that opens a panel: mic, resolution, frame rate, then Start.
+ * Recording → pulsing dot + MM:SS, click to stop. No panel: nothing here is adjustable mid-take.
+ *
  * The browser's own picker provides consent; the browser's "Stop sharing" is handled too.
  */
 
@@ -121,7 +128,7 @@ export function RecordButton() {
     return (
       <Tooltip label="Screen recording needs https or localhost">
         <button disabled aria-label="Record session" className={`${CLUSTER_BTN} opacity-50 cursor-not-allowed`}>
-          <Circle size={16} />
+          <Circle size={14} />
         </button>
       </Tooltip>
     );
@@ -134,7 +141,7 @@ export function RecordButton() {
           onClick={() => void finalize()}
           data-feature-id="tasks-record-session"
           aria-label={`Stop recording — ${mmss(elapsed)} elapsed`}
-          className="flex items-center gap-2 px-3 min-h-[2.5rem] rounded-lg bg-rose-50 border border-rose-300 text-rose-700 sm:hover:bg-rose-100 active:scale-[0.97] transition-all shrink-0"
+          className="flex items-center gap-2 px-3 min-h-control-lg sm:min-h-control rounded-lg bg-rose-50 border border-rose-300 text-rose-700 sm:hover:bg-rose-100 active:scale-[0.97] transition-all shrink-0"
         >
           <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
           <span className="text-xs font-bold font-mono tabular-nums">{mmss(elapsed)}</span>
@@ -147,45 +154,46 @@ export function RecordButton() {
   const projected = QUALITY_TIERS.find(t => t.id === tier)!;
 
   return (
-    <>
-      <Tooltip label={withMic ? 'Microphone on — clip will include narration' : 'Microphone off — silent clip'}>
+    <div className="relative">
+      <Tooltip label={`Record session — ${projected.label} · ${fps} fps${withMic ? ' · mic on' : ''}`}>
         <button
-          onClick={() => setWithMic(v => !v)}
-          aria-pressed={withMic}
-          aria-label={withMic ? 'Disable microphone' : 'Enable microphone'}
-          className={withMic
-            ? `${iconBtn} bg-emerald-50 border-emerald-300 text-emerald-700 sm:hover:bg-emerald-100`
-            : CLUSTER_BTN}
+          onClick={() => setPanelOpen(o => !o)}
+          aria-expanded={panelOpen}
+          aria-label="Record session"
+          data-feature-id="tasks-record-session"
+          className={CLUSTER_BTN}
         >
-          {withMic ? <Mic size={16} /> : <MicOff size={16} />}
+          <Circle size={14} fill="currentColor" className="text-rose-500" />
         </button>
       </Tooltip>
 
-      {/* Quality popover */}
-      <div className="relative">
-        <Tooltip label={`Recording quality — ${projected.label} · ${fps} fps`}>
-          <button
-            onClick={() => setPanelOpen(o => !o)}
-            aria-expanded={panelOpen}
-            aria-label="Recording quality"
-            data-feature-id="tasks-record-quality"
-            className={CLUSTER_BTN}
-          >
-            <Settings2 size={16} />
-          </button>
-        </Tooltip>
+      {panelOpen && (
+        <>
+          {/* click-away */}
+          <div className="fixed inset-0 z-[70]" onClick={() => setPanelOpen(false)} />
+          <div className="absolute right-0 top-full mt-2 z-[75] w-64 p-3 rounded-xl border border-slate-200 bg-white shadow-xl space-y-3">
+            {/* Mic is a setting for the take, not a control of its own. Its state is visible
+                here rather than encoded in a header icon nobody reads until the clip is silent. */}
+            <button
+              onClick={() => setWithMic(v => !v)}
+              aria-pressed={withMic}
+              className="w-full flex items-center gap-2 px-2 min-h-control rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              {withMic ? <Mic size={14} className="text-emerald-600" /> : <MicOff size={14} className="text-slate-500" />}
+              <span className="flex-1 text-left">{withMic ? 'Microphone on' : 'Microphone off'}</span>
+              <span className={`w-8 h-[18px] rounded-full p-0.5 transition-colors ${withMic ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                <span className={`block w-[14px] h-[14px] rounded-full bg-white transition-transform ${withMic ? 'translate-x-[14px]' : ''}`} />
+              </span>
+            </button>
 
-        {panelOpen && (
-          <>
-            {/* click-away */}
-            <div className="fixed inset-0 z-[70]" onClick={() => setPanelOpen(false)} />
-            <div className="absolute right-0 top-full mt-2 z-[75] w-64 p-3 rounded-xl border border-slate-200 bg-white shadow-xl space-y-3">
-              <div>
-                <label className="eyebrow text-slate-500">Resolution</label>
-                <div className="mt-1 grid grid-cols-4 gap-1">
-                  {tiers.map(t => (
-                    <Tooltip label={t.supported ? `${t.width}×${t.height}` : `This display is too small for ${t.label} — capturing above the source only upscales.`}><button
-                      key={t.id}
+            <div>
+              <label className="eyebrow text-slate-500">Resolution</label>
+              <div className="mt-1 grid grid-cols-4 gap-1">
+                {tiers.map(t => (
+                  // key belongs on the mapped element — it was on the inner <button>, so React
+                  // saw an unkeyed list and could not reconcile it by identity.
+                  <Tooltip key={t.id} label={t.supported ? `${t.width}×${t.height}` : `This display is too small for ${t.label} — capturing above the source only upscales.`}>
+                    <button
                       disabled={!t.supported}
                       onClick={() => setTier(t.id)}
                       className={`min-h-control rounded-md border text-2xs font-bold transition-colors ${!t.supported
@@ -195,47 +203,40 @@ export function RecordButton() {
                           : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
                     >
                       {t.label}
-                    </button></Tooltip>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="eyebrow text-slate-500">Frame rate</label>
-                <div className="mt-1 grid grid-cols-3 gap-1">
-                  {FPS_OPTIONS.map(f => (
-                    <button
-                      key={f}
-                      onClick={() => setFps(f)}
-                      className={`min-h-control rounded-md border text-2xs font-bold transition-colors ${fps === f
-                        ? 'border-accent-500 bg-accent-50 text-accent-700'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                    >
-                      {f} fps
                     </button>
-                  ))}
-                </div>
+                  </Tooltip>
+                ))}
               </div>
-
-              <p className="text-2xs text-slate-500 leading-snug">
-                Target {projected.width}×{projected.height} · ~{mbps(estimateBitrate(projected.width, projected.height, fps))}.
-                Clamped to the shared surface — never upscaled.
-              </p>
             </div>
-          </>
-        )}
-      </div>
 
-      <Tooltip label="Record session">
-        <button
-          onClick={() => void start()}
-          data-feature-id="tasks-record-session"
-          aria-label="Record session"
-          className={CLUSTER_BTN}
-        >
-          <Circle size={16} fill="currentColor" className="text-rose-500" />
-        </button>
-      </Tooltip>
-    </>
+            <div>
+              <label className="eyebrow text-slate-500">Frame rate</label>
+              <div className="mt-1 grid grid-cols-3 gap-1">
+                {FPS_OPTIONS.map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFps(f)}
+                    className={`min-h-control rounded-md border text-2xs font-bold transition-colors ${fps === f
+                      ? 'border-accent-500 bg-accent-50 text-accent-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    {f} fps
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <p className="text-2xs text-slate-500 leading-snug">
+              Target {projected.width}×{projected.height} · ~{mbps(estimateBitrate(projected.width, projected.height, fps))}.
+              Clamped to the shared surface — never upscaled.
+            </p>
+
+            <button onClick={() => void start()} data-feature-id="tasks-record-start" className={`${btnPrimarySm} w-full`}>
+              <Circle size={13} fill="currentColor" /> Start recording
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

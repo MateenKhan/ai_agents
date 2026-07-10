@@ -91,6 +91,10 @@ const TOOLBAR_CONTROLS: Array<{ id: string; label: string; on: (p: Record<string
   { id: 'refresh', label: 'Refresh',    on: p => !!p.onRefresh },
 ];
 
+/** One geometry for every square toolbar button. Colour is layered on per control, so a
+ *  toggle can carry its state without any two buttons differing in size or radius. */
+const toolbarBtn = 'flex items-center justify-center min-w-control min-h-control rounded-lg border transition-all active:scale-[0.97]';
+
 interface Parsed { type: 'divider' | 'line' | 'msg'; tag: string; color: string; text: string; noise: boolean; time: string; date: string }
 
 /** Turn one raw log line into a typed, colorized row. Peels an optional [ISO]/[HH:MM:SS] stamp. */
@@ -262,53 +266,64 @@ export function LogConsole({
             {historyOptions.map(n => <option key={n} value={n}>{n >= 1000 ? `${n / 1000}k` : n} lines</option>)}
           </select>
         )}
+        {/* Toggles are icon-only. Their LABEL was carrying the name and the COLOUR was carrying
+            the state, which meant the label never changed and read as decoration. Now the icon
+            names the action (pause when live, play when paused) and the fill carries the state.
+            The accessible name comes from Tooltip, which injects aria-label — so these stay
+            reachable by voice control and screen readers despite having no visible text. */}
         {liveControl && show('live') && (
-          <Tooltip label={liveOn ? 'Live tail on' : 'Paused'}><button
+          <Tooltip label={liveOn ? 'Pause live tail' : 'Resume live tail'}><button
             onClick={() => setLive(!liveOn)}
+            aria-pressed={liveOn}
             data-feature-id="logs-live-toggle"
-            className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${liveOn ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-white text-slate-600 border-slate-300'}`}
+            className={`${toolbarBtn} ${liveOn ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-white text-slate-600 border-slate-300'}`}
           >
-            {liveOn ? <><Pause size={14} /> Live</> : <><Play size={14} /> Paused</>}
+            {liveOn ? <Pause size={15} /> : <Play size={15} />}
           </button></Tooltip>
         )}
         {tailControl && show('tail') && (
-          <Tooltip label={autoScroll ? 'Auto-scroll ON — following the tail' : 'Auto-scroll OFF'}><button
+          <Tooltip label={autoScroll ? 'Auto-scroll on — following the tail' : 'Auto-scroll off'}><button
             onClick={toggleTail}
+            aria-pressed={autoScroll}
             data-feature-id="logs-tail-toggle"
-            className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${autoScroll ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
+            className={`${toolbarBtn} ${autoScroll ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
           >
-            <ArrowDownToLine size={14} /> Tail
+            <ArrowDownToLine size={15} />
           </button></Tooltip>
         )}
         {timeToggle && show('time') && (
-          <Tooltip label={showTime ? 'Per-line date + time shown' : 'Per-line date + time hidden'}><button
+          <Tooltip label={showTime ? 'Hide per-line date + time' : 'Show per-line date + time'}><button
             onClick={() => setShowTime(v => !v)}
+            aria-pressed={showTime}
             data-feature-id="logs-time-toggle"
-            className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-lg border transition-colors ${showTime ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
+            className={`${toolbarBtn} ${showTime ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
           >
-            <Clock size={14} /> Date/Time
+            <Clock size={15} />
           </button></Tooltip>
         )}
+        {/* A− / A+ ARE the icons. The number between them is live state, not a label, so it
+            stays: without it the stepper gives no feedback that anything happened. */}
         {sizeControls && show('size') && (
-          <div className="flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden" title="Font size">
-            <button onClick={() => setFontSize(s => Math.max(10, s - 1))} className="px-2.5 min-h-control text-sm font-bold text-slate-600 hover:bg-slate-50">A−</button>
-            <span className="px-1 text-micro text-slate-400 font-mono select-none">{fontSize}</span>
-            <button onClick={() => setFontSize(s => Math.min(22, s + 1))} className="px-2.5 min-h-control text-base font-bold text-slate-600 hover:bg-slate-50">A+</button>
+          <div className="flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden">
+            <Tooltip label="Smaller text"><button onClick={() => setFontSize(s => Math.max(10, s - 1))} aria-label="Smaller text" className="px-2.5 min-h-control text-sm font-bold text-slate-600 hover:bg-slate-50">A−</button></Tooltip>
+            <span className="px-1 text-micro text-slate-500 font-mono select-none" aria-hidden="true">{fontSize}</span>
+            <Tooltip label="Larger text"><button onClick={() => setFontSize(s => Math.min(22, s + 1))} aria-label="Larger text" className="px-2.5 min-h-control text-base font-bold text-slate-600 hover:bg-slate-50">A+</button></Tooltip>
           </div>
         )}
         {copyable && show('copy') && (
-          <Tooltip label="Copy the visible log to clipboard"><button
+          <Tooltip label={copied ? 'Copied' : 'Copy the visible log to clipboard'}><button
             onClick={copy}
-            className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+            data-feature-id="logs-copy"
+            className={`${toolbarBtn} bg-white border-slate-300 hover:bg-slate-50 ${copied ? 'text-emerald-600' : 'text-slate-600'}`}
           >
-            {copied ? <><Check size={14} className="text-emerald-600" /> Copied</> : <><Copy size={14} /> Copy</>}
+            {copied ? <Check size={15} /> : <Copy size={15} />}
           </button></Tooltip>
         )}
         {onClear && show('clear') && (
           <Tooltip label="Clear this log"><button
             onClick={onClear}
             data-feature-id="logs-clear"
-            className="flex items-center justify-center min-w-control min-h-control text-rose-600 bg-white border border-slate-300 rounded-lg hover:bg-rose-50 hover:border-rose-300 active:scale-[0.97] transition-all"
+            className={`${toolbarBtn} text-rose-600 bg-white border-slate-300 hover:bg-rose-50 hover:border-rose-300`}
           >
             <Trash2 size={14} />
           </button></Tooltip>
@@ -317,7 +332,7 @@ export function LogConsole({
           <Tooltip label="Refresh"><button
             onClick={onRefresh}
             data-feature-id="logs-refresh"
-            className="flex items-center justify-center min-w-control min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 active:scale-[0.97] transition-all"
+            className={`${toolbarBtn} text-slate-600 bg-white border-slate-300 hover:bg-slate-50`}
           >
             <RefreshCw size={14} />
           </button></Tooltip>
@@ -331,7 +346,7 @@ export function LogConsole({
               onClick={() => setMenuOpen(o => !o)}
               aria-expanded={menuOpen}
               data-feature-id="logs-toolbar-options"
-              className="flex items-center justify-center min-w-control min-h-control text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 active:scale-[0.97] transition-all"
+              className={`${toolbarBtn} text-slate-600 bg-white border-slate-300 hover:bg-slate-50`}
             >
               <SlidersHorizontal size={14} />
             </button></Tooltip>

@@ -2,12 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Tooltip } from './Tooltip';
 import {
   X, Edit2, Trash2, Play, Pause, Square, GitBranch, Link as LinkIcon, FileText,
-  User, RotateCcw, AlertCircle, CheckCircle2, ChevronDown
+  User, RotateCcw, AlertCircle, CheckCircle2, ChevronDown, Workflow as WorkflowIcon
 } from 'lucide-react';
 import { API_BASE } from '../../../apiBase';
 import type { Task, TaskControlAction } from '../types';
 import { COLUMNS } from '../types';
 import { SlideOver } from './SlideOver';
+import TaskWorkflowDialog from '../workflow/TaskWorkflowDialog';
 
 interface TaskDetailProps {
   task: Task;
@@ -39,6 +40,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
 
   const [showPlan, setShowPlan] = useState(false);
   const [showDesc, setShowDesc] = useState(false);
+  const [workflowOpen, setWorkflowOpen] = useState(false);
   const isWorking = task.status === 'WORKING';
   const isPaused = task.control === 'paused';
   const isStopping = task.control === 'stop';
@@ -110,7 +112,17 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
         <div className="flex-1 overflow-y-auto custom-scrollbar [-webkit-overflow-scrolling:touch] p-4 space-y-5">
           {/* Pipeline — where this task stands */}
           <div>
-            <p className="eyebrow mb-2">Pipeline</p>
+            <div className="mb-2 flex items-center gap-2">
+              <p className="eyebrow">Pipeline</p>
+              {/* Same graph the editor draws, read-only, with this task's progress on it. */}
+              <button
+                onClick={() => setWorkflowOpen(true)}
+                data-feature-id="task-workflow-btn"
+                className="ml-auto flex items-center gap-1 text-2xs font-bold text-accent-600 hover:underline"
+              >
+                <WorkflowIcon size={12} /> View workflow
+              </button>
+            </div>
             <div className="flex items-center">
               {STAGES.map((s, i) => (
                 <React.Fragment key={s.key}>
@@ -310,6 +322,16 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
             <Trash2 size={15} />
           </button></Tooltip>
         </div>
+
+        {/* Read-only workflow, with this task's progress animated onto it. Mounted only while
+            open so the graph is read fresh each time rather than snapshotted at board load. */}
+        {workflowOpen && (
+          <TaskWorkflowDialog
+            isOpen={workflowOpen}
+            onClose={() => setWorkflowOpen(false)}
+            task={task}
+          />
+        )}
     </SlideOver>
   );
 }

@@ -1,12 +1,17 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import TasksPage from './pages/TasksPage';
+import WorkflowPage from './pages/WorkflowPage';
 import { ProjectProvider } from './pages/tasks/projectContext';
 import { ToastProvider } from './pages/tasks/components/Toast';
 import { ConfirmProvider } from './pages/tasks/components/ConfirmProvider';
 import './index.css';
+
+// Lazy: the landing page carries its own dark stylesheet and is visited once, if ever. No
+// reason for it to sit in the bundle a returning user downloads to look at their board.
+const FeaturesPage = lazy(() => import('./pages/features'));
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -28,6 +33,12 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/" element={<Navigate to="/tasks" replace />} />
                 <Route path="/tasks" element={<TasksPage />} />
                 <Route path="/tasks/:tab" element={<TasksPage />} />
+                {/* Preview: the editor renders and saves to localStorage, but the engine still
+                    runs its built-in pipeline. Wiring it up needs the /workflow endpoint. */}
+                <Route path="/workflow" element={<WorkflowPage />} />
+                {/* The landing page. Same component GitHub Pages gets, prerendered — see
+                    scripts/build-landing.tsx. */}
+                <Route path="/features" element={<Suspense fallback={null}><FeaturesPage /></Suspense>} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
               </Routes>
             </BrowserRouter>

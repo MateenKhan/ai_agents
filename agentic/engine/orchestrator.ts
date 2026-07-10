@@ -53,7 +53,7 @@ async function reconcileContextAfterMerge(taskId: string): Promise<void> {
     if (removed.length) log(taskId, `🧹 context: dropped ${removed.length} file(s) deleted by the merge`, 'info');
   } catch { /* context reconcile is best-effort — never block a merge */ }
 }
-import type { AgenticConfig, AgentConfig, AgentRole, Task, Stage, FailureKind, WorktreeMode, RunResult } from '../types';
+import type { AgenticConfig, AgentConfig, AgentRole, Task, FailureKind, QaVerdict, RunResult } from '../types';
 import { setConfig, getConfig } from '../runtime-context';
 import {
   getAllTasks, getTask, updateTask, getBoardSettings, updateBoardSettings, beatHeartbeat, getTasksDb, getProject, listProjects, getAgentDefaults,
@@ -63,6 +63,14 @@ import { isPostgres } from '../db/getStore';
 import { addAgentLog, getLogsDb } from '../db/logs';
 import { getAgents } from '../db/agents';
 import { renderPrompt } from './prompts';
+// Routing is graph-driven. Stage names mean nothing to the engine; `behaviour` grants every
+// special power, and an agent reports an OUTCOME rather than naming a destination.
+import { loadWorkflow } from '../workflow/store';
+import {
+  placeTask, routeOutcome, routeReject, nearestHumanGate, allowedOutcomes, reconcileVerdict,
+  mayWriteVerdict, takesMergeLock, worktreeFor as worktreeForStage, modelFor as modelForStage, capsFor,
+} from '../workflow/route';
+import type { Stage as WfStage, WorkflowDoc } from '../workflow/types';
 import {
   spawnHeadlessAgent, isAgentBusy, isTaskRunning, agentIdleMs, killAgent,
   removeWorktree, removePlanWorktree, pruneOrphans, pruneOrphansAll, isGitRepo,
@@ -258,16 +266,22 @@ export function isInfraFailure(kind: FailureKind): boolean { return kind === 'ne
 /** What to do about a failed run. Pure, so the policy can be tested without a live agent —
  *  which matters because the expensive mistakes here are silent: escalating an outage to an
  *  opus architect, or dead-lettering work that was never actually evaluated. */
-export type FailureAction = 'retry' | 'infra-wait' | 'rescue' | 'human-review' | 'dead-letter';
+export type FailureAction = 'retry' | 'infra-wait' | 'escalate' | 'human-review' | 'dead-letter';
 
 export function decideFailure(a: {
   failure: FailureKind;
-  stage?: Stage | null;
   attempts: number;
   maxAttempts: number;
-  rescueCount: number;
-  maxRescue: number;
-  architectEnabled: boolean;
+  /** Escalations already spent from this stage. */
+  rescuesUsed: number;
+  /** `caps.rescues` for this stage. */
+  maxRescues: number;
+  /** The stage declares a `blocked` outcome, so it has somewhere to escalate to. */
+  hasBlockedOutcome: boolean;
+  /** A human gate is reachable from here. */
+  hasHumanGate: boolean;
+  /** A verify stage has already passed this work. */
+  qaPassed: boolean;
 }): FailureAction {
   // FIRST, before the budget is even consulted. The Anthropic API being down is not a fact
   // about this task: the circuit breaker opens on the 3rd network failure and maxAttempts is
@@ -278,32 +292,21 @@ export function decideFailure(a: {
 
   if (a.attempts < a.maxAttempts) return 'retry';
 
-  // The owner's ACCEPT gate is advisory and runs on QA-approved work. A broken reviewer must
-  // not condemn good work — hand it to the human instead.
-  if (a.stage === 'accept') return 'human-review';
+  // A stage that declares `blocked` has somewhere to send a task it cannot finish. That is
+  // the graph's version of the old hard-coded rescue: where `blocked` goes is drawn, not
+  // baked in. Budgeted, so a task cannot loop build → plan → build forever.
+  if (a.hasBlockedOutcome && a.rescuesUsed < a.maxRescues) return 'escalate';
 
-  // A genuine dev/qa failure earns ONE architect re-plan. Architect stages (plan/rescue/merge)
-  // have nobody above them to appeal to.
-  if ((a.stage === 'build' || a.stage === 'qa') && a.rescueCount < a.maxRescue && a.architectEnabled) return 'rescue';
+  // A stage that runs AFTER a passing verdict is advisory: the work has already been proven,
+  // and a broken reviewer must not condemn it. Hand it to a person instead of BLOCKED.
+  if (a.qaPassed && a.hasHumanGate) return 'human-review';
 
   return 'dead-letter';
 }
 
-// ── business owner gates ───────────────────────────────────────────────────────
-/** Owner gates are ON unless explicitly disabled — the user owns the definition of done. */
-const ownerEnabled = (): boolean => t().enableOwner !== false;
-
-/** How many times the owner may bounce ONE task before it goes to the human regardless.
- *  This is the ONLY thing standing between an opinionated agent and an owner↔architect
- *  ping-pong that never converges. On exhaustion the task advances to human review WITH the
- *  owner's notes — it is never dead-lettered, because "the owner disagrees" is not a failure
- *  of the task, it is a disagreement for a person to settle. */
-const maxOwnerBounces = (): number => {
-  const fromEnv = parseInt(process.env.OWNER_MAX_BOUNCES || '', 10);
-  if (Number.isFinite(fromEnv) && fromEnv >= 0) return fromEnv;
-  const fromToggle = t().maxOwnerBounces;
-  return typeof fromToggle === 'number' && fromToggle >= 0 ? fromToggle : 2;
-};
+// The old `enableOwner` / `maxOwnerBounces` toggles are gone. Routing is graph-driven: a stage
+// leaves the pipeline by being deleted from the workflow, and the bounce budget is the
+// document's `hopCap`, which counts every reject in any direction.
 
 // ── periodic architect triage ────────────────────────────────────────────────────
 // Every TRIAGE_MS the orchestrator wakes ONE architect in read-only "triage" mode to
@@ -380,57 +383,35 @@ function dbHealthCheck(logFn: (id: string, m: string, t?: 'info' | 'success' | '
   }
 }
 
-// ── stage routing ──────────────────────────────────────────────────────────────
-interface Routed { role: AgentRole; stage: Stage; }
+// ── the workflow document ──────────────────────────────────────────────────────
+// Reloaded once per tick, not once per task: a tick reads the board anyway, and a stale graph
+// for three seconds is harmless, while a database read per task is not.
+const wfCache = new Map<string, WorkflowDoc>();
+function clearWorkflowCache(): void { wfCache.clear(); }
 
-/** Exported for tests: an unroutable stage silently orphans a task in WORKING forever, so the
- *  routing table is worth pinning directly rather than inferring from a live run. */
-export function nextRoute(task: Task): Routed | null {
-  const tg = t();
-  // A brand-new task starts at the owner's intake gate (intent → scenarios), or straight at
-  // 'plan' when the owner is disabled. 'accept' is only ever set while the owner is enabled.
-  let stage: Stage = task.stage || (ownerEnabled() ? 'intake' : 'plan');
-  if (stage === 'intake') {
-    if (!ownerEnabled()) stage = 'plan';
-    else return { role: 'owner', stage: 'intake' };
-  }
-  if (stage === 'plan') {
-    if (tg.enableArchitect === false) stage = 'build';
-    else return { role: 'architect', stage: 'plan' };
-  }
-  if (stage === 'build') return { role: 'dev', stage: 'build' };
-  if (stage === 'qa') {
-    if (tg.enableQa === false) stage = 'merge';
-    else return { role: 'qa', stage: 'qa' };
-  }
-  // Owner's acceptance gate — QA has passed; does the work deliver the user's ask?
-  // Disabled mid-flight, a parked 'accept' task is converted to 'review' in dispatchPending.
-  if (stage === 'accept') {
-    if (!ownerEnabled()) return null;
-    return { role: 'owner', stage: 'accept' };
-  }
-  // Rescue: a dev/qa stage exhausted its retries → architect re-plans (read-only), then
-  // hands back to 'build'. Disabled installs (no architect) skip straight to dead-letter.
-  if (stage === 'rescue') {
-    if (tg.enableArchitect === false) return null;
-    return { role: 'architect', stage: 'rescue' };
-  }
-  if (stage === 'merge') return { role: 'architect', stage: 'merge' };
-  return null; // 'merged' / unknown → not dispatchable
+async function workflowFor(projectId: string): Promise<WorkflowDoc> {
+  const hit = wfCache.get(projectId);
+  if (hit) return hit;
+  const { doc } = await loadWorkflow(projectId);
+  wfCache.set(projectId, doc);
+  return doc;
 }
+
+// ── stage routing ──────────────────────────────────────────────────────────────
+/** What is about to run: the workflow stage, and the agent row that backs it. */
+interface Routed { stage: WfStage; agent: AgentConfig; }
 
 async function agentMap(): Promise<Record<string, AgentConfig>> {
   const m: Record<string, AgentConfig> = {};
   for (const a of await getAgents()) m[a.role] = a;
   return m;
 }
-function modelFor(role: AgentRole, a: AgentConfig): string { return getConfig().models?.[role] || a.model; }
-function worktreeFor(role: AgentRole, stage: string, a: AgentConfig): WorktreeMode {
-  if (role === 'architect' && stage === 'merge') return 'none';
-  // The owner reads the dev's actual diff at 'accept', so it must attach to that worktree.
-  // At 'intake' there is no branch yet — it reads the base repo.
-  if (role === 'owner') return stage === 'accept' ? 'reuse' : 'none';
-  return a.worktreeMode;
+
+/** The model this stage runs on: the stage wins, the agents table is the default. */
+function modelFor(stage: WfStage, agent: AgentConfig | undefined): string {
+  // getConfig().models is a role-keyed override for CI/tests; the stage still wins over it.
+  const roleDefault = (stage.agentRef ? getConfig().models?.[stage.agentRef as AgentRole] : undefined) ?? agent?.model;
+  return modelForStage(stage, roleDefault) ?? 'sonnet';
 }
 function getAvailableAgent(): string | null {
   for (const n of AGENT_POOL) if (!agentTaskMap.has(n) && !isAgentBusy(n)) return n;
@@ -504,14 +485,29 @@ async function deadLetter(id: string, note: string): Promise<void> {
 async function failTask(task: Task, kind: FailureKind, note: string): Promise<void> {
   breakerFailure(kind);
   const attempts = task.attempts || 0;
+  const doc = await workflowFor(projectOf(task));
+  const stage = task.stage ? doc.stages.find(s => s.id === task.stage) : undefined;
+
+  // The stage vanished from the workflow while the agent ran. Nothing can be decided about it.
+  if (!stage) {
+    await deadLetter(task.id, `stage "${task.stage}" is not in this project's workflow — ${note}`);
+    return;
+  }
+
+  const perStage = capsFor(stage);
+  const stageMaxAttempts = perStage?.attempts ?? maxAttempts();
+  const blocked = stage.outcomes.find(o => o.when === 'blocked');
+  const gate = nearestHumanGate(doc, stage.id);
+
   const action = decideFailure({
     failure: kind,
-    stage: task.stage,
     attempts,
-    maxAttempts: maxAttempts(),
-    rescueCount: task.rescueCount || 0,
-    maxRescue: MAX_RESCUE,
-    architectEnabled: t().enableArchitect !== false,
+    maxAttempts: stageMaxAttempts,
+    rescuesUsed: task.rescueCount || 0,
+    maxRescues: perStage?.rescues ?? MAX_RESCUE,
+    hasBlockedOutcome: !!blocked,
+    hasHumanGate: !!gate,
+    qaPassed: task.qaVerdict === 'pass',
   });
 
   switch (action) {
@@ -531,33 +527,30 @@ async function failTask(task: Task, kind: FailureKind, note: string): Promise<vo
       await scheduleRetry(task.id, attempts, note);
       return;
     case 'human-review':
-      await updateTask(task.id, { stage: 'review', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0 });
-      log(task.id, `🧑‍💼 business owner could not complete its review (${note}) — passing QA-approved work to Human Review`, 'warning');
+      await updateTask(task.id, {
+        stage: gate!, handoffFrom: stage.id, status: 'WORKING',
+        started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0,
+      });
+      log(task.id, `🧑‍⚖️ "${stage.id}" could not finish (${note}) — passing already-verified work to "${gate}" rather than blocking it`, 'warning');
       return;
-    case 'rescue':
-      await escalateToArchitect(task, `${maxAttempts()} attempts exhausted (${note})`);
+    case 'escalate': {
+      // The graph's version of the old hard-coded rescue: the stage declares a `blocked`
+      // outcome, and where that goes is drawn rather than baked in.
+      const rescues = (task.rescueCount || 0) + 1;
+      await updateTask(task.id, {
+        stage: blocked!.to, handoffFrom: stage.id, lastOutcome: 'blocked', status: 'WORKING',
+        started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
+        attempts: 0, rescueCount: rescues, lastError: note,
+        reviewNote: `BLOCKED — the "${stage.id}" stage failed and could not self-recover (${note}). Diagnose the root cause and REVISE the plan so a fresh run can succeed; do not just repeat the old brief.`,
+      });
+      log(task.id, `🩺 "${stage.id}" exhausted its retries → escalating to "${blocked!.to}" (${rescues}/${perStage?.rescues ?? MAX_RESCUE})`, 'warning');
+      setStatus(`Rescuing "${task.title}" — re-planning after ${stage.id} failures`, true);
       return;
+    }
     case 'dead-letter':
-      await deadLetter(task.id, `${maxAttempts()} attempts exhausted (${note})`);
+      await deadLetter(task.id, `${stageMaxAttempts} attempts exhausted (${note})`);
       return;
   }
-}
-
-/** Route a repeatedly-failing dev/qa task to the architect for a re-plan, then back to the dev.
- *  Resets the per-stage retry budget (attempts) and records the rescue so a task that keeps
- *  failing even after re-planning eventually dead-letters instead of looping. */
-async function escalateToArchitect(task: Task, note: string): Promise<void> {
-  const failedStage = task.stage;
-  // rescueCount is incremented at DISPATCH (see dispatchPending) so the cap applies uniformly
-  // whether the rescue was triggered here OR by a dev/qa self-reporting that it's blocked.
-  await updateTask(task.id, {
-    stage: 'rescue', status: 'WORKING',
-    started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
-    attempts: 0, lastError: note,
-    reviewNote: `RESCUE NEEDED — the ${failedStage} stage failed and could not self-recover (${note}). Diagnose the root cause and REVISE the plan so a fresh dev can succeed; do not just repeat the old brief.`,
-  });
-  log(task.id, `🩺 ${failedStage} exhausted retries → ARCHITECT rescue — re-planning`, 'warning');
-  setStatus(`Rescuing "${task.title}" — architect re-planning after ${failedStage} failures`, true);
 }
 
 // ── periodic architect triage pass ────────────────────────────────────────────
@@ -598,9 +591,18 @@ async function triagePass(): Promise<void> {
   let picked: { pid: string; tasks: Task[] } | null = null;
   for (let i = 0; i < projects.length; i++) {
     const pid = projects[(triageCursor + i) % projects.length].id;
+    const doc = await workflowFor(pid);
+    // A task worth triaging is one somewhere in the middle of the pipeline: past the entry,
+    // not yet finished. Naming the stages here would have re-introduced exactly the coupling
+    // this change removes — rename `qa` to `tapora` and triage would silently stop seeing it.
+    const inFlight = (x: Task): boolean => {
+      if (!x.stage) return false;
+      const stage = doc.stages.find(s => s.id === x.stage);
+      return !!stage && stage.behaviour !== 'terminal' && x.stage !== doc.entry;
+    };
     const cands = (await getAllTasks(pid)).filter(x =>
       (x.status === 'WORKING' || x.status === 'TESTING')
-      && !!x.stage && ['build', 'qa', 'review', 'rescue'].includes(x.stage)
+      && inFlight(x)
       && !isTaskRunning(x.id)               // never race a live worker
       && !triaging.has(x.id)
       && x.control !== 'paused' && x.control !== 'stop'
@@ -615,7 +617,8 @@ async function triagePass(): Promise<void> {
   const release = () => { for (const x of tasks) triaging.delete(x.id); };
   const ok = await spawnHeadlessAgent({
     agentName: 'triage', taskId: anchor.id, role: 'architect',
-    prompt: triagePromptFor(pid, tasks), model: modelFor('architect', arch), worktree: 'none',
+    // Triage is not a workflow stage; it runs the architect directly, on the architect's model.
+    prompt: triagePromptFor(pid, tasks), model: getConfig().models?.architect || arch.model, worktree: 'none',
     skipPermissions: await skipPermissionsEnabled(),
     onExit: (r) => { release(); log('__system__', `🔭 architect triage done (${pid}, ${tasks.length} task(s), ${r.failure})`, r.failure === 'none' ? 'success' : 'warning'); },
   });
@@ -631,12 +634,23 @@ async function skipPermissionsEnabled(): Promise<boolean> {
 }
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
-async function dispatch(task: Task, route: Routed, ac: AgentConfig, name: string): Promise<void> {
+async function dispatch(task: Task, route: Routed, name: string): Promise<void> {
+  const { stage, agent: ac } = route;
   const attempts = (task.attempts || 0) + 1;
-  const model = modelFor(route.role, ac);
-  const wt = worktreeFor(route.role, route.stage, ac);
+  const model = modelFor(stage, ac);
+  const wt = worktreeForStage(stage);
+  const role = stage.agentRef ?? ac.role;
+  const perStage = capsFor(stage);
+
   let prompt: string;
-  try { prompt = await renderPrompt(ac, task, route.stage); }
+  try {
+    // The agent is told the outcome words it may report, and never a stage name.
+    const doc = await workflowFor(projectOf(task));
+    prompt = await renderPrompt(ac, task, stage.id, {
+      promptRef: stage.promptRef,
+      outcomes: allowedOutcomes(doc, stage.id),
+    });
+  }
   catch (e: any) { await scheduleRetry(task.id, attempts, `prompt render failed: ${e?.message || e}`); return; }
 
   await updateTask(task.id, {
@@ -646,16 +660,21 @@ async function dispatch(task: Task, route: Routed, ac: AgentConfig, name: string
   });
   agentTaskMap.set(name, task.id);
 
+  // `qaVerdict` is a TASK field: every stage after a verify stage inherits it. Remember what it
+  // was before this run, so the exit handler can tell a stage that WROTE a verdict from one that
+  // merely carried the existing one forward.
+  const verdictBefore: QaVerdict = task.qaVerdict ?? null;
+
   const ok = await spawnHeadlessAgent({
-    agentName: name, taskId: task.id, role: route.role, prompt, model, worktree: wt,
+    agentName: name, taskId: task.id, role: role as AgentRole, prompt, model, worktree: wt,
     skipPermissions: await skipPermissionsEnabled(),
-    onExit: (r) => { handleAgentExit(name, task.id, route, r).catch(e => log(task.id, `exit handler error: ${e?.message || e}`, 'error')); },
+    onExit: (r) => { handleAgentExit(name, task.id, route, r, verdictBefore).catch(e => log(task.id, `exit handler error: ${e?.message || e}`, 'error')); },
   });
-  if (ok) log(task.id, `🚀 ${route.role} (${model}) as ${name} — stage ${route.stage}, attempt ${attempts}/${maxAttempts()}`, 'success');
+  if (ok) log(task.id, `🚀 ${role} (${model}) as ${name} — stage ${stage.id}, attempt ${attempts}/${perStage?.attempts ?? maxAttempts()}`, 'success');
   else {
     agentTaskMap.delete(name);
     // Never spawned → the exit handler won't run; free the merge lock we took (if any).
-    if (route.role === 'architect' && route.stage === 'merge') {
+    if (takesMergeLock(stage)) {
       try { await releaseLock(mergeLockName(projectOf(task)), WORKER_ID); } catch { /* TTL is the backstop */ }
     }
     await scheduleRetry(task.id, attempts, 'spawn failed');
@@ -675,30 +694,42 @@ async function dispatchPending(): Promise<void> {
 
   const agents = await agentMap();
   for (const task of pending) {
-    // Owner disabled while a task sat at its acceptance gate: nextRoute() would return null
-    // for 'accept' and the task would sit in WORKING forever, un-dispatchable. Convert it to
-    // the human gate instead — the same place the owner would have sent it on approval.
-    if (task.stage === 'accept' && !ownerEnabled()) {
-      await updateTask(task.id, { stage: 'review' });
-      log(task.id, '🧑‍💼 business owner disabled — skipping acceptance, straight to Human Review', 'info');
+    const doc = await workflowFor(projectOf(task));
+    const place = placeTask(doc, task.stage);
+
+    // The task stands on a stage the document no longer contains. Saving refuses to remove an
+    // occupied stage, but a restored backup, a hand-edit, or a task carried over from an older
+    // revision can all land here. Park it loudly: this is the `stage="blocked"` orphan class,
+    // and it must never be silent.
+    if (place.kind === 'unknown-stage') {
+      await deadLetter(task.id, `stage "${place.stageId}" is not in this project's workflow — restore it, or move the task to a stage that exists`);
       continue;
     }
-    // QA passed → human review gate (PRE-merge). Park it in Human Review, keep the
-    // worktree so a preview can be built, and don't dispatch until the human approves.
-    if (task.stage === 'review') {
+
+    // A terminal reached by routing rather than by the merge stage's own exit.
+    if (place.kind === 'terminal') {
+      await updateTask(task.id, { status: 'DONE', completed: new Date().toISOString(), started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
+      log(task.id, '✅ reached the end of the workflow — done', 'success');
+      continue;
+    }
+
+    // Park for a person. Keep the worktree so a preview can still be built.
+    if (place.kind === 'human-gate') {
       await updateTask(task.id, { status: 'TESTING', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
-      // Three different things park here, and saying "QA passed" for all of them is a lie the
-      // user has to debug: the owner can park an ambiguous ask at intake (nothing built yet),
-      // and an exhausted bounce budget parks work the owner still objects to.
+      // Several different things park here, and saying "QA passed" for all of them is a lie the
+      // user then has to debug: an ambiguous ask parks before anything is built, and an
+      // exhausted hop budget parks work an agent still objects to.
       if (!task.qaVerdict && task.ownerNote) {
-        log(task.id, `🧑‍💼 business owner needs your input before any work starts — ${task.ownerNote.slice(0, 160)}`, 'warning');
+        log(task.id, `🧑‍💼 needs your input before any work starts — ${task.ownerNote.slice(0, 160)}`, 'warning');
       } else if (task.qaVerdict === 'pass' && task.ownerNote) {
-        log(task.id, '🧑‍⚖️ QA passed, but the business owner still objects — read its note, then approve or reject', 'warning');
+        log(task.id, '🧑‍⚖️ QA passed, but an agent still objects — read its note, then approve or reject', 'warning');
       } else {
-        log(task.id, '🧑‍⚖️ QA passed — awaiting your review (build a preview, then approve to merge)', 'success');
+        log(task.id, `🧑‍⚖️ awaiting your review at "${place.stage.id}" (build a preview, then approve)`, 'success');
       }
       continue;
     }
+
+    const stage = place.stage;
     if (!canSpawn(agentTaskMap.size)) break;
     const pid = projectOf(task);
     // PROJECT READINESS GATE — a project may only dispatch tasks once it's set up: a cloned git
@@ -721,44 +752,39 @@ async function dispatchPending(): Promise<void> {
     // dispatch this tick. cap 0 = unlimited (resource-gated only).
     const cap = await projectCap(pid);
     if (cap > 0 && await activeForProject(pid) >= cap) continue;
-    const route = nextRoute(task);
-    if (!route) continue;
+
+    const isMerge = takesMergeLock(stage);
+
     // Already merged? Don't re-run the merge agent — it's approved, mark it done.
-    if (route.role === 'architect' && route.stage === 'merge' && await isMergedIntoHead(task.id)) {
+    if (isMerge && await isMergedIntoHead(task.id)) {
       await removeWorktree(task.id);
       await reconcileContextAfterMerge(task.id);
-      await updateTask(task.id, { status: 'DONE', stage: 'merged', completed: new Date().toISOString(), started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
+      const after = routeOutcome(doc, stage.id, 'done');
+      await updateTask(task.id, {
+        status: 'DONE',
+        stage: after.kind === 'advance' ? after.to : task.stage,
+        completed: new Date().toISOString(), started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
+      });
       log(task.id, '🔀 already merged — approved & done', 'success');
       continue;
     }
-    // RESCUE BUDGET — enforced here so it covers BOTH triggers: the orchestrator's own
-    // auto-escalation AND a dev/qa self-reporting it's blocked (PUT stage="rescue"). Cap the
-    // number of architect re-plans so a task can't loop rescue→build→rescue forever.
-    if (route.stage === 'rescue') {
-      const rc = task.rescueCount || 0;
-      if (rc >= MAX_RESCUE) {
-        await deadLetter(task.id, `rescue budget exhausted (${MAX_RESCUE} re-plan${MAX_RESCUE === 1 ? '' : 's'}) — still blocked, needs a human`);
-        continue;
-      }
-      await updateTask(task.id, { rescueCount: rc + 1 });
-      log(task.id, `🩺 architect rescue pass ${rc + 1}/${MAX_RESCUE} — re-planning`, 'warning');
-    }
-    if (task.stage !== route.stage) { await updateTask(task.id, { stage: route.stage }); task.stage = route.stage; }
-    // The owner has TWO independent switches: the `enableOwner` toggle and the agent row's
-    // `enabled` flag. When they disagree the generic `continue` below would silently park the
-    // task in WORKING forever, un-dispatchable and invisible. Its gates are advisory, so a
-    // missing or disabled owner means SKIP THE GATE, never stall.
-    if (route.role === 'owner' && !agents.owner?.enabled) {
-      const to: Stage = route.stage === 'intake' ? 'plan' : 'review';
-      await updateTask(task.id, { stage: to });
-      log(task.id, `🧑‍💼 business owner agent is disabled — skipping the ${route.stage} gate → ${to}`, 'info');
+
+    // A stage whose agent is missing or switched off cannot run. Removing a stage from the
+    // pipeline is done by deleting it from the workflow, not by disabling its agent — so say
+    // so out loud rather than leaving the task un-dispatchable and invisible.
+    const ac = stage.agentRef ? agents[stage.agentRef] : undefined;
+    if (!ac) {
+      await deadLetter(task.id, `stage "${stage.id}" needs the agent "${stage.agentRef}", which does not exist — add it, or remove the stage from the workflow`);
       continue;
     }
-    const ac = agents[route.role];
-    if (!ac || !ac.enabled) continue;
+    if (!ac.enabled) {
+      await deadLetter(task.id, `stage "${stage.id}" needs the agent "${stage.agentRef}", which is disabled — enable it, or remove the stage from the workflow`);
+      continue;
+    }
+
     const name = getAvailableAgent();
     if (!name) break;
-    const isMerge = route.role === 'architect' && route.stage === 'merge';
+
     // MERGE LOCK (cross-machine) — take the DB lock BEFORE claiming so only ONE machine
     // merges a given project at a time. Held until the merge agent exits (released in
     // handleAgentExit / on spawn failure), with a TTL backstop if this process dies.
@@ -771,10 +797,14 @@ async function dispatchPending(): Promise<void> {
       log(task.id, '⏭ claimed by another worker — skipping', 'info');
       continue;
     }
-    // Live status: name the work about to start (merge reads its target branch).
+
+    // A task that had no stage now has one: record where it is, so a reject has a sender and
+    // the board shows the truth.
+    if (task.stage !== stage.id) { await updateTask(task.id, { stage: stage.id }); task.stage = stage.id; }
+
     if (isMerge) setStatus(`Merging "${task.title}" into ${await currentBranch(task.id)}`, true);
-    else setStatus(`Dispatching ${route.stage.toUpperCase()} for "${task.title}" → ${route.role}`, true);
-    await dispatch(task, route, ac, name);
+    else setStatus(`Dispatching ${stage.id.toUpperCase()} for "${task.title}" → ${stage.agentRef}`, true);
+    await dispatch(task, { stage, agent: ac }, name);
   }
 }
 
@@ -783,107 +813,162 @@ function refreshIndex(): void {
   try { getConfig().codeIndex?.refresh?.(m => log('__system__', m, 'info')); } catch { /* optional */ }
 }
 
-async function handleAgentExit(name: string, taskId: string, route: Routed, r: RunResult): Promise<void> {
+/**
+ * An agent rejected the work handed to it: the brief is wrong, or the verdict's basis is.
+ *
+ * The task returns to its SENDER, which is not the same as "the previous stage". When QA fails
+ * a task back to the dev, the dev's sender is QA — so the dev's reject goes forward to QA.
+ * That is why every reject counts one hop whatever its direction, and why the cap cannot be a
+ * comparison of stage positions.
+ *
+ * A spent hop budget never dead-letters. A task nobody can agree on is a person's problem, so
+ * it goes to a human gate with its history intact.
+ */
+async function applyReject(doc: WorkflowDoc, task: Task, stage: WfStage): Promise<void> {
+  const decision = routeReject(doc, { stageId: stage.id, handoffFrom: task.handoffFrom, hops: task.hops ?? 0 });
+
+  if (decision.kind === 'no-sender') {
+    await deadLetter(task.id, `stage "${stage.id}" rejected the task, but nothing handed it over — there is nowhere to send it back to`);
+    return;
+  }
+  if (decision.kind === 'unknown-stage') {
+    await deadLetter(task.id, `stage "${decision.stageId}" vanished from the workflow while the agent ran`);
+    return;
+  }
+  if (decision.kind === 'hop-cap') {
+    if (!decision.to) {
+      await deadLetter(task.id, `hop cap of ${doc.hopCap} reached and this workflow has no human gate to escalate to`);
+      return;
+    }
+    await updateTask(task.id, {
+      stage: decision.to, hops: decision.hops, lastOutcome: 'reject', handoffFrom: stage.id,
+      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0,
+    });
+    log(task.id, `🛑 hop cap reached (${decision.hops}/${doc.hopCap}) — sending to "${decision.to}" for a person to settle`, 'warning');
+    return;
+  }
+
+  await updateTask(task.id, {
+    stage: decision.to, hops: decision.hops, lastOutcome: 'reject', handoffFrom: stage.id,
+    started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0,
+  });
+  log(task.id, `↩ "${stage.id}" rejected back to its sender "${decision.to}" — hop ${decision.hops}/${doc.hopCap}`, 'warning');
+}
+
+/**
+ * The word the agent reported, or null when it reported nothing.
+ *
+ * Two paths, because the prompts still name stages while this migration lands:
+ *   • `lastOutcome` — the new contract. The agent says what happened, never where to go.
+ *   • a changed `stage` — the legacy contract. Accepted only when it names a stage that
+ *     exists in this project's workflow, and it is translated back into whichever outcome
+ *     routes there. An agent still cannot invent a destination.
+ */
+function reportedOutcome(doc: WorkflowDoc, stage: WfStage, fresh: Task): { outcome: string | null; legacy: boolean } {
+  if (fresh.lastOutcome) return { outcome: fresh.lastOutcome, legacy: false };
+  if (fresh.stage && fresh.stage !== stage.id) {
+    const hit = stage.outcomes.find(o => o.to === fresh.stage);
+    if (hit) return { outcome: hit.when, legacy: true };
+  }
+  return { outcome: null, legacy: false };
+}
+
+async function handleAgentExit(name: string, taskId: string, route: Routed, r: RunResult, verdictBefore: QaVerdict = null): Promise<void> {
   agentTaskMap.delete(name);
-  // Release the cross-machine merge lock on EVERY merge exit path (success, conflict,
-  // crash, kill) — this is the single choke point that guarantees the lock is freed.
-  if (route.role === 'architect' && route.stage === 'merge') {
+  const stage = route.stage;
+  const role = stage.agentRef ?? route.agent.role;
+
+  // Release the cross-machine merge lock on EVERY merge exit path (success, conflict, crash,
+  // kill) — this is the single choke point that guarantees the lock is freed.
+  if (takesMergeLock(stage)) {
     const pid = (await getTask(taskId))?.projectId || 'default';
     try { await releaseLock(mergeLockName(pid), WORKER_ID); } catch { /* TTL is the backstop */ }
   }
-  // plan + rescue both run the architect in a throwaway read-only worktree — drop it on exit.
-  if (route.role === 'architect' && (route.stage === 'plan' || route.stage === 'rescue')) await removePlanWorktree(taskId);
+  // A `plan` stage runs in a throwaway read-only worktree — drop it on exit.
+  if (stage.behaviour === 'plan') await removePlanWorktree(taskId);
 
   const fresh = await getTask(taskId);
   if (!fresh) return;
+  const doc = await workflowFor(projectOf(fresh));
 
   // Record actual time THIS run took, accumulated per role (for Analytics: who took how long).
   if (r.durationMs) {
     const timings: Record<string, number> = { ...(fresh.stageTimings || {}) };
-    timings[route.role] = (timings[route.role] || 0) + r.durationMs;
+    timings[role] = (timings[role] || 0) + r.durationMs;
     await updateTask(taskId, { stageTimings: timings });
     fresh.stageTimings = timings;
   }
 
-  // The agent advances its stage (or verdict) via the API when it succeeds.
-  const advanced = fresh.stage !== route.stage || fresh.status === 'TESTING' || fresh.status === 'DONE';
+  // Only a `verify` stage may CHANGE the QA verdict. Checking mere presence destroyed a
+  // legitimate verdict: `qaVerdict` lives on the task, so the owner's acceptance gate inherits
+  // `pass` from QA and would have had it wiped on the way to human review.
+  const { verdict, rejected } = reconcileVerdict(stage, verdictBefore, fresh.qaVerdict);
+  if (rejected) {
+    await updateTask(taskId, { qaVerdict: verdict });
+    log(taskId, `⚠ stage "${stage.id}" tried to change the QA verdict but is not a verify stage — reverted to "${verdict ?? 'none'}"`, 'warning');
+    fresh.qaVerdict = verdict;
+  }
 
-  if (r.failure === 'none' && advanced) {
+  if (r.failure === 'none') {
+    const { outcome, legacy } = reportedOutcome(doc, stage, fresh);
+
+    // The agent exited cleanly but reported nothing. Before blaming it, rule out an INFRA
+    // fault: the most likely reason an agent could not report its outcome is that it could not
+    // REACH the db-server to do so. Heal and retry the same stage without burning a retry,
+    // rather than marching a healthy task toward BLOCKED.
+    if (!outcome) {
+      if (!(await probeDbServer())) {
+        openDbBreaker('an agent finished but its outcome callback could not reach the db-server');
+        await updateTask(taskId, {
+          started: null, claimedBy: null, leaseExpiresAt: null,
+          nextRetryAt: new Date(Date.now() + 8000).toISOString(),
+          attempts: Math.max(0, (fresh.attempts || 1) - 1),  // an infra fault costs no budget
+          lastError: 'db-server unreachable — infra fault; will resume when healed',
+        });
+        log(taskId, `🩹 "${stage.id}" reported no outcome, but the db-server was DOWN — infra fault, not the agent; retrying once healed`, 'warning');
+        return;
+      }
+      await failTask(fresh, 'crash', `agent finished without reporting an outcome (expected one of: ${stage.outcomes.map(o => o.when).join(', ') || 'none'})`);
+      return;
+    }
+
     breakerSuccess();
-    // Clear started/claimedBy so the NEXT stage gets dispatched — the agent already
-    // advanced the `stage` field, and dispatch only picks up WORKING && !started.
-    // Reset attempts to 0 so maxAttempts counts RETRIES PER STAGE, not cumulative
-    // dispatches across stages (which used to dead-letter every task at the merge stage).
-    await updateTask(taskId, { started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null, attempts: 0 });
 
-    if (route.role === 'qa' && fresh.qaVerdict === 'fail' && fresh.reviewNote) {
+    // A reject returns the task to whoever handed it over, and costs one hop in any direction.
+    if (outcome === 'reject') { await applyReject(doc, fresh, stage); return; }
+
+    const decision = routeOutcome(doc, stage.id, outcome);
+    if (decision.kind !== 'advance') {
+      // The agent reported a word this stage does not declare. Do not guess: a lenient default
+      // would hand routing power straight back to the agent.
+      await deadLetter(taskId, decision.kind === 'unknown-outcome'
+        ? `stage "${stage.id}" reported the outcome "${decision.outcome}", which it does not declare (allowed: ${decision.allowed.join(', ') || 'none'})`
+        : `stage "${decision.stageId}" vanished from the workflow while the agent ran`);
+      return;
+    }
+
+    if (role === 'qa' && fresh.qaVerdict === 'fail' && fresh.reviewNote) {
       getConfig().memory?.remember({ taskId, role: 'qa', kind: 'gotcha', text: `QA failed: ${fresh.reviewNote}` }).catch(() => {});
     }
-    // ENFORCE review-before-merge in the control plane: whatever stage the qa agent set
-    // (old prompts route to 'merge'), a PASS always goes to Human Review first. The human
-    // previews the branch and approves; only /approve advances it to merge. This makes the
-    // gate independent of the agent prompt, so it can't be skipped by a stale qa template.
-    // QA pass routes to the owner's acceptance gate first, then to the human. With the owner
-    // disabled this is the old behaviour exactly. Enforced here rather than in the qa prompt
-    // so a stale template can't skip the gate.
-    if (route.role === 'qa' && fresh.qaVerdict === 'pass' && fresh.stage !== 'review' && fresh.stage !== 'accept') {
-      if (ownerEnabled()) {
-        await updateTask(taskId, { stage: 'accept' });
-        log(taskId, '🔎 QA passed → Business Owner acceptance (does it deliver the ask?)', 'info');
-      } else {
-        await updateTask(taskId, { stage: 'review' });
-        log(taskId, '🔎 QA passed → Human Review (preview + approve before merge)', 'info');
-      }
-    }
 
-    // OWNER BOUNCE BUDGET — the owner just finished 'accept'. If it bounced the task back
-    // (stage plan|build) charge the budget; when exhausted, override its objection and send
-    // the task to the human WITH the note. The owner may not veto forever, and it may not
-    // dead-letter: a disagreement about intent is for a person to settle, not a BLOCKED card.
-    if (route.role === 'owner' && route.stage === 'accept') {
-      const after = (await getTask(taskId))?.stage;
-      const bounced = after === 'plan' || after === 'build';
-      if (bounced) {
-        const used = (fresh.ownerBounces || 0) + 1;
-        const cap = maxOwnerBounces();
-        if (used > cap) {
-          await updateTask(taskId, { stage: 'review', ownerBounces: used });
-          log(taskId, `🧑‍💼 owner bounce budget exhausted (${cap}) — sending to Human Review with the owner's notes instead of re-planning again`, 'warning');
-        } else {
-          await updateTask(taskId, { ownerBounces: used });
-          log(taskId, `🧑‍💼 owner bounced to ${after} (${used}/${cap}) — "${(fresh.ownerNote || '').slice(0, 120)}"`, 'warning');
-        }
-      } else if (after === 'review') {
-        // Approved: drop any note from an earlier bounce, or the human-review park below
-        // would report an objection the owner has since withdrawn.
-        await updateTask(taskId, { ownerNote: null });
-        log(taskId, '🧑‍💼 owner accepted — delivers the ask; on to Human Review', 'success');
-      }
-    }
-    if (route.role === 'architect' && route.stage === 'merge') {
-      await removeWorktree(taskId);            // merged → drop the dev worktree
-      await reconcileContextAfterMerge(taskId); // merged → drop context entries for files the merge deleted
+    // Clear started/claimedBy so the NEXT stage is dispatched, and reset attempts so the retry
+    // budget counts RETRIES PER STAGE rather than cumulative dispatches across the pipeline.
+    await updateTask(taskId, {
+      stage: decision.to,
+      handoffFrom: stage.id,          // set by the control plane; a reject returns to the sender
+      lastOutcome: outcome,
+      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null, attempts: 0,
+    });
+
+    if (takesMergeLock(stage)) {
+      await removeWorktree(taskId);              // merged → drop the dev worktree
+      await reconcileContextAfterMerge(taskId);  // drop context entries for files the merge deleted
       refreshIndex();
-      await updateTask(taskId, { status: 'DONE', completed: new Date().toISOString() }); // human already approved pre-merge
       log(taskId, '🔀 merged into current branch — approved & done', 'success');
       setStatus(`Merged "${fresh.title}" — done`, true);
-    } else if (route.stage === 'rescue') {
-      // Architect re-planned and handed back to the dev — clear the stale RESCUE note so the
-      // dev works from the fresh {{plan}}, not the old failure feedback.
-      await updateTask(taskId, { reviewNote: null });
-      log(taskId, `✅ architect re-planned (rescue) → back to dev at stage ${(await getTask(taskId))?.stage}`, 'success');
-    } else {
-      const newStage = (await getTask(taskId))?.stage;
-      const ROUTABLE = ['intake', 'plan', 'build', 'qa', 'accept', 'review', 'merge', 'merged', 'rescue'];
-      if (!newStage || !ROUTABLE.includes(newStage)) {
-        // The agent advanced to an unknown/non-pipeline stage (e.g. an architect declaring a
-        // task impossible by inventing stage="blocked"). Left alone it sits un-dispatchable in
-        // WORKING forever — surface it as a real BLOCKED so it's visible and can be healed.
-        await deadLetter(taskId, `agent set an unroutable stage "${newStage}" at ${route.stage} — task cannot proceed as briefed (see its summary/note)`);
-      } else {
-        log(taskId, `✅ ${route.role} finished ${route.stage} → stage ${newStage}`, 'success');
-      }
     }
+
+    log(taskId, `✅ ${role} finished "${stage.id}" → reported "${outcome}" → ${decision.to}${legacy ? ' (legacy stage write)' : ''}`, 'success');
     return;
   }
 
@@ -893,51 +978,44 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
   // "one merge active; on conflict the dev rebases" policy, enforced in the control plane
   // so it holds even with a stale merge prompt. Network failures are NOT conflicts — let
   // those retry the merge via the breaker/backoff instead of forcing a full dev cycle.
-  if (route.role === 'architect' && route.stage === 'merge' && r.failure !== 'network' && !(await isMergedIntoHead(taskId))) {
+  // Reached only when the run genuinely failed: crash, timeout, stall, or network.
+  //
+  // The stage that holds the merge lock is special. A merge that did not land means the branch
+  // conflicts, and the fix is for the dev to rebase — not for the merge to be retried. Network
+  // failures are NOT conflicts: let those retry the merge via the breaker rather than forcing a
+  // whole dev cycle. `conflict` is a declared outcome of the merge stage, so where it goes is
+  // the graph's decision, not this function's.
+  if (takesMergeLock(stage) && r.failure !== 'network' && !(await isMergedIntoHead(taskId))) {
     // Abort any half-applied merge so the working tree is clean for the next task.
     try { execSync('git merge --abort', { stdio: 'pipe', cwd: await repoCwdFor(taskId) }); } catch { /* nothing to abort */ }
-    const MAX_MERGE_BOUNCES = 3;
+    const conflict = routeOutcome(doc, stage.id, 'conflict');
+    const maxConflicts = capsFor(stage)?.conflicts ?? 3;
     const bounces = (fresh.mergeBounces || 0) + 1;
-    if (bounces > MAX_MERGE_BOUNCES) {
-      await deadLetter(taskId, `merge still conflicts after ${MAX_MERGE_BOUNCES} rebase attempts — needs a human`);
+    if (conflict.kind !== 'advance') {
+      await deadLetter(taskId, `merge conflicted, but stage "${stage.id}" declares no "conflict" outcome — add one, or resolve the conflict by hand`);
+      return;
+    }
+    if (bounces > maxConflicts) {
+      await deadLetter(taskId, `merge still conflicts after ${maxConflicts} rebase attempts — needs a human`);
       return;
     }
     breakerSuccess(); // a merge conflict is not an API outage
     const base = await currentBranch(taskId);
     await updateTask(taskId, {
-      stage: 'build', qaVerdict: null, status: 'WORKING',
+      stage: conflict.to, handoffFrom: stage.id, lastOutcome: 'conflict',
+      qaVerdict: null, status: 'WORKING',
       started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null,
       attempts: 0, mergeBounces: bounces,
       reviewNote: `MERGE CONFLICT: your branch task/${taskId} no longer merges cleanly into ${base}. Reconcile it: run \`git rebase ${base}\` (or \`git merge ${base}\` into your branch), resolve the conflicts, re-run the sanity checks, and re-commit. Do NOT change scope — only bring your branch up to date with ${base}.`,
     });
-    log(taskId, `↩ merge conflict — bounced to DEV to rebase onto ${base} (attempt ${bounces}/${MAX_MERGE_BOUNCES})`, 'warning');
-    setStatus(`Merge conflict on "${fresh.title}" — sent back to dev to rebase onto ${base}`, true);
+    log(taskId, `↩ merge conflict — bounced to "${conflict.to}" to rebase onto ${base} (attempt ${bounces}/${maxConflicts})`, 'warning');
+    setStatus(`Merge conflict on "${fresh.title}" — sent back to rebase onto ${base}`, true);
     return;
   }
 
-  // Exited without advancing. Before blaming the agent, rule out an INFRA fault: an agent that
-  // finished cleanly (failure 'none') but didn't advance its stage may simply have been unable to
-  // REACH the db-server for its callback. If 6952 is down, that's infra — heal it and requeue the
-  // SAME stage WITHOUT burning a retry, instead of marching the task toward BLOCKED.
-  if (r.failure === 'none') {
-    const dbUp = await probeDbServer();
-    if (!dbUp) {
-      openDbBreaker('an agent finished but its stage-advance callback could not reach the db-server');
-      await updateTask(taskId, {
-        started: null, claimedBy: null, leaseExpiresAt: null,
-        nextRetryAt: new Date(Date.now() + 8000).toISOString(),
-        attempts: Math.max(0, (fresh.attempts || 1) - 1), // do NOT count an infra fault against the budget
-        lastError: 'db-server unreachable — infra fault; will resume when healed',
-      });
-      log(taskId, `🩹 ${route.stage} did not advance, but db-server was DOWN — infra fault, not the agent; will retry the same stage once healed`, 'warning');
-      return;
-    }
-  }
-
-  // Genuine failure (crash, timeout, stall, or finished-but-skipped-callback with db healthy).
-  const note = r.failure === 'none' ? 'exited without advancing the stage (missing callback)' : `${r.failure}: ${r.outputTail.slice(-200)}`;
-  log(taskId, `❌ ${name} failed at ${route.stage} — ${note}`, 'error');
-  await failTask((await getTask(taskId)) || fresh, r.failure === 'none' ? 'crash' : r.failure, note);
+  const note = `${r.failure}: ${r.outputTail.slice(-200)}`;
+  log(taskId, `❌ ${name} failed at "${stage.id}" — ${note}`, 'error');
+  await failTask((await getTask(taskId)) || fresh, r.failure, note);
 }
 
 // ── watchdog + stall ─────────────────────────────────────────────────────────
@@ -1106,6 +1184,10 @@ async function loop(): Promise<void> {
           } catch (e: any) { log('__system__', `deep clean skipped: ${e?.message || e}`, 'warning'); }
         }
         await sampleCpu();      // refresh live CPU% for the resource gate
+        // Re-read every project's workflow once per tick. Without this the document is cached
+        // for the life of the process, and saving a workflow would appear to do nothing until
+        // a restart. Once per tick, not once per task: a tick reads the board anyway.
+        clearWorkflowCache();
         if (status === 'PAUSED') {
           setStatus('Paused by user');
         } else {

@@ -711,27 +711,47 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (req.method === 'DELETE') { teardownPreview(taskId); res.end(JSON.stringify({ ok: true })); return; }
   }
 
-  // --- APPROVE: human OK'd the preview → merge the branch (orchestrator picks it up) ---
-  if (req.method === 'POST' && req.url?.match(/^\/tasks\/[^/]+\/approve$/)) {
-    const taskId = decodeURIComponent(req.url.split('/')[2]);
-    try {
-      teardownPreview(taskId);
-      await updateTask(taskId, { stage: 'merge', status: 'WORKING', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, reviewNote: null });
-      res.end(JSON.stringify({ ok: true, status: 'merging' }));
-    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
+  // --- APPROVE / REJECT: the human's verdict at a human-gate stage. -------------
+  //
+  // These used to write `stage: 'merge'` and `stage: 'build'` directly, which hard-coded two
+  // stage names into the server. A human gate declares its own outcomes — `approved` and
+  // `rejected` in the shipped workflow — and where each one leads is drawn in the graph. So the
+  // human reports an outcome exactly as an agent does, and the graph routes it.
+  {
+    const verdict = req.url?.match(/^\/tasks\/([^/]+)\/(approve|reject)$/);
+    if (req.method === 'POST' && verdict) {
+      const taskId = decodeURIComponent(verdict[1]);
+      const outcome = verdict[2] === 'approve' ? 'approved' : 'rejected';
+      try {
+        const body = verdict[2] === 'reject' ? JSON.parse((await readBody(req)) || '{}') : {};
+        const task = await getTask(taskId);
+        if (!task) { res.statusCode = 404; res.end(JSON.stringify({ error: 'task not found' })); return; }
 
-  // --- REJECT: send it back to the dev with a reason ---
-  if (req.method === 'POST' && req.url?.match(/^\/tasks\/[^/]+\/reject$/)) {
-    const taskId = decodeURIComponent(req.url.split('/')[2]);
-    try {
-      const body = JSON.parse((await readBody(req)) || '{}');
-      teardownPreview(taskId);
-      await updateTask(taskId, { stage: 'build', status: 'WORKING', qaVerdict: null, reviewNote: body.reason || 'rejected by reviewer', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null });
-      res.end(JSON.stringify({ ok: true, status: 'rebuilding' }));
-    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
+        const wf = await import('../agentic/workflow/index.ts');
+        const { doc } = await wf.loadWorkflow(task.projectId || 'default');
+        const decision = wf.routeOutcome(doc, task.stage || doc.entry, outcome);
+        if (decision.kind !== 'advance') {
+          res.statusCode = 409;
+          res.end(JSON.stringify({
+            error: `stage "${task.stage}" does not declare an "${outcome}" outcome`,
+            allowed: decision.kind === 'unknown-outcome' ? decision.allowed : [],
+          }));
+          return;
+        }
+
+        teardownPreview(taskId);
+        await updateTask(taskId, {
+          stage: decision.to, handoffFrom: task.stage, lastOutcome: outcome,
+          status: 'WORKING', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
+          // Approving clears the note; rejecting replaces it with the reason.
+          ...(outcome === 'approved'
+            ? { reviewNote: null }
+            : { qaVerdict: null, reviewNote: body.reason || 'rejected by reviewer' }),
+        });
+        res.end(JSON.stringify({ ok: true, stage: decision.to }));
+      } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
   }
 
   // --- Purge task logs (called on human approval — "work accepted") ---
@@ -983,6 +1003,71 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     try { const { resetAgents } = await import('../agentic/index.ts'); await resetAgents(); res.end(JSON.stringify({ ok: true })); }
     catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
+  }
+
+  // --- Workflow document ------------------------------------------------------
+  // GET    /workflow?project=<id>   -> { doc, source, valid, stageIssues, docErrors, occupied }
+  // PUT    /workflow?project=<id>   -> { doc } on success; 409 conflict / 422 invalid otherwise
+  // DELETE /workflow?project=<id>   -> forget it; fall back to the built-in pipeline
+  //
+  // Every rule lives in agentic/workflow so the browser and this server run the SAME validator.
+  // A client can be skipped with curl, and a workflow where some stage cannot reach the terminal
+  // strands every task that reaches it — in WORKING forever, invisible.
+  if ((req.url || '').split('?')[0] === '/workflow') {
+    const pid = projectIdOf(req);
+    try {
+      const wf = await import('../agentic/workflow/index.ts');
+
+      if (req.method === 'GET') {
+        const { doc, source } = await wf.loadWorkflow(pid);
+        const v = wf.validateWorkflow(doc);
+        // Report which stages have live tasks on them, so the editor can lock those nodes
+        // BEFORE the user drags them into the bin and gets a 409 for their trouble.
+        const occupied = await wf.occupiedStagesFor(pid);
+        res.end(JSON.stringify({ doc, source, valid: v.ok, docErrors: v.docErrors, stageIssues: v.stageIssues, occupied }));
+        return;
+      }
+
+      if (req.method === 'PUT') {
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const doc = body.doc ?? body;
+        const expectedRev = Number(body.expectedRev ?? doc?.rev ?? 0);
+        if (!Number.isInteger(expectedRev) || expectedRev < 0) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'expectedRev must be a whole number' }));
+          return;
+        }
+
+        const r = await wf.saveWorkflow(pid, doc, expectedRev);
+        switch (r.kind) {
+          case 'saved':
+            console.log(`[db-server] workflow saved (${pid}) rev ${r.doc.rev}`);
+            res.end(JSON.stringify({ ok: true, doc: r.doc }));
+            return;
+          // 409: somebody saved while you were editing. Their write stands; reload and reapply.
+          case 'conflict':
+            res.statusCode = 409;
+            res.end(JSON.stringify({ error: 'the workflow changed while you were editing', currentRev: r.currentRev }));
+            return;
+          // 422: the document itself is wrong.
+          case 'invalid':
+            res.statusCode = 422;
+            res.end(JSON.stringify({ error: 'invalid workflow', docErrors: r.docErrors, stageIssues: r.stageIssues }));
+            return;
+          // 409: a task is standing on ground this edit removes.
+          case 'occupied':
+            res.statusCode = 409;
+            res.end(JSON.stringify({ error: 'a running task would be stranded', conflicts: r.conflicts }));
+            return;
+        }
+      }
+
+      if (req.method === 'DELETE') {
+        await wf.resetWorkflow(pid);
+        res.end(JSON.stringify({ ok: true, doc: wf.defaultWorkflow() }));
+        return;
+      }
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); return; }
   }
 
   // --- Restore defaults -------------------------------------------------------
@@ -1333,6 +1418,32 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             body.etcSetAt = new Date().toISOString();
             delete body.etc;
           }
+
+          // An agent reports an OUTCOME — a word describing what happened. It never names a
+          // destination. Where an outcome leads is drawn in the workflow, so an agent cannot
+          // skip a human gate, and cannot orphan a task by inventing a stage.
+          if (body.outcome !== undefined) {
+            body.lastOutcome = String(body.outcome);
+            delete body.outcome;
+          }
+          // `{"reject": "why"}` is the bounce verb: return to whoever handed the task over.
+          // `reject` is a reserved outcome word, so this can never collide with a routed exit.
+          if (body.reject !== undefined) {
+            body.lastOutcome = 'reject';
+            if (typeof body.reject === 'string' && body.reject.trim()) body.reviewNote = body.reject;
+            delete body.reject;
+          }
+
+          // CONTROL-PLANE ONLY. `handoffFrom` decides where a reject lands and `hops` is the
+          // budget that stops it looping — an agent able to write either could choose where its
+          // own reject goes, and reset the cap that stops it doing so forever.
+          for (const owned of ['handoffFrom', 'hops']) {
+            if (owned in body) {
+              console.warn(`[db-server] task ${taskId}: ignoring agent-supplied "${owned}" (control-plane only)`);
+              delete body[owned];
+            }
+          }
+
           await updateTask(taskId, body);
           res.end(JSON.stringify({ ok: true }));
           return;

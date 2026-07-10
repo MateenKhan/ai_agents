@@ -110,7 +110,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
   };
 
   return (
-    <div className="flex gap-3 sm:gap-4 p-3 sm:p-4 h-[calc(100dvh-170px)] overflow-x-auto overflow-y-hidden custom-scrollbar items-start snap-x snap-mandatory sm:snap-none [-webkit-overflow-scrolling:touch]">
+    <div className="flex gap-3 sm:gap-4 p-3 sm:p-4 h-full overflow-x-auto overflow-y-hidden custom-scrollbar items-start snap-x snap-mandatory sm:snap-none [-webkit-overflow-scrolling:touch]">
       {lanes.map(col => {
         const colTasks = tasks.filter(t => t.status === col.id)
           .sort((a, b) => a.priority - b.priority);
@@ -182,7 +182,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
               className="flex-1 flex flex-col gap-3 p-3 overflow-y-auto custom-scrollbar [-webkit-overflow-scrolling:touch]"
             >
               {colTasks.length === 0 && !isDropTarget ? (
-                <div className="eyebrow flex-1 flex items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl tracking-tight text-center">
+                <div className="flex-1 flex items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl text-2xs font-medium text-slate-500 text-center">
                   Empty lane. Drop a task in, or hit + to feed one.
                 </div>
               ) : (

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Tooltip } from './Tooltip';
 import { Plus, Pencil, Trash2, FolderGit2, Columns, ChevronDown, ChevronRight, RotateCcw, GitBranch, FolderSync } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
@@ -281,7 +282,12 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
   );
 }
 
-export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
+/** `right` is a slot for the agent tank. It takes the right-hand column of the header and
+ *  shares a top edge with the brand row, instead of stacking as a band above the board. */
+export function ProjectBar(
+  { onOpenGit, right, tabs }:
+  { onOpenGit?: () => void; right?: React.ReactNode; tabs?: React.ReactNode }
+) {
   const { projects, activeId, setActiveId, updateProject } = useProjects();
 
   // Rename a tab to match its repo folder — fixes drift when the label and folder differ.
@@ -307,26 +313,42 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
 
   return (
     <div className="bg-white border-b border-slate-200">
+      {/* Two columns. The tank owns the right one and starts level with the brand row. */}
+      <div className={right ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,520px)]' : ''}>
+      <div className={`min-w-0 flex flex-col ${right ? 'lg:border-r lg:border-slate-200' : ''}`}>
       <div className="px-2 sm:px-3 py-2">
         <div className="flex items-center gap-3">
           {/* Brand — first item on the page, same row as the Projects/active-project toggle.
-              Tier-1 identity: the teeth mark carries the accent red; nothing else here does. */}
-          <div className="shrink-0 flex items-center gap-2 pr-3 border-r border-slate-200">
-            <svg viewBox="0 0 100 100" aria-hidden="true" className="w-6 h-6 sm:w-7 sm:h-7 rounded-md shrink-0">
-              <rect width="100" height="100" rx="22" fill="#0A0E14" />
-              <g fill="#FF3B1D">
-                <path d="M18 28 L28 54 L38 28 Z" /><path d="M36 28 L46 54 L56 28 Z" /><path d="M54 28 L64 54 L74 28 Z" />
-                <path d="M27 74 L37 48 L47 74 Z" /><path d="M45 74 L55 48 L65 74 Z" /><path d="M63 74 L73 48 L83 74 Z" />
-              </g>
-            </svg>
-            <div className="flex flex-col justify-center">
-              <div className="flex items-center gap-1.5">
-                <h1 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">Piranha</h1>
-                <div className="w-1 h-1 rounded-full bg-emerald-500 shrink-0" />
+              Tier-1 identity: the teeth mark carries the accent red; nothing else here does.
+
+              Clicking the mark opens the landing page — the conventional home for it, and
+              it needs no new chrome in an already dense header. */}
+          <Tooltip label="What Piranha is">
+            <Link
+              to="/features"
+              data-feature-id="brand-features"
+              // Explicit, because Tooltip injects its label as aria-label when none exists —
+              // which would replace the visible "Piranha" with "What Piranha is" and break
+              // WCAG 2.5.3 (Label in Name). The visible text must survive inside the name.
+              aria-label="Piranha — what it is"
+              className="shrink-0 flex items-center gap-2 pr-3 border-r border-slate-200 rounded-lg sm:hover:opacity-80 transition-opacity"
+            >
+              <svg viewBox="0 0 100 100" aria-hidden="true" className="w-6 h-6 sm:w-7 sm:h-7 rounded-md shrink-0">
+                <rect width="100" height="100" rx="22" fill="#0A0E14" />
+                <g fill="#FF3B1D">
+                  <path d="M18 28 L28 54 L38 28 Z" /><path d="M36 28 L46 54 L56 28 Z" /><path d="M54 28 L64 54 L74 28 Z" />
+                  <path d="M27 74 L37 48 L47 74 Z" /><path d="M45 74 L55 48 L65 74 Z" /><path d="M63 74 L73 48 L83 74 Z" />
+                </g>
+              </svg>
+              <div className="flex flex-col justify-center text-left">
+                <div className="flex items-center gap-1.5">
+                  <h1 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">Piranha</h1>
+                  <div className="w-1 h-1 rounded-full bg-emerald-500 shrink-0" />
+                </div>
+                <p className="eyebrow whitespace-nowrap">Watch the swarm.</p>
               </div>
-              <p className="eyebrow whitespace-nowrap">Watch the swarm.</p>
-            </div>
-          </div>
+            </Link>
+          </Tooltip>
           {/* Accordion header — minimized by default; shows the active project. */}
           <button
             onClick={() => setOpen(o => !o)}
@@ -422,6 +444,10 @@ export function ProjectBar({ onOpenGit }: { onOpenGit?: () => void }) {
             </button></Tooltip>
           </div>
         )}
+      </div>
+      {tabs && <div className="mt-auto px-1 sm:px-2 pb-0">{tabs}</div>}
+      </div>
+      {right && <div className="hidden lg:block relative min-w-0">{right}</div>}
       </div>
 
       <AnimatePresence>

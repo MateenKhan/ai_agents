@@ -1,25 +1,28 @@
 import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { HeartPulse, X, RefreshCw, Settings, Plus, ClipboardCheck, MessageSquarePlus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { HeartPulse, X, Plus, ClipboardCheck, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TAB_META, loadHiddenTabs, saveHiddenTabs, type TabId } from './tasks/tabsConfig';
 
 // Modular Components
 import { useTasks } from './tasks/hooks/useTasks';
+import { useOverflowEdges } from './tasks/hooks/useOverflowEdges';
 import { OrchestratorToggle } from './tasks/components/OrchestratorToggle';
 import { Tooltip } from './tasks/components/Tooltip';
 import { RecordButton } from './tasks/components/RecordButton';
+import { BoardMenu } from './tasks/components/BoardMenu';
 import { TaskBoard } from './tasks/components/TaskBoard';
 import { HumanTodos } from './tasks/components/HumanTodos';
 import { Modal } from './tasks/components/Modal';
 import { useToast } from './tasks/components/Toast';
 import { useConfirm } from './tasks/components/ConfirmProvider';
 import { ProjectBar } from './tasks/components/ProjectBar';
+import { AgentTank } from '../components/piranha/AgentTank';
 import { useProjects } from './tasks/projectContext';
 import type { Task, Column } from './tasks/types';
 import { loadColumns, saveColumns, BOARD_COLUMNS_EVENT } from './tasks/boardConfig';
 import { API_BASE, withProject } from '../apiBase';
-import { iconBtn, iconBtnLg } from './tasks/ui';
+import { iconBtn } from './tasks/ui';
 
 // Lazy Loaded Components
 const TaskModal = lazy(() => import('./tasks/components/TaskModal').then(m => ({ default: m.TaskModal })));
@@ -36,7 +39,6 @@ const LogsTab = lazy(() => import('./tasks/components/LogsTab'));
 const DbTab = lazy(() => import('./tasks/components/DbTab'));
 const AgentsTab = lazy(() => import('./tasks/components/AgentsTab'));
 const GitPanel = lazy(() => import('./tasks/components/GitPanel').then(m => ({ default: m.GitPanel })));
-const SystemStatus = lazy(() => import('./tasks/components/SystemStatus').then(m => ({ default: m.SystemStatus })));
 
 const TasksPage: React.FC = () => {
   const navigate = useNavigate();
@@ -99,11 +101,30 @@ const TasksPage: React.FC = () => {
   // Hiding the tab you're on falls back to the Board.
   useEffect(() => { if (hiddenTabs.has(activeTab)) setActiveTab('board'); }, [hiddenTabs, activeTab]);
   const visibleTabs = TAB_META.filter(t => !hiddenTabs.has(t.id));
+  // The strip shows a real scrollbar (`.scroll-x-bar`, always reserved so the row never
+  // jumps). We still measure the overflow — the cluster below uses it to fold itself away.
+  const { ref: tabStripRef, edges: tabEdges } = useOverflowEdges<HTMLDivElement>();
   // Collapse the action cluster by default on phones so the tab strip keeps its room;
   // expanded from sm+ up to preserve the desktop header. Tap the chevron to reveal it.
   const [actionsOpen, setActionsOpen] = useState(
     () => typeof window === 'undefined' || !window.matchMedia || window.matchMedia('(min-width: 640px)').matches
   );
+  // Once the user has touched the chevron, their choice is final — never fight it.
+  const actionsTouched = useRef(false);
+  const toggleActions = () => { actionsTouched.current = true; setActionsOpen(o => !o); };
+
+  // Tabs outrank the cluster. When the strip is genuinely clipping a tab, fold the cluster
+  // away and give the width back — a sliced "DATABA…" is worse than a hidden Settings icon.
+  //
+  // A viewport breakpoint cannot do this: the tab row shares its width with the AgentTank
+  // column, so the pixel at which tabs start clipping is not a property of the window. We
+  // already measure the strip; use the measurement.
+  //
+  // COLLAPSE ONLY. Auto-expanding once the width is free would re-clip the tabs, which would
+  // free the width again — a layout oscillation. One-way is stable by construction.
+  useEffect(() => {
+    if (!actionsTouched.current && actionsOpen && tabEdges.right) setActionsOpen(false);
+  }, [actionsOpen, tabEdges.right]);
   const [chatOpen, setChatOpen] = useState(false);
   const [logsAgent, setLogsAgent] = useState<string | null>(null);
   const [healReport, setHealReport] = useState<{ healed: number; steps: any[] } | null>(null);
@@ -262,15 +283,11 @@ const TasksPage: React.FC = () => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 selection:bg-accent-200 selection:text-accent-900">
-      <ProjectBar onOpenGit={() => setGitOpen(true)} />
-
-      <main className="max-w-[1600px] mx-auto">
-      <div className="px-3 sm:px-4 pt-3">
-        {/* Tab switcher — folder tabs whose active tab connects into the content panel below */}
-        <div className="flex items-end gap-2 border-b border-slate-300" data-feature-id="tasks-tab-switcher">
-          <div className="flex items-stretch gap-1 overflow-x-auto overflow-y-hidden custom-scrollbar min-w-0 flex-1 pb-px">
+  // The tab switcher. It lives in the header (see ProjectBar) so the tank can span both
+  // header rows instead of leaving dead space beside the brand.
+  const tabStrip = (
+        <div className="flex items-end gap-2" data-feature-id="tasks-tab-switcher">
+          <div ref={tabStripRef} className="flex items-stretch gap-1 scroll-x-bar min-w-0 shrink">
             {visibleTabs.map((t) => {
               const Icon = t.icon;
               const active = activeTab === t.id;
@@ -279,7 +296,7 @@ const TasksPage: React.FC = () => {
                   key={t.id}
                   data-feature-id={`tasks-tab-${t.id}`}
                   onClick={() => setActiveTab(t.id)}
-                  className={`relative -mb-px shrink-0 flex items-center gap-1.5 px-4 min-h-control-lg text-xs font-bold uppercase tracking-widest rounded-t-lg border transition-colors ${active
+                  className={`relative -mb-px shrink-0 flex items-center gap-1.5 px-2 min-h-control text-micro font-bold uppercase tracking-normal rounded-t-lg border transition-colors ${active
                     ? 'z-10 bg-white border-slate-300 border-b-white text-accent-700 shadow-sm'
                     : 'border-transparent text-slate-500 sm:hover:text-slate-900 sm:hover:bg-slate-50'}`}
                 >
@@ -289,7 +306,7 @@ const TasksPage: React.FC = () => {
                       <motion.span
                         layoutId="tasks-tab-underline"
                         transition={{ type: 'spring', stiffness: 500, damping: 38 }}
-                        className="absolute left-3 right-3 -bottom-px h-[3px] rounded-full bg-gradient-to-r from-accent-400 via-accent-500 to-accent-400 shadow-[0_6px_14px_0_rgba(99,102,241,0.9),0_11px_26px_1px_rgba(99,102,241,0.6)]"
+                        className="absolute left-3 right-3 -bottom-px h-[3px] rounded-full bg-gradient-to-r from-accent-400 via-accent-500 to-accent-400 shadow-[0_6px_14px_0_rgba(255,59,29,0.9),0_11px_26px_1px_rgba(255,59,29,0.6)]"
                       />
                       {/* Soft light pooling downward only */}
                       <motion.span
@@ -300,17 +317,23 @@ const TasksPage: React.FC = () => {
                       />
                     </>
                   )}
-                  <Icon size={14} className={active ? 'text-accent-600' : ''} />
+                  <Icon size={15} className={active ? 'text-accent-600' : ''} />
                   {t.label}
-                  {t.closeable && (
+                  {/* The close affordance is the widest thing in a tab — a 36px hit target × 4
+                      closeable tabs was 144px, more than every label combined. It now appears
+                      only on the ACTIVE tab, the way browser tabs do: you cannot close what you
+                      are not looking at, and Settings → Visible Tabs still hides any of them.
+                      Rendered conditionally rather than hidden by a hover variant, so it never
+                      occupies width it isn't using. */}
+                  {t.closeable && active && (
                     <span
                       role="button"
                       tabIndex={0}
                       data-feature-id={`tasks-tab-close-${t.id}`}
-                      title={`Hide ${t.label} — restore from Settings`}
+                      aria-label={`Hide ${t.label} — restore from Settings`}
                       onClick={(e) => { e.stopPropagation(); hideTab(t.id); }}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); hideTab(t.id); } }}
-                      className="flex items-center justify-center min-w-control min-h-control -mr-2 ml-0.5 p-1 rounded text-slate-500 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
+                      className="flex items-center justify-center w-5 h-5 -mr-1 ml-0.5 rounded text-slate-400 sm:hover:text-rose-600 sm:hover:bg-rose-50 transition-colors cursor-pointer"
                     >
                       <X size={12} />
                     </span>
@@ -319,67 +342,90 @@ const TasksPage: React.FC = () => {
               );
             })}
           </div>
-          {/* action cluster — icon-only + custom tooltips, collapsible via the chevron */}
+          {/* Action cluster — icon-only + custom tooltips, collapsible via the chevron.
+              `ml-auto` pins it to the right edge, and the chevron is the LAST child. Together
+              that means expanding grows the row leftwards into empty space while the chevron
+              itself never moves — it is the one control you press twice in a row, so it must
+              not slide out from under the cursor between presses. */}
           <div className="ml-auto shrink-0 flex items-center gap-1 pb-1.5 pl-1" data-feature-id="tasks-actions">
-            <Tooltip label={actionsOpen ? 'Hide actions' : 'Show actions'}>
-              <button
-                onClick={() => setActionsOpen(o => !o)}
-                aria-label={actionsOpen ? 'Hide actions' : 'Show actions'}
-                data-feature-id="tasks-actions-toggle"
-                className={iconBtnLg}
-              >
-                {actionsOpen ? <ChevronRight size={22} strokeWidth={2.5} /> : <ChevronLeft size={22} strokeWidth={2.5} />}
-              </button>
-            </Tooltip>
             {actionsOpen && (
               <div className="flex items-center gap-1">
                 <OrchestratorToggle />
                 <RecordButton />
+                {/* Stays a first-class icon: it carries an unread count, and a badge inside a
+                    collapsed menu is a badge nobody sees — the only job it has. */}
                 <Tooltip label={`Your Review${reviewQueue.length ? ` — ${reviewQueue.length} awaiting` : ''}`}>
                   <button
                     onClick={() => setTodosOpen(true)}
                     data-feature-id="tasks-open-todos"
-                    aria-label="Your Review"
+                    aria-label={`Your Review${reviewQueue.length ? ` — ${reviewQueue.length} awaiting` : ''}`}
                     className={`${iconBtn} relative ${reviewQueue.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-300 sm:hover:bg-amber-100' : ''}`}
                   >
-                    <ClipboardCheck size={16} />
+                    <ClipboardCheck size={14} />
                     {reviewQueue.length > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-micro font-bold bg-amber-500 text-white rounded-full">{reviewQueue.length}</span>
+                      <span aria-hidden="true" className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-micro font-bold bg-amber-500 text-white rounded-full">{reviewQueue.length}</span>
                     )}
                   </button>
                 </Tooltip>
-                <Tooltip label="Refresh board">
-                  <button onClick={fetchTasks} aria-label="Refresh board" className={`${iconBtn} ${loading ? 'animate-spin text-accent-600' : ''}`}>
-                    <RefreshCw size={16} />
-                  </button>
-                </Tooltip>
-                <Tooltip label="Unstick — restart stalled tasks">
-                  <button onClick={handleHeal} disabled={healing} data-feature-id="tasks-heal" aria-label="Heal" className={iconBtn}>
-                    <HeartPulse size={16} className={healing ? 'animate-pulse' : ''} />
-                  </button>
-                </Tooltip>
-                <Tooltip label="Describe work, get tasks">
-                  <button onClick={() => setChatOpen(true)} data-feature-id="tasks-chat-create" aria-label="Chat to Tasks" className={iconBtn}>
-                    <MessageSquarePlus size={16} />
-                  </button>
-                </Tooltip>
-                <Tooltip label="Settings">
-                  <button onClick={() => setIsSettingsOpen(true)} data-feature-id="tasks-open-settings" aria-label="Settings" className={iconBtn}>
-                    <Settings size={16} />
-                  </button>
-                </Tooltip>
+                {/* The one action you take most. Never behind a menu. */}
                 <Tooltip label="New task">
                   <button onClick={() => handleAddTask()} aria-label="New task" className={iconBtn}>
-                    <Plus size={16} strokeWidth={3} />
+                    <Plus size={14} strokeWidth={3} />
                   </button>
                 </Tooltip>
+                <BoardMenu
+                  onChat={() => setChatOpen(true)}
+                  onRefresh={fetchTasks}
+                  onHeal={handleHeal}
+                  onSettings={() => setIsSettingsOpen(true)}
+                  refreshing={loading}
+                  healing={healing}
+                />
               </div>
             )}
+            {/* Chevron points AT the icons: left when they are hidden (they will appear to the
+                left), right when shown (they will fold away to the right). Direction is a
+                promise about where things go, not decoration. */}
+            <Tooltip label={actionsOpen ? 'Hide actions' : 'Show actions'}>
+              <button
+                onClick={toggleActions}
+                aria-expanded={actionsOpen}
+                aria-label={actionsOpen ? 'Hide actions' : 'Show actions'}
+                data-feature-id="tasks-actions-toggle"
+                className={iconBtn}
+              >
+                {actionsOpen ? <ChevronRight size={16} strokeWidth={2.5} /> : <ChevronLeft size={16} strokeWidth={2.5} />}
+              </button>
+            </Tooltip>
           </div>
         </div>
+  );
 
+  return (
+    /* App shell: exactly one viewport tall, and it never scrolls. Everything that scrolls does
+       so INSIDE the content panel below.
+       This replaces five hand-guessed `calc(100dvh - 170px | 260px | 330px)` offsets, one per
+       tab, each a different guess at the header's height. None of them were right, and any tab
+       that forgot to guess (Agents) simply grew the page — which is the scrollbar you saw. A
+       flex column measures the header instead of estimating it. */
+    <div className="h-dvh flex flex-col overflow-hidden bg-slate-100 text-slate-800 selection:bg-accent-200 selection:text-accent-900">
+      {/* The header is two columns: brand + tabs on the left, the tank on the right, sharing
+          a top edge. The tabs live up here so the tank can span both rows without leaving
+          dead space beside them. */}
+      <div className="shrink-0">
+        <ProjectBar
+          onOpenGit={() => setGitOpen(true)}
+          tabs={tabStrip}
+          right={<AgentTank tasks={tasks} />}
+        />
+      </div>
+
+      <main className="flex-1 min-h-0 w-full max-w-[1600px] mx-auto flex flex-col">
+      {/* `min-h-0` at every level: a flex child's default `min-height:auto` refuses to shrink
+          below its content, so without it the panel grows and the page scrolls anyway. */}
+      <div className="flex-1 min-h-0 flex flex-col px-3 sm:px-4 pt-3 pb-3">
         {/* Content panel — bordered box connected to the active tab (its bottom border is open) */}
-        <div className="border border-t-0 border-slate-300 rounded-b-xl bg-white overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col border border-slate-300 rounded-xl bg-white overflow-hidden">
         {error && (
           <div className="m-6 p-4 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between">
             <span className="text-xs font-bold text-rose-600 uppercase tracking-widest">Error: {error}</span>
@@ -566,9 +612,8 @@ const TasksPage: React.FC = () => {
         />
       </Suspense>
 
-      <Suspense fallback={null}>
-        <SystemStatus activeId={activeId} />
-      </Suspense>
+      {/* The floating status panel is gone. Its ambient half lives in the tank's status bar;
+          its alarms (server unreachable, corrupt board) surface there too. */}
     </div>
   );
 };

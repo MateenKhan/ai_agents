@@ -19,9 +19,11 @@ import { DEFAULT_AGENTS } from './defaults';
 //  changing it needs no bump — only stored-template changes do.)
 //   v3: architect gains a rescuePromptTemplate (re-plan a task whose dev/qa exhausted retries).
 //   v4: dev/qa learn to CALL FOR HELP — self-report a block by handing to stage="rescue".
-// Bump to roll new system-role templates onto existing installs. 5 = business owner role
-// (intake + accept templates) and the QA→owner acceptance routing.
-const SYSTEM_TEMPLATE_VERSION = 5;
+// Bump to roll new system-role templates onto existing installs.
+//   5 = business owner role (intake + accept templates)
+//   6 = agents report an OUTCOME instead of naming a stage. Twelve hard-coded `"stage":"..."`
+//       strings are gone, so a stage can be renamed without touching a single prompt.
+const SYSTEM_TEMPLATE_VERSION = 6;
 
 // Seed DEFAULT_AGENTS + roll templates forward exactly once per process (the work the
 // old lazy `db()` did on first access). Table creation itself lives in runMigrations.

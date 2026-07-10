@@ -51,6 +51,7 @@
   "scripts": {
     "predev": "kill-port 6951",
     "dev": "vite",
+    "build:landing": "tsx scripts/build-landing.tsx",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "db:server": "cross-env DB_FILE=local.db tsx --watch db/server.ts",

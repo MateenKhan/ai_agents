@@ -194,7 +194,7 @@ function rowToTask(r: any): Task {
   };
 }
 
-const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath,intent,ownerNote,ownerBounces';
+const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath,intent,ownerNote,ownerBounces,lastOutcome,handoffFrom,hops';
 
 function toRow(t: Partial<Task>): any[] {
   return [
@@ -207,6 +207,7 @@ function toRow(t: Partial<Task>): any[] {
     t.etcMinutes ?? null, t.etcSetAt ?? null, JSON.stringify(t.stageTimings ?? {}),
     t.projectId ?? 'default', t.control ?? null, t.mergeBounces ?? 0, t.rescueCount ?? 0,
     t.logPath ?? null, t.intent ?? null, t.ownerNote ?? null, t.ownerBounces ?? 0,
+    t.lastOutcome ?? null, t.handoffFrom ?? null, t.hops ?? 0,
   ];
 }
 

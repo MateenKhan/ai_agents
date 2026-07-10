@@ -1,0 +1,208 @@
+/* Workflow editor styles. Every rule is under `.pwf`, every custom property is `--pwf-*`,
+   every class is `pwf-*`. The design mock scoped its CSS but not its element ids, so a host
+   page with a `#canvas` would have fought it. Nothing here can leak either way. */
+
+.pwf {
+  --pwf-accent-50: #fff1ee;
+  --pwf-accent-100: #ffe0d9;
+  --pwf-accent-300: #ff9a83;
+  --pwf-accent-500: #ff3b1d;
+  --pwf-accent-600: #e62e12;
+  --pwf-accent-700: #bf2410;
+  --pwf-ai-50: #f5f3ff;
+  --pwf-ai-100: #ede9fe;
+  --pwf-ai-500: #8b5cf6;
+  --pwf-ai-600: #7c3aed;
+  --pwf-ai-700: #6d28d9;
+  --pwf-s50: #f8fafc;
+  --pwf-s100: #f1f5f9;
+  --pwf-s200: #e2e8f0;
+  --pwf-s300: #cbd5e1;
+  --pwf-s400: #94a3b8;
+  --pwf-s500: #64748b;
+  --pwf-s600: #475569;
+  --pwf-s700: #334155;
+  --pwf-s800: #1e293b;
+  --pwf-s900: #0f172a;
+  --pwf-rose-100: #ffe4e6;
+  --pwf-rose-300: #fda4af;
+  --pwf-rose-500: #f43f5e;
+  --pwf-rose-600: #e11d48;
+  --pwf-emerald-100: #d1fae5;
+  --pwf-emerald-500: #10b981;
+  --pwf-emerald-600: #059669;
+  --pwf-ctrl: 36px;
+  --pwf-ctrl-lg: 44px;
+
+  /* Flex column, NOT a grid with a fixed row count. The run bar only exists in Run mode, so a
+     `grid-template-rows: auto auto auto 1fr` left `main` in the third (auto) row and gave the
+     whole remaining height to an empty fourth row — a grey band under the canvas, and a canvas
+     sized to its content rather than to the viewport. Flex sizes whatever children are there. */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--pwf-s100);
+  color: var(--pwf-s900);
+  font: 400 15px/1.4 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+.pwf *, .pwf *::before, .pwf *::after { box-sizing: border-box; }
+.pwf .pwf-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.pwf .pwf-muted { color: var(--pwf-s500); }
+.pwf .pwf-micro { font-size: 10px; line-height: 14px; }
+.pwf .pwf-xs2 { font-size: 11px; line-height: 16px; }
+.pwf .pwf-eyebrow { font-size: 10px; line-height: 14px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; color: var(--pwf-s500); margin-bottom: .5rem; }
+.pwf .pwf-spacer { flex: 1; }
+.pwf code { background: var(--pwf-s100); border: 1px solid var(--pwf-s200); border-radius: .25rem; padding: 1px .25rem; font-family: ui-monospace, monospace; }
+
+/* Focus is a safety feature: in a tool where a keystroke deletes a stage, "where am I" must
+   never be ambiguous. Keyboard focus only. */
+.pwf :where(a, button, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--pwf-s900);
+  outline-offset: 2px;
+  border-radius: .5rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pwf *, .pwf *::before, .pwf *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ── buttons: the three-tier danger hierarchy ─────────────────────────────── */
+.pwf .pwf-btn-primary { min-height: var(--pwf-ctrl-lg); padding: 0 1.25rem; font-size: .875rem; font-weight: 700; color: #fff; background: var(--pwf-s900); border: 0; border-radius: .75rem; cursor: pointer; }
+.pwf .pwf-btn-primary:hover { background: var(--pwf-s800); }
+.pwf .pwf-btn-primary:disabled { background: var(--pwf-s300); color: var(--pwf-s500); cursor: not-allowed; }
+.pwf .pwf-btn-danger { width: 100%; min-height: var(--pwf-ctrl-lg); padding: 0 1.25rem; font-size: .875rem; font-weight: 900; color: #fff; background: var(--pwf-rose-600); border: 0; border-radius: .75rem; box-shadow: 0 0 0 2px var(--pwf-rose-300); cursor: pointer; }
+.pwf .pwf-btn-danger:hover { background: var(--pwf-rose-500); }
+.pwf .pwf-btn-sm { min-height: var(--pwf-ctrl); padding: 0 .75rem; font-size: .75rem; font-weight: 700; color: var(--pwf-s700); background: #fff; border: 1px solid var(--pwf-s300); border-radius: .5rem; cursor: pointer; }
+.pwf .pwf-btn-sm:hover { background: var(--pwf-s50); }
+.pwf .pwf-btn-sm[aria-pressed='true'] { background: var(--pwf-s900); color: #fff; border-color: var(--pwf-s900); }
+
+.pwf .pwf-header { flex: 0 0 auto; display: flex; align-items: center; gap: .5rem; padding: .625rem 1rem; background: #fff; border-bottom: 1px solid var(--pwf-s200); flex-wrap: wrap; }
+.pwf .pwf-logo { display: flex; align-items: center; gap: .5rem; font-weight: 700; }
+.pwf .pwf-dot { width: 1.5rem; height: 1.5rem; border-radius: .5rem; background: var(--pwf-accent-500); display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 900; }
+.pwf .pwf-seg { display: inline-flex; background: var(--pwf-s100); border: 1px solid var(--pwf-s200); border-radius: .625rem; padding: 2px; }
+.pwf .pwf-seg button { min-height: var(--pwf-ctrl); padding: 0 .875rem; font-size: .75rem; font-weight: 700; border: 0; background: transparent; color: var(--pwf-s600); border-radius: .5rem; cursor: pointer; }
+.pwf .pwf-seg button[aria-pressed='true'] { background: #fff; color: var(--pwf-s900); }
+
+.pwf .pwf-validator { flex: 0 0 auto; display: flex; align-items: center; gap: .625rem; padding: .5rem 1rem; font-size: .75rem; font-weight: 700; border-bottom: 1px solid; flex-wrap: wrap; }
+.pwf .pwf-validator.ok { background: var(--pwf-emerald-100); color: #065f46; border-color: #a7f3d0; }
+.pwf .pwf-validator.bad { background: var(--pwf-rose-100); color: #9f1239; border-color: var(--pwf-rose-300); }
+.pwf .pwf-okmark, .pwf .pwf-badmark { width: 18px; height: 18px; border-radius: .375rem; color: #fff; display: grid; place-items: center; font-weight: 900; flex-shrink: 0; }
+.pwf .pwf-okmark { background: var(--pwf-emerald-600); }
+.pwf .pwf-badmark { background: var(--pwf-rose-600); }
+.pwf .pwf-offender { border: 1px solid var(--pwf-rose-300); background: #fff; color: var(--pwf-rose-600); border-radius: .5rem; padding: 2px .5rem; font: 900 11px ui-monospace, monospace; cursor: pointer; }
+.pwf .pwf-offender:hover { background: var(--pwf-rose-100); }
+
+.pwf .pwf-runbar { flex: 0 0 auto; display: flex; align-items: center; gap: 1rem; padding: .5rem 1rem; background: var(--pwf-s900); color: #fff; flex-wrap: wrap; }
+.pwf .pwf-runbar a { color: var(--pwf-accent-300); font-weight: 700; text-decoration: none; font-size: .75rem; }
+.pwf .pwf-hops { font-size: .75rem; font-weight: 700; color: var(--pwf-s300); }
+.pwf .pwf-hops b { color: #fff; }
+
+.pwf .pwf-main { flex: 1 1 auto; display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
+.pwf[data-mode='run'] .pwf-main { grid-template-columns: 1fr; }
+@media (max-width: 860px) { .pwf .pwf-main { grid-template-columns: 1fr; } .pwf .pwf-inspector { display: none; } }
+
+.pwf .pwf-canvas { position: relative; min-width: 0; min-height: 0; overflow: hidden; touch-action: none; cursor: grab;
+  background: radial-gradient(circle at 1px 1px, var(--pwf-s200) 1px, transparent 0) 0 0/22px 22px, var(--pwf-s50); }
+.pwf .pwf-world { position: absolute; top: 0; left: 0; width: 5200px; height: 3600px; transform-origin: 0 0; }
+.pwf .pwf-edges { position: absolute; top: 0; left: 0; width: 5200px; height: 3600px; overflow: visible; pointer-events: none; }
+.pwf .pwf-hit { stroke: transparent; stroke-width: 16; fill: none; pointer-events: stroke; cursor: pointer; }
+.pwf .pwf-wire { fill: none; stroke: #4bc48c; stroke-width: 1.75; }
+.pwf .pwf-route { pointer-events: auto; }
+.pwf .pwf-route.sel .pwf-wire { stroke: var(--pwf-s900); stroke-width: 2.5; }
+.pwf .pwf-rej .pwf-wire { stroke: var(--pwf-rose-500); stroke-dasharray: 2 5; stroke-linecap: round; }
+.pwf .pwf-ask .pwf-wire { stroke: var(--pwf-ai-500); stroke-dasharray: 1 5; stroke-linecap: round; }
+.pwf .pwf-tmp { fill: none; stroke: var(--pwf-ai-500); stroke-width: 2; stroke-dasharray: 5 4; }
+.pwf .pwf-tmp-reject { stroke: var(--pwf-rose-500); }
+.pwf .pwf-tmp-edge { stroke: var(--pwf-emerald-500); }
+
+/* An unselected card was a white box on a near-white canvas: a 1px slate-200 border reads as
+   nothing at 40% zoom. Give it a real border, a lift, and a role-coloured spine so an agent
+   stage and a human gate are distinguishable before you read a word. */
+.pwf .pwf-node { position: absolute; width: 200px; background: #fff; border: 1px solid var(--pwf-s300); border-left: 3px solid var(--pwf-ai-500); border-radius: .875rem; padding: .625rem .75rem; box-shadow: 0 1px 3px rgb(15 23 42 / .10), 0 1px 2px rgb(15 23 42 / .06); cursor: grab; user-select: none; }
+.pwf .pwf-node:hover { border-color: var(--pwf-s400); box-shadow: 0 4px 12px -4px rgb(15 23 42 / .18); }
+.pwf .pwf-node[data-selected='true'] { border-color: var(--pwf-s900); box-shadow: 0 0 0 2px var(--pwf-s900); }
+.pwf .pwf-node[data-offender='true'] { border-color: var(--pwf-rose-500); box-shadow: 0 0 0 2px var(--pwf-rose-300); }
+.pwf .pwf-node[data-human='true'] { background: linear-gradient(180deg, #fff, var(--pwf-accent-50)); border-left-color: var(--pwf-accent-500); }
+.pwf .pwf-node[data-drop] { border-color: var(--pwf-emerald-600); box-shadow: 0 0 0 3px var(--pwf-emerald-100); }
+.pwf .pwf-node[data-drop='reject'] { border-color: var(--pwf-rose-600); box-shadow: 0 0 0 3px var(--pwf-rose-100); }
+.pwf .pwf-node[data-drop='ask'] { border-color: var(--pwf-ai-600); box-shadow: 0 0 0 3px var(--pwf-ai-100); }
+.pwf .pwf-node h3 { margin: .375rem 0 .0625rem; font-size: .875rem; font-weight: 700; }
+.pwf .pwf-node-head { display: flex; align-items: center; gap: .375rem; }
+.pwf .pwf-role { display: inline-flex; padding: 2px .375rem; border-radius: .375rem; font-size: 10px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.pwf .pwf-role.agent { background: var(--pwf-ai-50); color: var(--pwf-ai-700); border: 1px solid var(--pwf-ai-100); }
+.pwf .pwf-role.human { background: var(--pwf-accent-50); color: var(--pwf-accent-700); border: 1px solid var(--pwf-accent-100); }
+.pwf .pwf-meta { display: flex; gap: .25rem; flex-wrap: wrap; margin-top: .5rem; }
+.pwf .pwf-chip { font-size: 10px; line-height: 14px; font-weight: 700; padding: 2px .375rem; border-radius: .375rem; background: var(--pwf-s100); color: var(--pwf-s600); border: 1px solid var(--pwf-s200); display: inline-flex; align-items: center; gap: .25rem; }
+.pwf .pwf-chip.acc { background: var(--pwf-emerald-100); border-color: #a7f3d0; color: #065f46; }
+.pwf .pwf-chip.ask { background: var(--pwf-ai-50); border-color: var(--pwf-ai-100); color: var(--pwf-ai-700); }
+.pwf .pwf-chip button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 900; padding: 0; }
+.pwf .pwf-runbadge { position: absolute; top: -9px; left: .75rem; font-size: 9px; font-weight: 900; text-transform: uppercase; padding: 2px .375rem; border-radius: .375rem; background: var(--pwf-s900); color: #fff; }
+
+/* ── run mode ──────────────────────────────────────────────────────────────
+   The graph tells the task's story: reached stages are solid, the running one pulses, and
+   what has not happened yet fades back so the eye lands on the present. */
+.pwf[data-mode='run'] .pwf-node { cursor: pointer; opacity: .5; border-left-color: var(--pwf-s300); }
+.pwf[data-mode='run'] .pwf-node[data-run] { opacity: 1; }
+.pwf[data-mode='run'] .pwf-node[data-run='pending'] { opacity: .45; border-style: dashed; }
+.pwf[data-mode='run'] .pwf-node[data-run='done'] { border-color: var(--pwf-emerald-500); border-left-color: var(--pwf-emerald-500); }
+.pwf[data-mode='run'] .pwf-node[data-run='done'] .pwf-runbadge { background: var(--pwf-emerald-600); }
+.pwf[data-mode='run'] .pwf-node[data-run='running'] { border-color: var(--pwf-accent-500); border-left-color: var(--pwf-accent-500); box-shadow: 0 0 0 2px var(--pwf-accent-100), 0 10px 24px -10px rgb(255 59 29 / .4); }
+.pwf[data-mode='run'] .pwf-node[data-run='running'] .pwf-runbadge { background: var(--pwf-accent-600); }
+.pwf[data-mode='run'] .pwf-node[data-run='rejected'] { border-color: var(--pwf-rose-500); border-left-color: var(--pwf-rose-500); box-shadow: 0 0 0 2px var(--pwf-rose-300); }
+.pwf[data-mode='run'] .pwf-node[data-run='rejected'] .pwf-runbadge { background: var(--pwf-rose-600); }
+.pwf[data-mode='run'] .pwf-node[data-run='timeout'] { border-color: #f59e0b; border-left-color: #f59e0b; box-shadow: 0 0 0 2px #fde68a; }
+.pwf[data-mode='run'] .pwf-node[data-run='timeout'] .pwf-runbadge { background: #d97706; }
+
+.pwf .pwf-pulse { position: absolute; top: -7px; right: -7px; width: 14px; height: 14px; border-radius: 50%; background: var(--pwf-accent-500); animation: pwf-ping 1.6s ease-out infinite; }
+@keyframes pwf-ping {
+  0%   { box-shadow: 0 0 0 0 rgb(255 59 29 / .5); }
+  70%  { box-shadow: 0 0 0 8px rgb(255 59 29 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(255 59 29 / 0); }
+}
+
+/* Wires carry the same story. `current` flows into the stage running now. */
+.pwf .pwf-eg.traversed .pwf-wire { stroke: var(--pwf-emerald-500); stroke-width: 2.25; }
+.pwf .pwf-eg.current .pwf-wire { stroke: var(--pwf-accent-500); stroke-width: 2.5; stroke-dasharray: 6 5; animation: pwf-flow 1s linear infinite; }
+@keyframes pwf-flow { to { stroke-dashoffset: -11; } }
+
+/* WCAG 2.2.2 — anything that moves indefinitely needs an escape hatch. The colour still
+   carries the meaning, so nothing is lost when the motion stops. */
+@media (prefers-reduced-motion: reduce) {
+  .pwf .pwf-pulse { animation: none; box-shadow: 0 0 0 4px rgb(255 59 29 / .28); }
+  .pwf .pwf-eg.current .pwf-wire { animation: none; stroke-dasharray: none; }
+}
+
+.pwf .pwf-port { position: absolute; width: 13px; height: 13px; border-radius: 50%; border: 2px solid; z-index: 3; opacity: 0; }
+.pwf .pwf-port::after { content: ''; position: absolute; inset: -10px; }
+.pwf .pwf-node:hover .pwf-port, .pwf .pwf-node[data-selected='true'] .pwf-port { opacity: 1; }
+.pwf .pwf-port.acc { background: var(--pwf-emerald-500); border-color: var(--pwf-emerald-600); cursor: crosshair; }
+.pwf .pwf-port.rej { background: var(--pwf-rose-500); border-color: var(--pwf-rose-600); cursor: crosshair; }
+.pwf .pwf-port.ask { background: var(--pwf-ai-500); border-color: var(--pwf-ai-600); cursor: crosshair; width: 12px; height: 12px; }
+.pwf .pwf-port.acc.s-top { left: 50%; top: -7px; transform: translateX(calc(-50% - 12px)); }
+.pwf .pwf-port.rej.s-top { left: 50%; top: -7px; transform: translateX(calc(-50% + 12px)); }
+.pwf .pwf-port.acc.s-bottom { left: 50%; bottom: -7px; transform: translateX(calc(-50% - 12px)); }
+.pwf .pwf-port.rej.s-bottom { left: 50%; bottom: -7px; transform: translateX(calc(-50% + 12px)); }
+.pwf .pwf-port.acc.s-left { left: -7px; top: 50%; transform: translateY(calc(-50% - 12px)); }
+.pwf .pwf-port.rej.s-left { left: -7px; top: 50%; transform: translateY(calc(-50% + 12px)); }
+.pwf .pwf-port.acc.s-right { right: -7px; top: 50%; transform: translateY(calc(-50% - 12px)); }
+.pwf .pwf-port.rej.s-right { right: -7px; top: 50%; transform: translateY(calc(-50% + 12px)); }
+.pwf .pwf-port.ask.c-tl { left: -6px; top: -6px; }
+.pwf .pwf-port.ask.c-tr { right: -6px; top: -6px; }
+.pwf .pwf-port.ask.c-bl { left: -6px; bottom: -6px; }
+.pwf .pwf-port.ask.c-br { right: -6px; bottom: -6px; }
+
+.pwf .pwf-canvas-ctl { position: absolute; left: .75rem; bottom: .75rem; display: flex; align-items: center; gap: .375rem; background: #fff; border: 1px solid var(--pwf-s200); border-radius: .625rem; padding: 3px; z-index: 4; }
+.pwf .pwf-canvas-ctl button { min-height: var(--pwf-ctrl); min-width: var(--pwf-ctrl); border: 0; background: transparent; color: var(--pwf-s600); border-radius: .5rem; cursor: pointer; font-weight: 700; }
+.pwf .pwf-canvas-ctl button:hover { background: var(--pwf-s100); }
+.pwf .pwf-zval { font: 700 .6875rem ui-monospace, monospace; color: var(--pwf-s500); min-width: 38px; text-align: center; }
+
+.pwf .pwf-inspector { background: #fff; border-left: 1px solid var(--pwf-s200); overflow: auto; padding: 1rem; }
+.pwf .pwf-field { display: block; margin-bottom: .75rem; }
+.pwf .pwf-field > span { display: block; font-size: 11px; font-weight: 700; color: var(--pwf-s600); margin-bottom: .25rem; }
+.pwf .pwf-field input, .pwf .pwf-field select, .pwf .pwf-mini { width: 100%; min-height: var(--pwf-ctrl); padding: 0 .625rem; font-size: .8125rem; border: 1px solid var(--pwf-s300); border-radius: .5rem; background: #fff; color: var(--pwf-s900); }
+.pwf .pwf-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.pwf .pwf-chips { display: flex; gap: .375rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.pwf hr { border: 0; border-top: 1px solid var(--pwf-s200); margin: .875rem 0; }
+.pwf .pwf-empty { color: var(--pwf-s500); font-size: .8125rem; line-height: 1.5; padding: 2rem 1rem; text-align: center; }
+.pwf .pwf-issues { margin: 0 0 .75rem; padding: .5rem .75rem .5rem 1.75rem; background: var(--pwf-rose-100); border: 1px solid var(--pwf-rose-300); border-radius: .5rem; color: #9f1239; font-size: 11px; font-weight: 700; }

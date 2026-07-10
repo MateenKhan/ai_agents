@@ -117,14 +117,56 @@ async function docsBlock(task: Task): Promise<string> {
   return lines.length ? 'ATTACHED DOCUMENTS (context for this task):\n' + lines.join('\n') : '';
 }
 
-/** Render an agent's template for a task. `merge` uses the architect's merge template,
- *  `accept` the owner's accept template. */
-export async function renderPrompt(agent: AgentConfig, task: Task, stage: string): Promise<string> {
+/** One outcome an agent may report, and when to choose it. */
+export interface PromptOutcome { when: string; hint?: string }
+
+/**
+ * The block every agent reads to learn how to finish.
+ *
+ * This is the whole point of outcomes: the agent is TOLD the words it may say, and it never
+ * sees a stage name. Rename `qa` to `tapora` and not one prompt changes, because no prompt ever
+ * contained the word `qa` — only `pass`, `fail` and `blocked`, which you chose.
+ */
+function outcomesBlock(taskId: string, outcomes: PromptOutcome[]): string {
+  if (!outcomes.length) return '';
+  const lines = outcomes.map(o => `  - "${o.when}"${o.hint ? ` — ${o.hint}` : ''}`);
+  return [
+    'HOW TO FINISH — report exactly ONE outcome, then STOP. Do not name a stage; the orchestrator',
+    'decides what runs next. Reporting a word that is not on this list will park the task.',
+    ...lines,
+    '',
+    `  curl -X PUT http://127.0.0.1:6952/tasks/${taskId} -H "Content-Type: application/json" -d '{"summary":"<what you did / how to verify>","outcome":"<one of the above>"}'`,
+    '',
+    'REJECT — the work handed to you is wrong (a contradictory brief, a test that asserts the',
+    'wrong thing). This returns the task to whoever handed it over, and is BUDGETED:',
+    `  curl -X PUT http://127.0.0.1:6952/tasks/${taskId} -H "Content-Type: application/json" -d '{"reject":"<exactly what is wrong with what you were given>"}'`,
+    'Reject only when the input is defective — never because the work is merely hard.',
+  ].join('\n');
+}
+
+/**
+ * Render an agent's template for a task.
+ *
+ * The STAGE picks which template, via `promptRef`, because one role appears at several stages:
+ * the architect plans and also merges, the owner takes intake and also accepts. It used to be
+ * picked by comparing the stage's NAME, which is exactly what free-text stage names broke.
+ */
+export async function renderPrompt(
+  agent: AgentConfig,
+  task: Task,
+  stage: string,
+  opts: { promptRef?: 'default' | 'merge' | 'accept' | 'rescue'; outcomes?: PromptOutcome[] } = {},
+): Promise<string> {
   const cfg = getConfig();
+  // A task escalated by a `blocked` outcome carries a BLOCKED note; give the architect its
+  // re-plan template rather than its cold-start planning one.
+  const ref = opts.promptRef
+    ?? (task.lastOutcome === 'blocked' && agent.rescuePromptTemplate ? 'rescue' : 'default');
+
   const template =
-    (stage === 'merge' && agent.mergePromptTemplate) ? agent.mergePromptTemplate
-    : (stage === 'rescue' && agent.rescuePromptTemplate) ? agent.rescuePromptTemplate
-    : (stage === 'accept' && agent.acceptPromptTemplate) ? agent.acceptPromptTemplate
+    (ref === 'merge' && agent.mergePromptTemplate) ? agent.mergePromptTemplate
+    : (ref === 'rescue' && agent.rescuePromptTemplate) ? agent.rescuePromptTemplate
+    : (ref === 'accept' && agent.acceptPromptTemplate) ? agent.acceptPromptTemplate
     : agent.promptTemplate;
 
   const values: Record<string, string> = {
@@ -142,9 +184,16 @@ export async function renderPrompt(agent: AgentConfig, task: Task, stage: string
     checks: checksBlock(),
     searchProtocol: searchProtocolFor((task as any).projectId || 'default'),
     qaUrl: cfg.qa?.testUrl || '(no QA_TEST_URL configured — verify via tests only)',
+    outcomes: outcomesBlock(task.id, opts.outcomes ?? []),
   };
 
   let out = template.replace(/\{\{(\w+)\}\}/g, (_, k) => (k in values ? values[k] : ''));
+
+  // A custom or stale template that never mentions {{outcomes}} would leave the agent with no
+  // way to finish, and the orchestrator would fail it for reporting nothing. Append it.
+  if (values.outcomes && !template.includes('{{outcomes}}')) {
+    out = `${out}\n\n${values.outcomes}`;
+  }
 
   if (task.reviewNote) {
     out = `REVIEWER FEEDBACK — address this first (a previous attempt was rejected):\n${task.reviewNote}\n\n` + out;

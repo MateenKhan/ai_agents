@@ -10,14 +10,21 @@
 /** Board columns a task moves through (human-facing kanban state). */
 export type TaskStatus = 'AVAILABLE' | 'WORKING' | 'TESTING' | 'DONE';
 
-/** Pipeline stage inside the runtime — routes which agent role runs next.
- *  `intake` and `accept` are the business owner's two gates: it turns the user's raw intent
- *  into acceptance scenarios before the architect plans, and re-checks the finished work
- *  against that intent before it reaches the human. */
-export type Stage = 'intake' | 'plan' | 'build' | 'qa' | 'accept' | 'review' | 'merge' | 'merged' | 'rescue';
+/**
+ * A stage id. FREE TEXT, on purpose.
+ *
+ * Stages are defined by the project's workflow document, so a stage may be called `qa` or
+ * `tapora`. The engine never reads the name for meaning: every special power (may set a QA
+ * verdict, takes the git merge lock, parks for a human) comes from the stage's `behaviour`.
+ * See agentic/workflow/types.ts.
+ *
+ * This used to be a union of the seven built-in names, which is why renaming a stage would
+ * silently have disabled the merge lock.
+ */
+export type Stage = string;
 
-/** Which agent handles a stage. `merge` is done by the architect (Opus), not a separate role. */
-export type AgentRole = 'owner' | 'architect' | 'dev' | 'qa';
+/** An agent's role — a row in the `agents` table. Also free text: users add custom agents. */
+export type AgentRole = string;
 
 /** Git isolation for a role's run. plan = detached read-only; create = owns task/<id>;
  *  reuse = attaches to the dev's existing worktree; none = runs in the main repo. */
@@ -75,6 +82,15 @@ export interface Task {
   /** How many times the business owner has bounced this task. Capped: on exhaustion the
    *  task goes to the human WITH the notes, never to BLOCKED. */
   ownerBounces?: number;
+  /** The word the agent last reported — `pass`, `blocked`, `done`. `stage` says where the task
+   *  IS; this says what put it there. Keeping both leaves the evidence on the row. */
+  lastOutcome?: string | null;
+  /** The stage that routed this task here. Set by the control plane, never by an agent: a
+   *  reject returns to the sender, so an agent that could set this could choose where its
+   *  own reject lands. */
+  handoffFrom?: string | null;
+  /** Rejects used, in any direction. At the workflow's hopCap the task goes to a human. */
+  hops?: number;
   /** ISO timestamp — while WORKING, the watchdog reclaims the task if this expires. */
   leaseExpiresAt?: string | null;
   /** Absolute path to THIS task's own append-only log file (`<logsDir>/<projectId>/<id>.log`).
@@ -228,18 +244,19 @@ export interface AgenticConfig {
   /** Role → model string, overrides AgentConfig.model when set. */
   models?: Partial<Record<AgentRole, string>>;
   toggles?: {
+    /** Gates the periodic architect triage pass. It no longer affects ROUTING: a stage leaves
+     *  the pipeline by being deleted from the workflow document, not by a switch. */
     enableArchitect?: boolean;
+    /** @deprecated Routing is graph-driven; this no longer skips the verify stage. */
     enableQa?: boolean;
-    /** Business owner gates (intake + accept). On by default; turn off for pipelines where
-     *  the intent is already precise (a backend refactor) and the extra opus pass is waste. */
-    enableOwner?: boolean;
-    /** Max times the owner may bounce one task before it goes to the human regardless. */
-    maxOwnerBounces?: number;
     /** Merge automatically when QA passes (before human review) vs on human approval. */
     autoMergeOnQaPass?: boolean;
     maxAttempts?: number;
     taskLeaseMs?: number;
     agentStallMs?: number;
+    /** Hard wall-clock cap on one agent run. Read by the orchestrator, but it was never
+     *  declared here — `agentic/` is not covered by the root tsconfig, so nothing caught it. */
+    maxTaskRunMs?: number;
   };
   codeIndex?: CodeIndex;
   docStore?: DocStore;

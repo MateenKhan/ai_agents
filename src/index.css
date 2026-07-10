@@ -190,6 +190,35 @@
   .custom-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; border: 2px solid #e2e8f0; }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
   .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #94a3b8 #e2e8f0; }
+
+  /* A horizontally-scrolling strip whose ROW HEIGHT MUST NOT CHANGE — the tab strip.
+     `overflow-x: auto` sizes the box to content, so the moment the content overflows the
+     scrollbar is added to the box and the whole header grows by its height. Expanding the
+     action cluster steals width, the tabs overflow, the row jumps. Nothing about the icons
+     or the gaps causes it.
+     Two ways out. RESERVING the space (scrollbar-gutter, or a fixed height + padding) keeps
+     the bar but pushes the tabs 6px off the panel below them — the active tab joins that
+     panel with `-mb-px` + `border-b-white`, and the join is the whole visual idea. So:
+     REMOVE the bar. The strip still scrolls by wheel, touch, drag and keyboard; on touch
+     platforms the scrollbar was an overlay that never took layout space anyway.
+     Do not use this on a surface where the bar is the only cue that content continues. */
+  /* Horizontal strip with an ALWAYS-PRESENT scrollbar (the tab strip).
+     `overflow-x: scroll`, not `auto`, and that is the whole trick: with `auto` the bar is
+     added to the box the moment content overflows, so the row grows by the bar's height and
+     the header visibly jumps. `scroll` reserves the track unconditionally — the height is the
+     same whether or not there is anything to scroll to.
+     The track is transparent so an idle strip shows nothing but the thumb, and the thumb is
+     light enough not to compete with the tab it sits under. */
+  .scroll-x-bar {
+    overflow-x: scroll;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain; /* a flick past the last tab must not navigate back */
+  }
+  .scroll-x-bar::-webkit-scrollbar { height: 6px; }
+  .scroll-x-bar::-webkit-scrollbar-track { background: transparent; }
+  .scroll-x-bar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+  .scroll-x-bar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  .scroll-x-bar { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
 }
 
 @keyframes healStepIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }

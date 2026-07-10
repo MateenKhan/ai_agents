@@ -141,6 +141,16 @@ const TASKS: Col[] = [
   { name: 'intent', type: 'text' },
   { name: 'ownerNote', type: 'text' },
   { name: 'ownerBounces', type: 'int' },
+  // Graph-driven routing. `stage` says where the task IS; `lastOutcome` says what the agent
+  // REPORTED to put it there. Keeping both means that when a task ends up somewhere strange
+  // the evidence is still on the row.
+  { name: 'lastOutcome', type: 'text' },
+  // The stage that routed the task here. Set by the control plane, never by an agent — a
+  // reject returns to the sender, and an agent that could name its own sender could choose
+  // where its reject lands.
+  { name: 'handoffFrom', type: 'text' },
+  // Rejects used, in any direction. At the document's hopCap the task goes to a human.
+  { name: 'hops', type: 'int' },
 ];
 
 const BOARD_SETTINGS: Col[] = [
@@ -334,6 +344,10 @@ const ADDITIVE: Array<[string, Col]> = [
   ['tasks', { name: 'ownerNote', type: 'text' }],
   ['tasks', { name: 'ownerBounces', type: 'int' }],
   ['agents', { name: 'acceptPromptTemplate', type: 'text' }],
+  // Graph-driven routing.
+  ['tasks', { name: 'lastOutcome', type: 'text' }],
+  ['tasks', { name: 'handoffFrom', type: 'text' }],
+  ['tasks', { name: 'hops', type: 'int' }],
 ];
 
 /**

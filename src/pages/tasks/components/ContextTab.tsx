@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { API_BASE as API, withProject } from '../../../apiBase';
 import { useToast } from './Toast';
+import { btnSm } from '../ui';
 
 // Model context ceilings (facts). Haiku dies past 200K; Sonnet/Opus reach 1M.
 const MODEL_CEILING: Record<string, number> = { haiku: 200_000, sonnet: 1_000_000, opus: 1_000_000 };
@@ -168,7 +169,7 @@ function ContextMemory({ activeId }: { activeId: string }) {
     <div className="p-3 sm:p-4 pt-0" data-feature-id="tasks-context-tab">
       {/* Header: refresh · budget · gauge. The view name lives in the shell's segmented control. */}
       <div className="flex flex-wrap items-center gap-3 mb-3">
-        <button onClick={refresh} data-feature-id="context-refresh" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">
+        <button onClick={refresh} data-feature-id="context-refresh" className={btnSm}>
           <RefreshCw size={13} className={busy ? 'animate-spin text-accent-600' : ''} /> Refresh
         </button>
         <Tooltip label="Garbage-collect: age out stale + evict over budget"><button onClick={sweep} data-feature-id="context-sweep" className="flex items-center gap-1.5 px-3 min-h-control text-xs font-bold text-amber-700 bg-amber-50 border border-amber-300 rounded-lg hover:bg-amber-100">
@@ -328,8 +329,8 @@ export default function ContextTab({ activeId, view, onViewChange }: {
   onViewChange: (v: ContextView) => void;
 }) {
   return (
-    <div data-feature-id="tasks-context-shell">
-      <div className="px-3 sm:px-4 pt-3 pb-2">
+    <div className="h-full flex flex-col" data-feature-id="tasks-context-shell">
+      <div className="shrink-0 px-3 sm:px-4 pt-3 pb-2">
         {/* Segmented control. role=tablist so arrow keys and AT treat it as one control,
             not two loose buttons — the panel below is the tabpanel it owns. */}
         <div role="tablist" aria-label="Context view" className="inline-flex p-0.5 gap-0.5 rounded-lg bg-slate-100 border border-slate-200">
@@ -356,7 +357,7 @@ export default function ContextTab({ activeId, view, onViewChange }: {
         </div>
       </div>
 
-      <div id="context-panel" role="tabpanel">
+      <div id="context-panel" role="tabpanel" className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
         {view === 'search' ? (
           <Suspense fallback={<div className="p-8 text-center text-xs font-bold uppercase tracking-widest text-slate-500">Loading search…</div>}>
             <CodeSearchTab />
