@@ -984,6 +984,41 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
+
+  // --- Restore defaults -------------------------------------------------------
+  // GET  /db/restore-defaults?mode=delete|overwrite  → what WOULD happen (no writes)
+  // POST /db/restore-defaults {"mode":"delete"|"overwrite"} → do it
+  //
+  // Scope is enforced in agentic/db/seed.ts, not here: `projects` and `tasks` are never
+  // touched, and within board_settings only the declared config keys are. Resetting the
+  // `default` project would repoint it at Piranha's own source tree.
+  if ((req.url || '').split('?')[0] === '/db/restore-defaults') {
+    const parseMode = (v: unknown): 'delete' | 'overwrite' | null =>
+      v === 'delete' || v === 'overwrite' ? v : null;
+    try {
+      if (req.method === 'GET') {
+        const raw = new URL(req.url!, 'http://x').searchParams.get('mode');
+        const mode = parseMode(raw) ?? 'overwrite';
+        const { previewRestore } = await import('../agentic/db/seed.ts');
+        res.end(JSON.stringify(await previewRestore(mode)));
+        return;
+      }
+      if (req.method === 'POST') {
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const mode = parseMode(body.mode);
+        if (!mode) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'mode must be "delete" or "overwrite"' }));
+          return;
+        }
+        const { restoreDefaults } = await import('../agentic/db/seed.ts');
+        const result = await restoreDefaults(mode);
+        console.log(`[db-server] restore-defaults (${mode}): agents ${result.agents.deleted}del/${result.agents.written}w, settings ${result.boardSettings.deleted}del/${result.boardSettings.written}w`);
+        res.end(JSON.stringify({ ok: true, ...result }));
+        return;
+      }
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); return; }
+  }
   // Global agent defaults (the fallback each project inherits). maxConcurrency 0 = unlimited.
   if (req.url === '/agent-defaults' && req.method === 'GET') {
     try { res.end(JSON.stringify(await getAgentDefaults())); }

@@ -40,6 +40,11 @@ export async function initTasksSchema(): Promise<void> {
   try { await migrateLegacyDod(s); } catch { /* never block boot on migration */ }
   // Migrate any legacy plaintext secrets to ciphertext on first boot (best-effort).
   try { await reencryptSecretsAtRest(s); } catch { /* never block boot on migration */ }
+  // Declared defaults (board_settings) — inserted only where absent, so a user's edits win.
+  // Lives here rather than in runMigrations because seed.ts imports getStore, and getStore
+  // imports migrations: hooking it there would close an import cycle.
+  try { const { seedDefaults } = await import('./seed'); await seedDefaults(s); }
+  catch { /* never block boot on seeding */ }
 }
 
 /** Convert legacy free-text `dod` → one THEN scenario, only where scenarios is empty.

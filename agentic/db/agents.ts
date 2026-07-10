@@ -64,6 +64,13 @@ function rowToAgent(r: any): AgentConfig {
   };
 }
 
+/** Upsert one agent row (keyed on `role`). Exported for the declarative seed/restore path,
+ *  which must write the SAME row shape this module reads back — a second, hand-rolled INSERT
+ *  in seed.ts would be the obvious place for the two to drift. */
+export async function insertAgent(s: Store, a: AgentConfig): Promise<void> {
+  return insert(s, a);
+}
+
 async function insert(s: Store, a: AgentConfig): Promise<void> {
   await upsert(s, 'agents', {
     role: a.role, label: a.label, enabled: a.enabled ? 1 : 0, model: a.model,
