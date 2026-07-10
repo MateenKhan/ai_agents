@@ -2141,6 +2141,62 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   // ── agent worktrees ── list OUR .worktrees/* and join the task board so the
+  // --- Task CHANGES: the diff of a task's branch, for reviewing a non-visual task. ---------
+  // A code/library task has nothing to PREVIEW, so review needs the diff + test evidence
+  // instead of a running app. This returns exactly that for `task/<id>` against the base branch.
+  //   GET /tasks/:id/changes?project=<id>
+  //   -> { ok, base, branch, exists, commits:[{sha,subject}], files:[{path,status,additions,deletions}],
+  //        diff:"<unified diff>", truncated, qaVerdict, summary }
+  {
+    const m = req.url?.match(/^\/tasks\/([^/]+)\/changes(?:\?|$)/);
+    if (req.method === 'GET' && m) {
+      const taskId = decodeURIComponent(m[1]);
+      try {
+        const project = projectIdOf(req);
+        const repoRoot = await projectRepoPath(project);
+        const branch = `task/${taskId}`;
+        const task = await getTask(taskId);
+
+        // Does the branch exist?
+        const has = spawnSync('git', ['rev-parse', '--verify', '--quiet', branch], { cwd: repoRoot, encoding: 'utf8' });
+        if (has.status !== 0) {
+          res.end(JSON.stringify({ ok: true, exists: false, branch, base: null, files: [], commits: [], diff: '', qaVerdict: task?.qaVerdict ?? null, summary: task?.summary ?? null }));
+          return;
+        }
+
+        // Base = the branch agents merge INTO (repoRoot's current branch). Diff from the
+        // merge-base so we show only what THIS task added, not unrelated base movement.
+        const baseRef = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).stdout.trim() || 'HEAD';
+        const range = `${baseRef}...${branch}`;
+
+        const commits = (spawnSync('git', ['log', '--pretty=format:%h%x1f%s', `${baseRef}..${branch}`], { cwd: repoRoot, encoding: 'utf8' }).stdout || '')
+          .split('\n').filter(Boolean).map(l => { const [sha, subject] = l.split('\x1f'); return { sha, subject }; });
+
+        const files = (spawnSync('git', ['diff', '--numstat', range], { cwd: repoRoot, encoding: 'utf8' }).stdout || '')
+          .split('\n').filter(Boolean).map(l => {
+            const [add, del, path] = l.split('\t');
+            return { path, additions: add === '-' ? null : Number(add), deletions: del === '-' ? null : Number(del) };
+          });
+        const statusOut = (spawnSync('git', ['diff', '--name-status', range], { cwd: repoRoot, encoding: 'utf8' }).stdout || '')
+          .split('\n').filter(Boolean).reduce((acc, l) => { const [st, p] = l.split('\t'); if (p) acc[p] = st; return acc; }, {} as Record<string, string>);
+        for (const f of files) (f as any).status = statusOut[f.path] || 'M';
+
+        // The full unified diff, capped so a giant change can't blow the response or the browser.
+        const MAX = 200_000;
+        const full = spawnSync('git', ['diff', range], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }).stdout || '';
+        const truncated = full.length > MAX;
+        const diff = truncated ? full.slice(0, MAX) + '\n… (diff truncated — open the branch to see the rest)' : full;
+
+        res.end(JSON.stringify({
+          ok: true, exists: true, base: baseRef, branch,
+          commits, files, diff, truncated,
+          qaVerdict: task?.qaVerdict ?? null, summary: task?.summary ?? null,
+        }));
+      } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+  }
+
   // user sees which agent (claimedBy) did which task, its branch, and whether merged.
   if (req.method === 'GET' && req.url?.startsWith('/git/worktrees')) {
     try {
