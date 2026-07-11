@@ -11,7 +11,6 @@ import { fromBuffer, cosine } from './embedder.js';
 import { codeIndexIsPostgres, pgSemanticSearch } from './indexPg.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync } from 'fs';
 import { join, dirname, resolve, isAbsolute } from 'path';
-import { tmpdir } from 'os';
 
 const PORT = parseInt(process.env.DB_SERVER_PORT ?? '6952');
 const ACTIVE_AGENTS = new Set<string>();
@@ -138,6 +137,7 @@ import { getAllTasks, getTask, createTask, updateTask, deleteTask, bulkUpdatePri
 // Datastore backend config — the persisted choice + its encrypted URL. Applied at boot.
 import { getBackendConfig, setBackendConfig, getMaskedBackendConfig } from './backendConfig.ts';
 import { specIssues } from './intakeGate.ts';
+import { unifiedDiff } from './unifiedDiff.ts';
 import { authenticateGitUrl } from './gitAuth.ts';
 // Belt-and-suspenders redaction of git/curl output. The known token is already stripped by the
 // callers; the shared redactSecrets also catches user:pass@ embedded in URLs and any GitHub token
@@ -158,34 +158,6 @@ function safeLogName(name: string): string | null {
   return /^[A-Za-z0-9_.-]+$/.test(name) && !name.includes('..') ? name : null;
 }
 
-
-/** A git-style unified diff between two in-memory versions of one repo file. Uses
- *  `git diff --no-index` (real @@ hunks, what <DiffView> renders) via two temp files, then
- *  rewrites the temp paths back to the repo-relative path so the header reads a/<rel> b/<rel>. */
-function unifiedDiff(rel: string, oldContent: string, newContent: string): string {
-  const base = join(tmpdir(), `aiedit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-  const oldP = base + '.old';
-  const newP = base + '.new';
-  try {
-    writeFileSync(oldP, oldContent, 'utf-8');
-    writeFileSync(newP, newContent, 'utf-8');
-    const r = spawnSync('git', ['diff', '--no-index', '--', oldP, newP], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
-    let d = r.stdout || '';
-    if (!d) return '';
-    // git prints the temp paths in the header lines — quoted and backslash-escaped on Windows,
-    // so a literal substitution is fragile. Rewrite the three header lines to the repo-relative
-    // path instead. No /g flag = only the FIRST match, which is the file header (it precedes any
-    // hunk, so a removed content line starting with "--- " can never be hit).
-    d = d.replace(/^diff --git .*$/m, `diff --git a/${rel} b/${rel}`)
-         .replace(/^--- .*$/m, `--- a/${rel}`)
-         .replace(/^\+\+\+ .*$/m, `+++ b/${rel}`);
-    return d;
-  } catch { return ''; }
-  finally {
-    try { unlinkSync(oldP); } catch { /* noop */ }
-    try { unlinkSync(newP); } catch { /* noop */ }
-  }
-}
 
 function projectIdOf(req: IncomingMessage, body?: any): string {
   try { const p = new URL(req.url!, 'http://x').searchParams.get('project'); if (p) return p; } catch { /* bad url */ }
@@ -1657,6 +1629,15 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
       if (idMatch) {
         const taskId = idMatch[1];
+        // GET one task by id. Without this, a single-task fetch fell through to the 404 at the
+        // bottom (the Postman "Get one task" entry was effectively unimplemented); callers had to
+        // pull the whole list. Returns the task row, or 404 when it does not exist.
+        if (req.method === 'GET') {
+          const t = await getTask(taskId);
+          if (!t) { res.statusCode = 404; res.end(JSON.stringify({ error: 'task not found' })); return; }
+          res.end(JSON.stringify(t));
+          return;
+        }
         if (req.method === 'PUT') {
           const body = JSON.parse(await readBody(req));
           // ETC: an agent-supplied {etc: <minutes>} sets a countdown (capped at 30 min,
