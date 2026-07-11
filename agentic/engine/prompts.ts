@@ -201,6 +201,19 @@ export async function contextBlock(task: Task): Promise<string> {
   ].join('\n');
 }
 
+/** The stage journal as a short trail — what each stage did before this run, most recent last.
+ *  Gives a re-dispatched or downstream agent the history (why QA bounced twice, what was tried)
+ *  instead of only the latest summary. Empty until a task has moved at least once. */
+function journalBlock(task: Task): string {
+  const entries = Array.isArray(task.journal) ? task.journal : [];
+  if (!entries.length) return '';
+  const rows = entries.slice(-8).map(e => {
+    const when = (e.ts || '').slice(0, 19).replace('T', ' ');
+    return `  - ${when} · ${e.stage} (${e.agent}) → ${e.outcome}${e.note ? `: ${e.note}` : ''}`;
+  });
+  return ['STAGE HISTORY — what has happened to this task so far (most recent last):', ...rows].join('\n');
+}
+
 /**
  * Render an agent's template for a task.
  *
@@ -239,7 +252,9 @@ export async function renderPrompt(
     // existed, so an owner running against an old task still has something to judge against.
     intent: task.intent || task.description || task.title,
     scenarios: scenariosToGherkin(task.scenarios) || '(no scenarios — ask for clarification)',
-    plan: task.summary || '(no plan recorded yet)',
+    // The architect's plan, kept in its own column so the dev's `summary` can't overwrite it.
+    // Falls back to `summary` for rows written before the split existed.
+    plan: task.plan || task.summary || '(no plan recorded yet)',
     memory: await memoryBlock(task),
     blastRadius: await blastRadiusBlock(task),
     docs: await docsBlock(task),
@@ -252,6 +267,8 @@ export async function renderPrompt(
     consult: consultBlock(task.id, opts.asks ?? [], task.consultLog ?? []),
     // Shared "files the swarm keeps using" — the READ side of the context memory search writes.
     context: await contextBlock(task),
+    // The stage journal — the trail this task has left across stages so far.
+    journal: journalBlock(task),
   };
 
   let out = template.replace(/\{\{(\w+)\}\}/g, (_, k) => (k in values ? values[k] : ''));
@@ -269,7 +286,16 @@ export async function renderPrompt(
   if (values.context && !template.includes('{{context}}')) {
     out = `${out}\n\n${values.context}`;
   }
+  if (values.journal && !template.includes('{{journal}}')) {
+    out = `${out}\n\n${values.journal}`;
+  }
 
+  // The distilled reason the LAST run failed (crash/timeout/no-report), with the tail of its
+  // output. Without this a retry re-runs the SAME prompt blind and tends to fail identically.
+  // Prepended so a re-dispatched agent reads WHAT went wrong before it starts.
+  if (task.failureDetail) {
+    out = `PREVIOUS ATTEMPT FAILED — read this before you start, and do NOT repeat it:\n${task.failureDetail}\n\n` + out;
+  }
   if (task.reviewNote) {
     out = `REVIEWER FEEDBACK — address this first (a previous attempt was rejected):\n${task.reviewNote}\n\n` + out;
   }

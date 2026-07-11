@@ -10,6 +10,7 @@ import { COLUMNS } from '../types';
 import { SlideOver } from './SlideOver';
 import { btnPrimaryCaps } from '../ui';
 import TaskWorkflowDialog from '../workflow/TaskWorkflowDialog';
+import { ChangesPanel } from './ChangesPanel';
 
 interface TaskDetailProps {
   task: Task;
@@ -41,6 +42,10 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
 
   const [showPlan, setShowPlan] = useState(false);
   const [showDesc, setShowDesc] = useState(false);
+  const [showChanges, setShowChanges] = useState(false);
+  // A branch only exists once the task has been picked up for work. Showing "Changes" on a
+  // still-queued task would just render the empty state for no reason.
+  const hasBranch = ['WORKING', 'TESTING', 'DONE', 'BLOCKED'].includes(task.status);
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const isWorking = task.status === 'WORKING';
   const isPaused = task.control === 'paused';
@@ -157,6 +162,20 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
               {showPlan
                 ? <div className="px-4 py-4 border-t border-slate-200 min-h-[120px] max-h-[45vh] overflow-y-auto custom-scrollbar text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap bg-accent-50/40">{task.summary}</div>
                 : <div className="px-4 py-2.5 border-t border-slate-100 text-xs text-slate-500 italic truncate">{task.summary.split('\n').find(Boolean)?.slice(0, 90)}…</div>}
+            </div>
+          )}
+
+          {hasBranch && (
+            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+              <button onClick={() => setShowChanges(v => !v)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition-colors" data-feature-id="task-detail-toggle-changes">
+                <span className="eyebrow">Changes · the code the agent wrote</span>
+                <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showChanges ? 'rotate-180' : ''}`} />
+              </button>
+              {showChanges && (
+                <div className="px-4 py-4 border-t border-slate-200">
+                  <ChangesPanel taskId={task.id} />
+                </div>
+              )}
             </div>
           )}
 

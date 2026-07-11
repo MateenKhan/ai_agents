@@ -144,7 +144,7 @@ function EditProjectModal({ project, onClose }: { project: Project; onClose: () 
     const folder = project.repoPath ? project.repoPath.split(/[\\/]/).pop() : null;
     const ok = await confirm({
       title: `Delete "${project.name}"?`,
-      message: `Permanently deletes ${folder ? `the repo folder (${folder}), ` : ''}all of its tasks, and its code index (embeddings). This cannot be undone.`,
+      message: `Permanently deletes ${folder ? `the repo folder (${folder}), ` : ''}all of its tasks, logs, context memory, and code index (embeddings). This cannot be undone.`,
       confirmLabel: 'Delete everything',
       tone: 'danger',
       requireType: project.name,

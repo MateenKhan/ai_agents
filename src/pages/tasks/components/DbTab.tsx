@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Tooltip } from './Tooltip';
-import { Database, Search, Trash2, Edit2, Plus, ChevronLeft, ChevronRight, X, Save, AlertTriangle, ArrowUp, ArrowDown, PencilLine } from 'lucide-react';
+import { Database, Search, Trash2, Edit2, Plus, ChevronLeft, ChevronRight, X, Save, AlertTriangle, ArrowUp, ArrowDown, PencilLine, Server, Table2, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { API_BASE as API } from '../../../apiBase';
 import { Modal } from './Modal';
+import DbBackendTab from './DbBackendTab';
 import { btnDangerSm, btnPrimarySm, btnSm, iconBtnDanger } from '../ui';
 
 /**
@@ -15,6 +16,25 @@ const PAGE = 25;
 
 interface Col { name: string; type: string; pk: number }
 interface TableInfo { name: string; rows: number }
+
+type RestoreMode = 'overwrite' | 'delete';
+// What GET /db/restore-defaults?mode= returns — a dry run so the user sees the blast radius
+// (custom agents are only removed by `delete`) before committing.
+interface RestorePreview {
+  mode: RestoreMode;
+  customAgentsRemoved: string[];
+  builtInAgentsReverted: string[];
+  settingsReverted: string[];
+  logsCleared: string[];
+  untouched: string[];
+}
+// What POST /db/restore-defaults returns.
+interface RestoreResult {
+  mode: string;
+  agents: { deleted: number; written: number };
+  boardSettings: { deleted: number; written: number };
+  logs: { deleted: number; error?: string };
+}
 
 export default function DbTab() {
   const [tables, setTables] = useState<TableInfo[] | null>(null);
@@ -31,6 +51,14 @@ export default function DbTab() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkEdit, setBulkEdit] = useState<{ col: string; val: string } | null>(null);
   const [confirmBulkDel, setConfirmBulkDel] = useState(false);
+
+  // Restore-to-defaults: reseed the built-in agents + settings. `overwrite` keeps custom
+  // agents; `delete` is a factory reset that removes them. projects/tasks are never touched.
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoreMode, setRestoreMode] = useState<RestoreMode>('overwrite');
+  const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
+  const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
+  const [restoreErr, setRestoreErr] = useState<string | null>(null);
 
   const loadTables = () =>
     fetch(`${API}/db/tables`).then(r => r.json()).then(d => setTables(d.tables ?? [])).catch(() => setTables([]));
@@ -115,6 +143,36 @@ export default function DbTab() {
     } finally { setBusy(false); }
   };
 
+  // Load the dry-run preview whenever the modal opens or the mode changes.
+  useEffect(() => {
+    if (!restoreOpen || restoreResult) return;
+    setRestorePreview(null); setRestoreErr(null);
+    fetch(`${API}/db/restore-defaults?mode=${restoreMode}`)
+      .then(r => r.json())
+      .then(d => d.error ? setRestoreErr(d.error) : setRestorePreview(d))
+      .catch(e => setRestoreErr(String(e?.message || e)));
+  }, [restoreOpen, restoreMode, restoreResult]);
+
+  const runRestore = async () => {
+    setBusy(true); setRestoreErr(null);
+    try {
+      const r = await fetch(`${API}/db/restore-defaults`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: restoreMode }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { setRestoreErr(d.error || `HTTP ${r.status}`); return; }
+      setRestoreResult(d);
+      loadTables(); loadRows();
+    } catch (e: any) { setRestoreErr(String(e?.message || e)); }
+    finally { setBusy(false); }
+  };
+
+  const closeRestore = () => {
+    setRestoreOpen(false); setRestoreResult(null); setRestorePreview(null);
+    setRestoreErr(null); setRestoreMode('overwrite');
+  };
+
   const del = async (rowid: number) => {
     setBusy(true);
     try {
@@ -152,10 +210,32 @@ export default function DbTab() {
   const page = Math.floor(offset / PAGE) + 1;
   const pages = Math.max(1, Math.ceil(total / PAGE));
 
+  // Datastore config (SQLite vs Postgres) moved here from the Git modal — it is a database
+  // concern, not a git one. Browse = the row viewer; Backend = which datastore is live.
+  const [section, setSection] = useState<'browse' | 'backend'>('browse');
+
   return (
-    <div className="h-full overflow-y-auto custom-scrollbar p-3 sm:p-4 space-y-3" data-feature-id="tasks-db-tab">
+    <div className="h-full flex flex-col min-h-0 p-3 sm:p-4 gap-3" data-feature-id="tasks-db-tab">
+      <div role="tablist" aria-label="Database view" className="shrink-0 inline-flex p-0.5 gap-0.5 rounded-lg bg-slate-100 border border-slate-200">
+        {([['browse', 'Browse', Table2], ['backend', 'Backend', Server]] as const).map(([id, label, Icon]) => {
+          const on = section === id;
+          return (
+            <button key={id} role="tab" aria-selected={on} onClick={() => setSection(id)}
+              data-feature-id={`db-section-${id}`}
+              className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-md transition-colors ${on ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 sm:hover:text-slate-900'}`}>
+              <Icon size={14} className={on ? 'text-accent-600' : ''} /> {label}
+            </button>
+          );
+        })}
+      </div>
+
+      {section === 'backend' ? (
+        <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+          <DbBackendTab />
+        </div>
+      ) : (<>
       {/* Table chips + search */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="shrink-0 flex items-center gap-2 flex-wrap">
         {(tables ?? []).map(t => (
           <button
             key={t.name}
@@ -191,7 +271,7 @@ export default function DbTab() {
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="flex items-center gap-3 flex-wrap px-4 py-2.5 bg-accent-50 border-2 border-accent-200 rounded-xl" data-feature-id="db-bulk-bar">
+        <div className="shrink-0 flex items-center gap-3 flex-wrap px-4 py-2.5 bg-accent-50 border-2 border-accent-200 rounded-xl" data-feature-id="db-bulk-bar">
           <span className="text-sm font-bold text-accent-900">{selected.size} selected</span>
           <div className="w-px h-5 bg-accent-200" />
           {bulkEdit ? (
@@ -242,7 +322,7 @@ export default function DbTab() {
       )}
 
       {/* Grid */}
-      <div className="bg-white border-2 border-slate-200 rounded-xl overflow-auto custom-scrollbar max-h-[calc(100dvh-330px)] shadow-sm">
+      <div className="flex-1 min-h-0 bg-white border-2 border-slate-200 rounded-xl overflow-auto custom-scrollbar shadow-sm">
         <table className="w-full text-left border-collapse">
           <thead className="sticky top-0 z-10">
             <tr className="bg-gradient-to-b from-slate-200 to-slate-100 shadow-[0_2px_0_0_#94a3b8]">
@@ -297,7 +377,7 @@ export default function DbTab() {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
+      <div className="shrink-0 flex items-center justify-between">
         <p className="text-xs text-slate-500">{total} rows · page {page}/{pages}</p>
         <div className="flex gap-2">
           <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))} className={btnSm}>
@@ -309,9 +389,14 @@ export default function DbTab() {
         </div>
       </div>
 
-      <p className="flex items-center gap-1.5 text-2xs text-amber-700">
-        <AlertTriangle size={12} /> Direct edits bypass the board's rules (DoD checks, status flow) — prefer the Board UI for task changes; use this for inspection and cleanup.
-      </p>
+      <div className="shrink-0 flex items-center justify-between gap-3 flex-wrap">
+        <p className="flex items-center gap-1.5 text-2xs text-amber-700">
+          <AlertTriangle size={12} /> Direct edits bypass the board's rules (DoD checks, status flow) — prefer the Board UI for task changes; use this for inspection and cleanup.
+        </p>
+        <button onClick={() => setRestoreOpen(true)} data-feature-id="db-restore-defaults" className={btnSm}>
+          <RotateCcw size={13} /> Restore defaults…
+        </button>
+      </div>
 
       {/* Edit/Create modal */}
       {editing && (
@@ -346,6 +431,85 @@ export default function DbTab() {
           </div>
         </Modal>
       )}
+
+      {/* Restore-to-defaults */}
+      {restoreOpen && (
+        <Modal
+          isOpen
+          onClose={closeRestore}
+          title="Restore defaults"
+          icon={<RotateCcw size={18} className="text-accent-600" />}
+          maxW="sm:max-w-xl"
+          featureId="db-restore-modal"
+          footer={
+            restoreResult ? (
+              <div className="flex justify-end w-full">
+                <button onClick={closeRestore} className={btnPrimarySm}>Done</button>
+              </div>
+            ) : (
+              <div className="flex justify-end gap-2 w-full">
+                <button onClick={closeRestore} className="px-4 min-h-control-lg text-xs font-bold text-slate-600 rounded-lg hover:bg-slate-100">Cancel</button>
+                <button onClick={runRestore} disabled={busy || !restorePreview} className={restoreMode === 'delete' ? btnDangerSm : btnPrimarySm}>
+                  {restoreMode === 'delete' ? 'Delete all & restore' : 'Restore defaults'}
+                </button>
+              </div>
+            )
+          }
+        >
+          {restoreResult ? (
+            <div className="space-y-2 text-xs">
+              <p className="flex items-center gap-2 text-emerald-700 font-bold"><CheckCircle2 size={16} /> Defaults restored ({restoreResult.mode}).</p>
+              <p className="text-slate-700">Agents: {restoreResult.agents.written} written{restoreResult.agents.deleted ? `, ${restoreResult.agents.deleted} deleted` : ''}.</p>
+              <p className="text-slate-700">Settings: {restoreResult.boardSettings.written} written{restoreResult.boardSettings.deleted ? `, ${restoreResult.boardSettings.deleted} deleted` : ''}.</p>
+              {restoreResult.logs.deleted > 0 && <p className="text-slate-700">Logs: {restoreResult.logs.deleted} orphaned rows cleared (live-task history kept).</p>}
+              {restoreResult.logs.error && <p className="text-amber-700">Logs were left in place — logs.db was busy: {restoreResult.logs.error}</p>}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Mode picker — two radio-style cards. */}
+              <div className="space-y-2">
+                {([
+                  ['overwrite', 'Restore built-in defaults', 'Revert the built-in agents and settings to their shipped defaults. Any custom agents you added are kept.'],
+                  ['delete', 'Delete all & restore (factory reset)', 'Delete every agent row, then reseed the built-in agents. Custom agents are removed, in-scope settings reset, and orphaned logs cleared — logs for tasks still on the board are kept.'],
+                ] as const).map(([m, title, desc]) => {
+                  const on = restoreMode === m;
+                  const danger = m === 'delete';
+                  return (
+                    <button key={m} onClick={() => setRestoreMode(m)} data-feature-id={`db-restore-mode-${m}`}
+                      className={`w-full text-left p-3 rounded-lg border-2 transition-colors ${on ? (danger ? 'border-rose-400 bg-rose-50' : 'border-accent-400 bg-accent-50') : 'border-slate-200 hover:border-slate-300'}`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`w-3.5 h-3.5 rounded-full border-2 shrink-0 ${on ? (danger ? 'border-rose-500 bg-rose-500' : 'border-accent-500 bg-accent-500') : 'border-slate-300'}`} />
+                        <span className="text-xs font-bold text-slate-900">{title}</span>
+                      </div>
+                      <p className="mt-1 ml-6 text-2xs text-slate-600">{desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Dry-run preview of the blast radius. */}
+              {restoreErr ? (
+                <p className="text-xs text-rose-600">Could not load preview: {restoreErr}</p>
+              ) : !restorePreview ? (
+                <p className="text-xs text-slate-500">Loading preview…</p>
+              ) : (
+                <div className="space-y-1.5 text-2xs bg-slate-50 border border-slate-200 rounded-lg p-3">
+                  {restoreMode === 'delete' && restorePreview.customAgentsRemoved.length > 0 && (
+                    <p className="text-rose-700"><span className="font-bold">{restorePreview.customAgentsRemoved.length} custom agent(s) removed:</span> {restorePreview.customAgentsRemoved.join(', ')}</p>
+                  )}
+                  {restoreMode === 'delete' && restorePreview.logsCleared.length > 0 && (
+                    <p className="text-rose-700"><span className="font-bold">Orphaned logs cleared:</span> {restorePreview.logsCleared.join(', ')} <span className="text-slate-500">(live-task logs kept)</span></p>
+                  )}
+                  <p className="text-slate-700"><span className="font-bold">Agents reverted:</span> {restorePreview.builtInAgentsReverted.join(', ')}</p>
+                  <p className="text-slate-700"><span className="font-bold">Settings reverted:</span> {restorePreview.settingsReverted.join(', ') || '—'}</p>
+                  <p className="text-slate-500"><span className="font-bold">Never touched:</span> {restorePreview.untouched.join(', ')}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </Modal>
+      )}
+      </>)}
     </div>
   );
 }

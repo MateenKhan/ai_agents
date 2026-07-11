@@ -12,17 +12,23 @@ import { DEFAULT_AGENTS } from '../db/defaults';
 import { restoreDefaults, previewRestore, DEFAULT_BOARD_SETTINGS, isRestorableSettingKey } from '../db/seed';
 
 const tempDbPath = join(tmpdir(), `mc-seed-${randomBytes(6).toString('hex')}.db`);
+// logs.db lives in its own file; a `delete` restore clears it, so point it at a throwaway or
+// the test would wipe the real db/logs.db.
+const tempLogsPath = join(tmpdir(), `mc-seed-logs-${randomBytes(6).toString('hex')}.db`);
 
 beforeAll(async () => {
   const cfg = buildConfig();
   cfg.paths.tasksDbPath = tempDbPath;
+  cfg.paths.logsDbPath = tempLogsPath;
   setConfig(cfg);
   await initTasksSchema();
 });
 
 afterAll(() => {
-  for (const suffix of ['', '-wal', '-shm', '-journal']) {
-    try { unlinkSync(tempDbPath + suffix); } catch { /* ignore */ }
+  for (const base of [tempDbPath, tempLogsPath]) {
+    for (const suffix of ['', '-wal', '-shm', '-journal']) {
+      try { unlinkSync(base + suffix); } catch { /* ignore */ }
+    }
   }
 });
 
@@ -136,6 +142,41 @@ describe('overwrite vs delete', () => {
 
     await restoreDefaults('delete');
     expect((await getAgents()).map(a => a.role)).not.toContain('reviewer'); // wiped
+  });
+});
+
+// The user's report: "delete all and restore is not deleting agent logs" — and the refinement:
+// keep logs for tasks still on the board (failed/completed/in-review), clear only the orphans.
+describe('delete clears ORPHANED logs.db telemetry but keeps live-task logs; overwrite keeps all', () => {
+  const logsStore = async () => { await ensureMigrated('logs'); return getStore('logs'); };
+  const addLog = async (taskId: string) => (await logsStore()).run(
+    `INSERT INTO agent_logs (taskId, message, type, timestamp) VALUES (?,?,?,?)`,
+    [taskId, 'x', 'info', new Date().toISOString()]);
+  const logCountFor = async (taskId: string) => Number(
+    (await (await logsStore()).get(`SELECT COUNT(*) c FROM agent_logs WHERE taskId = ?`, [taskId]) as any)?.c ?? 0);
+
+  it('keeps a live task\'s logs, deletes an orphan\'s and the __system__ noise', async () => {
+    await createTask({ id: 'LIVE-1', title: 'on the board', status: 'DONE' });
+    await addLog('LIVE-1');         // belongs to a task still on the board
+    await addLog('GONE-1');         // task no longer exists → orphan
+    await addLog('__system__');     // orchestrator noise → orphan
+
+    await restoreDefaults('overwrite');
+    expect(await logCountFor('LIVE-1')).toBeGreaterThan(0); // overwrite touches no logs
+    expect(await logCountFor('GONE-1')).toBeGreaterThan(0);
+
+    const result = await restoreDefaults('delete');
+    expect(await logCountFor('LIVE-1')).toBeGreaterThan(0); // KEPT — task is on the board
+    expect(await logCountFor('GONE-1')).toBe(0);            // orphan cleared
+    expect(await logCountFor('__system__')).toBe(0);        // noise cleared
+    expect(result.logs.deleted).toBeGreaterThanOrEqual(2);
+  });
+
+  it('preview counts only the orphan rows delete would clear, and none for overwrite', async () => {
+    await addLog('ANOTHER-GHOST');
+    const del = await previewRestore('delete');
+    expect(del.logsCleared.some(l => l.startsWith('agent_logs'))).toBe(true);
+    expect((await previewRestore('overwrite')).logsCleared).toEqual([]);
   });
 });
 

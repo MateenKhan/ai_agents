@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { decideFailure, isInfraFailure } from '../engine/orchestrator';
-import type { FailureKind } from '../types';
+import { decideFailure, isInfraFailure, failureDetailFrom, withJournal, redactSecrets } from '../engine/orchestrator';
+import type { FailureKind, Task } from '../types';
 
 /** A `build` stage in the shipped workflow: three attempts, one escalation, `blocked` declared. */
 const base = {
@@ -132,4 +132,76 @@ describe('ordering of the policy', () => {
   it('maxAttempts of 0 goes straight past retry', () => {
     expect(decide({ failure: 'crash', attempts: 0, maxAttempts: 0 })).toBe('escalate');
   });
+});
+
+// ── failure summary + stage journal (architect-review gaps #1/#2 and #4) ──────
+describe('failureDetailFrom', () => {
+  it('prefixes the label and keeps the LAST 40 lines of output', () => {
+    const many = Array.from({ length: 100 }, (_, i) => `line${i}`).join('\n');
+    const out = failureDetailFrom('crash', many);
+    expect(out.startsWith('crash\n')).toBe(true);
+    expect(out).toContain('line99');       // last line kept
+    expect(out).not.toContain('line50');   // beyond the 40-line window, dropped
+    expect(out.split('\n').length).toBeLessThanOrEqual(41); // label + <=40 lines
+  });
+
+  it('is just the label when there is no output', () => {
+    expect(failureDetailFrom('timeout', '')).toBe('timeout');
+    expect(failureDetailFrom('timeout', '   \n  ')).toBe('timeout'); // whitespace trims away
+  });
+});
+
+describe('withJournal', () => {
+  const t = (over: Partial<Task> = {}): Task => ({ id: 'J', title: 't', status: 'WORKING', priority: 0, ...over } as Task);
+
+  it('appends a timestamped entry to an empty journal', () => {
+    const j = withJournal(t(), { stage: 'build', agent: 'dev', outcome: 'pass', note: 'did it' });
+    expect(j).toHaveLength(1);
+    expect(j[0]).toMatchObject({ stage: 'build', agent: 'dev', outcome: 'pass', note: 'did it' });
+    expect(typeof j[0].ts).toBe('string');
+  });
+
+  it('preserves prior entries and their order', () => {
+    const prior = [{ ts: '2020', stage: 'plan', agent: 'architect', outcome: 'done' }];
+    const j = withJournal(t({ journal: prior }), { stage: 'build', agent: 'dev', outcome: 'pass' });
+    expect(j.map(e => e.stage)).toEqual(['plan', 'build']);
+  });
+
+  it('caps at 20 entries, keeping the most recent', () => {
+    const prior = Array.from({ length: 25 }, (_, i) => ({ ts: String(i), stage: `s${i}`, agent: 'a', outcome: 'pass' }));
+    const j = withJournal(t({ journal: prior }), { stage: 'newest', agent: 'a', outcome: 'pass' });
+    expect(j).toHaveLength(20);
+    expect(j[j.length - 1].stage).toBe('newest');
+    expect(j[0].stage).toBe('s6'); // oldest 6 dropped (25 + 1 - 20)
+  });
+
+  it('trims and collapses whitespace in the note, capping length', () => {
+    const j = withJournal(t(), { stage: 'x', agent: 'a', outcome: 'pass', note: '  a\n\n  b   c  ' + 'z'.repeat(400) });
+    expect(j[0].note!.length).toBeLessThanOrEqual(200);
+    expect(j[0].note!.startsWith('a b c')).toBe(true);
+  });
+});
+
+describe('redactSecrets', () => {
+  it('masks GitHub tokens', () => {
+    expect(redactSecrets('cloning with ghs_abcdefghijklmnopqrstuvwxyz012345')).not.toContain('ghs_abcdefghijklmnopqrstuvwxyz');
+    expect(redactSecrets('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')).toContain('gh?_***');
+  });
+  it('masks user:pass@ inside urls', () => {
+    const out = redactSecrets('fatal: unable to access https://x-access-token:ghs_secretvalue@github.com/o/r.git');
+    expect(out).not.toContain('ghs_secretvalue');
+    expect(out).toContain('***@github.com');
+  });
+  it('masks Bearer / token= / password= pairs', () => {
+    expect(redactSecrets('Authorization: Bearer sk-supersecretvalue')).not.toContain('sk-supersecretvalue');
+    expect(redactSecrets('token=abc123def456')).not.toContain('abc123def456');
+  });
+  it('leaves ordinary error text intact', () => {
+    expect(redactSecrets('TypeError: slugify is not a function')).toBe('TypeError: slugify is not a function');
+  });
+});
+
+it('failureDetailFrom redacts secrets in the captured tail', () => {
+  const out = failureDetailFrom('crash', 'auth failed for https://x-access-token:ghs_leakedleakedleaked@github.com');
+  expect(out).not.toContain('ghs_leakedleakedleaked');
 });

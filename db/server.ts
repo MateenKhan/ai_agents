@@ -11,6 +11,7 @@ import { fromBuffer, cosine } from './embedder.js';
 import { codeIndexIsPostgres, pgSemanticSearch } from './indexPg.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync } from 'fs';
 import { join, dirname, resolve, isAbsolute } from 'path';
+import { tmpdir } from 'os';
 
 const PORT = parseInt(process.env.DB_SERVER_PORT ?? '6952');
 const ACTIVE_AGENTS = new Set<string>();
@@ -121,10 +122,12 @@ function ragAnswer(question: string, ctx: string, cwd: string): Promise<string> 
 import { getAllTasks, getTask, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, setProjectReadiness, setProjectMaxConcurrency, getAgentDefaults, setAgentDefaults, type RunConfig } from './tasks.js';
 // Datastore backend config — the persisted choice + its encrypted URL. Applied at boot.
 import { getBackendConfig, setBackendConfig, getMaskedBackendConfig } from './backendConfig.ts';
+import { specIssues } from './intakeGate.ts';
+import { authenticateGitUrl } from './gitAuth.ts';
 // The datastore seam: push the chosen backend (SQLite default / Postgres opt-in) into the
 // async Store layer at boot, BEFORE any schema init or request handling.
-import { configureBackend, isPostgres, getStore } from '../agentic/db/getStore.ts';
-import { isInsideLogsRoot } from '../agentic/engine/task-log-file.ts';
+import { configureBackend, isPostgres, getStore, ensureMigrated } from '../agentic/db/getStore.ts';
+import { isInsideLogsRoot, logsRoot, safeSegment } from '../agentic/engine/task-log-file.ts';
 
 // ── project scoping helpers ────────────────────────────────────────────────────
 // Every project-scoped route reads ?project=<id> (default 'default'); body routes may
@@ -134,6 +137,35 @@ import { isInsideLogsRoot } from '../agentic/engine/task-log-file.ts';
  *  filename charset — no separators, no dots-dots. Anything else could escape via join(). */
 function safeLogName(name: string): string | null {
   return /^[A-Za-z0-9_.-]+$/.test(name) && !name.includes('..') ? name : null;
+}
+
+
+/** A git-style unified diff between two in-memory versions of one repo file. Uses
+ *  `git diff --no-index` (real @@ hunks, what <DiffView> renders) via two temp files, then
+ *  rewrites the temp paths back to the repo-relative path so the header reads a/<rel> b/<rel>. */
+function unifiedDiff(rel: string, oldContent: string, newContent: string): string {
+  const base = join(tmpdir(), `aiedit-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const oldP = base + '.old';
+  const newP = base + '.new';
+  try {
+    writeFileSync(oldP, oldContent, 'utf-8');
+    writeFileSync(newP, newContent, 'utf-8');
+    const r = spawnSync('git', ['diff', '--no-index', '--', oldP, newP], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+    let d = r.stdout || '';
+    if (!d) return '';
+    // git prints the temp paths in the header lines — quoted and backslash-escaped on Windows,
+    // so a literal substitution is fragile. Rewrite the three header lines to the repo-relative
+    // path instead. No /g flag = only the FIRST match, which is the file header (it precedes any
+    // hunk, so a removed content line starting with "--- " can never be hit).
+    d = d.replace(/^diff --git .*$/m, `diff --git a/${rel} b/${rel}`)
+         .replace(/^--- .*$/m, `--- a/${rel}`)
+         .replace(/^\+\+\+ .*$/m, `+++ b/${rel}`);
+    return d;
+  } catch { return ''; }
+  finally {
+    try { unlinkSync(oldP); } catch { /* noop */ }
+    try { unlinkSync(newP); } catch { /* noop */ }
+  }
 }
 
 function projectIdOf(req: IncomingMessage, body?: any): string {
@@ -291,11 +323,29 @@ let boardCorrupt: string | null = null;   // e.g. 'tasks.db' — pauses get/upda
 // and the project row (deleteProject cascades the DB rows). Never touches the repo FOLDER — that
 // is deleted separately and only when it lives inside the managed projects/ directory.
 async function purgeProjectData(id: string): Promise<void> {
+  // Task ids first: the logs-group `agent_db_usage` rows and the on-disk .log files key on
+  // taskId, and the tasks rows are about to be deleted by deleteProject.
+  let taskIds: string[] = [];
+  try { taskIds = ((await getStore('tasks').all(`SELECT id FROM tasks WHERE projectId = ?`, [id])) as any[]).map(r => r.id); } catch { /* offline */ }
   try { resetDbFor(id); } catch { /* handle already closed */ }
   try { await deleteProject(id); } catch (e: any) { console.warn(`[db-server] purge project rows [${id}]: ${e?.message}`); }
+  // logs.db group (kept out of tasks.db, so deleteProject can't reach it): agent_logs /
+  // context_files / context_ops are project-scoped; agent_db_usage keys on taskId. `__system__`
+  // orchestrator log lines carry no projectId and are deliberately left alone.
+  try {
+    await ensureMigrated('logs');
+    const ls = getStore('logs');
+    await ls.run(`DELETE FROM agent_logs WHERE projectId = ?`, [id]);
+    await ls.run(`DELETE FROM context_files WHERE projectId = ?`, [id]);
+    await ls.run(`DELETE FROM context_ops WHERE projectId = ?`, [id]);
+    for (const t of taskIds) await ls.run(`DELETE FROM agent_db_usage WHERE taskId = ?`, [t]);
+  } catch (e: any) { console.warn(`[db-server] purge project logs [${id}]: ${e?.message}`); }
+  // Embeddings index DB files.
   for (const suf of ['', '-wal', '-shm']) {
     try { const f = join(process.cwd(), 'db', `index-${id}.db${suf}`); if (existsSync(f)) rmSync(f, { force: true }); } catch { /* file busy/missing */ }
   }
+  // Per-task .log files live under <logsDir>/<projectId>/ — remove the whole project dir.
+  try { const seg = safeSegment(id); if (seg) { const dir = join(logsRoot(), seg); if (existsSync(dir)) rmSync(dir, { recursive: true, force: true }); } } catch { /* busy/missing */ }
 }
 
 const indexRebuilding = new Map<string, boolean>();
@@ -1173,6 +1223,159 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     } catch (e: any) { res.statusCode = 404; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
+
+  // ── File Browser: write + AI-edit (the chat) — see docs/plans/file-browser-backend.md ──
+  // These four blocks key on method + exact path, so they never collide with the GET /file(s)
+  // reads above. AI-edit only PROPOSES; the human approves and the frontend calls PUT /file.
+
+  // PUT /file — save (overwrite) an existing file. { path, content }
+  if (req.method === 'PUT' && (req.url || '').split('?')[0] === '/file') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const rel = String(body.path || '');
+      const root = await projectRepoPath(projectIdOf(req, body));
+      const abs = join(root, rel);
+      if (!abs.startsWith(root) || rel.includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
+      if (!existsSync(abs)) { res.statusCode = 404; res.end(JSON.stringify({ error: 'file does not exist — use POST to create' })); return; }
+      writeFileSync(abs, String(body.content ?? ''), 'utf-8');
+      res.end(JSON.stringify({ ok: true, path: rel, bytes: statSync(abs).size }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // POST /file — create a new file (+ parent dirs). Refuse if it already exists. { path, content? }
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/file') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const rel = String(body.path || '');
+      if (!rel.trim()) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
+      const root = await projectRepoPath(projectIdOf(req, body));
+      const abs = join(root, rel);
+      if (!abs.startsWith(root) || rel.includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
+      if (existsSync(abs)) { res.statusCode = 409; res.end(JSON.stringify({ error: 'file already exists' })); return; }
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, String(body.content ?? ''), 'utf-8');
+      res.end(JSON.stringify({ ok: true, path: rel }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // DELETE /file?path= — delete a file.
+  if (req.method === 'DELETE' && (req.url || '').split('?')[0] === '/file') {
+    try {
+      const rel = new URL(req.url!, 'http://x').searchParams.get('path') || '';
+      const root = await projectRepoPath(projectIdOf(req));
+      const abs = join(root, rel);
+      if (!abs.startsWith(root) || rel.includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
+      if (!existsSync(abs)) { res.statusCode = 404; res.end(JSON.stringify({ error: 'file not found' })); return; }
+      unlinkSync(abs);
+      res.end(JSON.stringify({ ok: true, path: rel }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // POST /file/ai-edit — the chat engine. Reads the tagged files + uploads + instruction, asks
+  // `claude -p` (same CLI/auth as /intake — no API key) for full new contents, and returns a
+  // proposal + unified diff per changed file. Writes NOTHING. Also reports timing/TPS metrics.
+  if (req.method === 'POST' && (req.url || '').split('?')[0] === '/file/ai-edit') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const instruction = String(body.instruction || '').trim();
+      if (!instruction) { res.statusCode = 400; res.end(JSON.stringify({ error: 'instruction required' })); return; }
+      const root = await projectRepoPath(projectIdOf(req, body));
+
+      // Read each tagged repo file (guard per path); note skips to report in the answer.
+      const tagged: Array<{ path: string }> = Array.isArray(body.files) ? body.files : [];
+      const uploads: Array<{ name: string; content: string }> = Array.isArray(body.uploads) ? body.uploads : [];
+      const skipped: string[] = [];
+      const repoFiles: Array<{ path: string; content: string }> = [];
+      for (const f of tagged) {
+        const rel = String(f?.path || '');
+        const abs = join(root, rel);
+        if (!rel || !abs.startsWith(root) || rel.includes('..')) { skipped.push(`${rel || '(empty)'} — path escapes repo`); continue; }
+        if (!existsSync(abs)) { skipped.push(`${rel} — missing`); continue; }
+        if (statSync(abs).size > 512 * 1024) { skipped.push(`${rel} — >512KB`); continue; }
+        repoFiles.push({ path: rel, content: readFileSync(abs, 'utf-8') });
+      }
+
+      const prompt = [
+        'You are a code-editing assistant. Apply the INSTRUCTION to the REPO FILES below.',
+        'Return ONLY minified JSON — no markdown fences, no prose outside the JSON:',
+        '{"answer":"<short explanation>","files":[{"path":"<repo path>","content":"<FULL new file content>"}]}',
+        'Each entry must be the ENTIRE new file content, never a diff or a fragment. Include ONLY files you changed; omit the rest.',
+        'The UPLOADS are reference context ONLY — never emit them as files.',
+        '',
+        `INSTRUCTION:\n${instruction}`,
+        '',
+        ...repoFiles.map(f => `=== ${f.path} ===\n${f.content}`),
+        ...uploads.map(u => `=== upload: ${u.name} (reference only) ===\n${String(u.content ?? '')}`),
+      ].join('\n');
+
+      // One model session per chat thread. First turn issues a fresh id; later turns resume it
+      // so a thread remembers its own history and no other thread's.
+      const { randomUUID } = await import('node:crypto');
+      const priorSession = String(body.sessionId || '').trim();
+      const sessionId = priorSession || randomUUID();
+      const sessionFlags = priorSession ? ['--resume', priorSession] : ['--session-id', sessionId];
+
+      const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
+      const model = ['haiku', 'sonnet', 'opus'].includes(String(body.model)) ? String(body.model) : 'sonnet';
+      const effort = String(body.effort || '');
+      const effortFlags = ['low', 'medium', 'high'].includes(effort) ? ['--effort', effort] : [];
+
+      const t0 = Date.now();
+      const proc = spawnSync(CLAUDE_BIN,
+        ['-p', prompt, '--model', model, ...sessionFlags, ...effortFlags, '--output-format', 'json', '--dangerously-skip-permissions'],
+        { encoding: 'utf8', timeout: 150000, maxBuffer: 16 * 1024 * 1024 });
+      const wallMs = Date.now() - t0;
+      const out = (proc.stdout || '') + (proc.stderr || '');
+
+      // Parse the CLI JSON envelope, then the model's own JSON inside `.result`.
+      let envelope: any = null;
+      { const s = out.indexOf('{'); const e = out.lastIndexOf('}'); if (s >= 0 && e > s) { try { envelope = JSON.parse(out.slice(s, e + 1)); } catch { /* fall through */ } } }
+      const resultText: string = typeof envelope?.result === 'string' ? envelope.result : out;
+      let parsed: any = null;
+      { const s = resultText.indexOf('{'); const e = resultText.lastIndexOf('}'); if (s >= 0 && e > s) { try { parsed = JSON.parse(resultText.slice(s, e + 1)); } catch { /* fall through */ } } }
+      if (!parsed || !Array.isArray(parsed.files)) {
+        res.statusCode = 502; res.end(JSON.stringify({ error: 'Could not parse a proposal from the model', raw: out.slice(0, 600) })); return;
+      }
+
+      // Each returned file → a proposal with a real unified diff. Never propose outside the repo.
+      const proposals: Array<{ path: string; oldContent: string; newContent: string; diff: string }> = [];
+      for (const f of parsed.files) {
+        const rel = String(f?.path || '');
+        const abs = join(root, rel);
+        if (!rel || !abs.startsWith(root) || rel.includes('..')) { skipped.push(`${rel || '(empty)'} — proposal outside repo, dropped`); continue; }
+        const newContent = String(f.content ?? '');
+        const oldContent = existsSync(abs) ? readFileSync(abs, 'utf-8') : '';
+        if (oldContent === newContent) continue; // no-op proposal
+        proposals.push({ path: rel, oldContent, newContent, diff: unifiedDiff(rel, oldContent, newContent) });
+      }
+
+      // Metrics — response time + tokens/sec, straight from the CLI envelope (falls back to wall
+      // clock if the envelope is missing). TPS is OVERALL: output tokens over the whole response.
+      // We do NOT divide by (duration − ttft): the non-streaming json reports ttft ≈ duration, so
+      // that window is a few ms and would inflate TPS into the thousands. ttft is exposed on its
+      // own for the UI to show "time to first token" separately.
+      const durationMs = Number(envelope?.duration_ms) || wallMs;
+      const outputTokens = Number(envelope?.usage?.output_tokens) || 0;
+      const tps = outputTokens > 0 && durationMs > 0 ? +(outputTokens / (durationMs / 1000)).toFixed(1) : 0;
+      const metrics = {
+        responseMs: durationMs,
+        responseSec: +(durationMs / 1000).toFixed(2),
+        ttftMs: Number(envelope?.ttft_ms) || null,
+        outputTokens,
+        inputTokens: Number(envelope?.usage?.input_tokens) || 0,
+        tps,
+        costUsd: Number(envelope?.total_cost_usd) || 0,
+      };
+
+      const answer = (String(parsed.answer || '') + (skipped.length ? `\n\n(skipped: ${skipped.join('; ')})` : '')).trim();
+      res.end(JSON.stringify({ answer, sessionId, proposals, metrics }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
   // Context memory — what is in agents' working memory right now (per project).
   if (req.url?.startsWith('/context')) {
     try {
@@ -1652,27 +1855,35 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       for (let i = 0; i < tasks.length; i++) {
         const t: any = tasks[i];
         const id = 'CHAT-' + (base + i).toString(36).toUpperCase().slice(-5) + Math.random().toString(36).slice(2, 4).toUpperCase();
-        const scenarios: string[] = Array.isArray(t.scenarios) ? t.scenarios.map(String) : [];
+        const scenarios: string[] = Array.isArray(t.scenarios) ? t.scenarios.map(String).filter((s: string) => s.trim()) : [];
         const description = (String(t.description || '') +
           (scenarios.length ? '\n\nAcceptance scenarios:\n- ' + scenarios.join('\n- ') : '')).trim();
+        const title = String(t.title || 'Untitled task').slice(0, 200);
+        // QUALITY GATE — evaluate the RAW dod (before the fallback fabricates one from the title),
+        // so a genuinely missing DoD is caught. An under-specified task is created but NOT handed
+        // to agents: it is held in AVAILABLE with a note saying what to add, whatever autoStart says.
+        const issues = specIssues(title, scenarios, String(t.dod || '').trim());
+        const gated = issues.length > 0;
         const task = {
           id,
-          title: String(t.title || 'Untitled task').slice(0, 200),
+          title,
           description,
-          status: autoStart ? 'WORKING' : 'AVAILABLE',
+          status: (autoStart && !gated) ? 'WORKING' : 'AVAILABLE',
           priority: i,
           dod: String(t.dod || scenarios.join(' ') || t.description || t.title || '').slice(0, 2000),
+          reviewNote: gated ? `NEEDS REFINEMENT before running — ${issues.join('; ')}. Add these, then trigger the task.` : undefined,
           started: null,
           claimedBy: null,
           attempts: 0,
           projectId: intakeProject,
         };
         await createTask(task as any);
-        created.push({ id, title: task.title, status: task.status });
+        created.push({ id, title: task.title, status: task.status, needsRefinement: gated, issues });
       }
 
-      console.log(`[db-server] Intake: created ${created.length} task(s) from chat`);
-      res.end(JSON.stringify({ ok: true, created }));
+      const gatedCount = created.filter((c: any) => c.needsRefinement).length;
+      console.log(`[db-server] Intake: created ${created.length} task(s) from chat${gatedCount ? ` (${gatedCount} held for refinement)` : ''}`);
+      res.end(JSON.stringify({ ok: true, created, gated: gatedCount }));
     } catch (e: any) {
       res.statusCode = 500;
       res.end(JSON.stringify({ error: e.message }));
@@ -1822,11 +2033,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const tok = tokenId ? await getGitTokenRaw(tokenId) : null;
         cfg = tok ? { token: tok.token, username: tok.username, host: tok.host } : await getGitConfig();
       }
-      let authUrl = url;
-      if (cfg.token && url.startsWith('https://')) {
-        const user = cfg.username || 'x-access-token';
-        authUrl = url.replace('https://', `https://${encodeURIComponent(user)}:${encodeURIComponent(cfg.token)}@`);
-      }
+      const authUrl = authenticateGitUrl(url, cfg.token, cfg.username);
       // Ensure the parent dir exists so `git clone` into a nested path doesn't fail with
       // "could not create leading directories". git creates the leaf dir itself.
       try { const parent = dirname(dir); if (parent && parent !== '.') mkdirSync(parent, { recursive: true }); } catch { /* clone will surface a clearer error */ }
@@ -1860,6 +2067,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // up in the switcher / Repo / Context — never lost. First clone reuses the Default slot.
       let project: any = null;
       if (r.status === 0) {
+        // The clone URL carried the token so git could authenticate; strip it back out of the
+        // stored remote so the credential never persists in .git/config. Every fetch/push
+        // injects a fresh token per-call (authenticateGitUrl), so a clean origin is all we keep.
+        try { if (authUrl !== url) spawnSync('git', ['-C', dir, 'remote', 'set-url', 'origin', url], { encoding: 'utf8' }); } catch { /* non-fatal */ }
         try {
           const name = (dir.replace(/[\\/]+$/, '').split(/[\\/]+/).pop() || 'repo');
           const branchName = branch || (spawnSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim() || undefined;
@@ -1949,8 +2160,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
           const tok = tokenId ? await getGitTokenRaw(tokenId) : null;
           cfg = tok ? { token: tok.token, username: tok.username, host: tok.host } : await getGitConfig();
         }
-        let authUrl = url;
-        if (cfg.token && url.startsWith('https://')) authUrl = url.replace('https://', `https://${encodeURIComponent(cfg.username || 'x-access-token')}:${encodeURIComponent(cfg.token)}@`);
+        const authUrl = authenticateGitUrl(url, cfg.token, cfg.username);
         try { mkdirSync(base, { recursive: true }); } catch { /* clone surfaces a clearer error */ }
         const r = await new Promise<{ status: number | null; out: string }>((resolve) => {
           const proc = spawn('git', ['-c', 'credential.helper=', 'clone', authUrl, dir], { shell: false });
@@ -1960,6 +2170,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         output = r.out;
         if (cfg.token) { output = output.split(cfg.token).join('***').split(encodeURIComponent(cfg.token)).join('***'); }
         if (r.status !== 0) { res.statusCode = 500; res.end(JSON.stringify({ error: `git clone failed: ${output.trim().slice(-500)}` })); return; }
+        // Strip the token back out of the stored remote so it never persists in .git/config.
+        try { if (authUrl !== url) spawnSync('git', ['-C', dir, 'remote', 'set-url', 'origin', url], { encoding: 'utf8' }); } catch { /* non-fatal */ }
         cloned = true;
       }
 
@@ -2051,11 +2263,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const originR = spawnSync('git', ['remote', 'get-url', String(b.remote || 'origin')], { cwd: repo, encoding: 'utf8' });
       const origin = (originR.stdout || '').trim();
       if (!origin) { res.statusCode = 400; res.end(JSON.stringify({ error: 'no origin remote — set one or clone first' })); return; }
-      let authUrl = origin;
-      if (cfg.token && origin.startsWith('https://')) {
-        const user = cfg.username || 'x-access-token';
-        authUrl = origin.replace('https://', `https://${encodeURIComponent(user)}:${encodeURIComponent(cfg.token)}@`);
-      }
+      const authUrl = authenticateGitUrl(origin, cfg.token, cfg.username);
       // Push HEAD to the named branch and set upstream so future pushes are simple.
       const r = spawnSync('git', ['push', '-u', authUrl, `HEAD:${branch}`], { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
       let output = ((r.stdout || '') + (r.stderr || '')).trim();
@@ -2078,7 +2286,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const origin = (spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: repo, encoding: 'utf8' }).stdout || '').trim();
       if (!origin) { res.statusCode = 400; res.end(JSON.stringify({ error: 'no origin remote' })); return; }
       let authUrl = origin;
-      if (cfg.token && origin.startsWith('https://')) authUrl = origin.replace('https://', `https://${encodeURIComponent(cfg.username || 'x-access-token')}:${encodeURIComponent(cfg.token)}@`);
+      authUrl = authenticateGitUrl(origin, cfg.token, cfg.username);
       const r = spawnSync('git', ['-c', 'credential.helper=', 'pull', '--no-edit', authUrl, cur], { cwd: repo, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
       let output = ((r.stdout || '') + (r.stderr || '')).trim();
       if (cfg.token) { output = output.split(cfg.token).join('***').split(encodeURIComponent(cfg.token)).join('***'); }
@@ -2098,7 +2306,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (tid.startsWith('app:')) { const m = await mintInstallationToken(tid.slice(4)); cfg = m ? { token: m.token, username: m.username } : {}; }
       else { const t = tid ? await getGitTokenRaw(tid) : null; cfg = t ? { token: t.token, username: t.username } : await getGitConfig(); }
       let authUrl = url;
-      if (cfg.token && url.startsWith('https://')) authUrl = url.replace('https://', `https://${encodeURIComponent(cfg.username || 'x-access-token')}:${encodeURIComponent(cfg.token)}@`);
+      authUrl = authenticateGitUrl(url, cfg.token, cfg.username);
       const r = spawnSync('git', ['-c', 'credential.helper=', 'ls-remote', '--heads', '--symref', authUrl], { encoding: 'utf8', timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
       if (r.status !== 0) { let out = ((r.stdout || '') + (r.stderr || '')).trim(); if (cfg.token) out = out.split(cfg.token).join('***'); res.statusCode = 400; res.end(JSON.stringify({ error: 'could not list branches', output: out.slice(-400) })); return; }
       const lines = (r.stdout || '').split('\n');
@@ -2160,7 +2368,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         // Does the branch exist?
         const has = spawnSync('git', ['rev-parse', '--verify', '--quiet', branch], { cwd: repoRoot, encoding: 'utf8' });
         if (has.status !== 0) {
-          res.end(JSON.stringify({ ok: true, exists: false, branch, base: null, files: [], commits: [], diff: '', qaVerdict: task?.qaVerdict ?? null, summary: task?.summary ?? null }));
+          res.end(JSON.stringify({ ok: true, exists: false, branch, base: null, files: [], commits: [], diff: '', qaVerdict: task?.qaVerdict ?? null, summary: task?.summary ?? null, plan: task?.plan ?? null, journal: task?.journal ?? [] }));
           return;
         }
 
@@ -2181,6 +2389,19 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
           .split('\n').filter(Boolean).reduce((acc, l) => { const [st, p] = l.split('\t'); if (p) acc[p] = st; return acc; }, {} as Record<string, string>);
         for (const f of files) (f as any).status = statusOut[f.path] || 'M';
 
+        // meta=1 skips the full unified diff (a git diff over the whole change + up to 8 MB of
+        // transfer). Callers that only need the file LIST — e.g. deciding whether a task has
+        // anything to preview — pass it so a review queue can check every card cheaply.
+        const metaOnly = new URL(req.url!, 'http://x').searchParams.get('meta') === '1';
+        if (metaOnly) {
+          res.end(JSON.stringify({
+            ok: true, exists: true, base: baseRef, branch,
+            commits, files, diff: '', truncated: false,
+            qaVerdict: task?.qaVerdict ?? null, summary: task?.summary ?? null, plan: task?.plan ?? null, journal: task?.journal ?? [],
+          }));
+          return;
+        }
+
         // The full unified diff, capped so a giant change can't blow the response or the browser.
         const MAX = 200_000;
         const full = spawnSync('git', ['diff', range], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 }).stdout || '';
@@ -2190,7 +2411,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         res.end(JSON.stringify({
           ok: true, exists: true, base: baseRef, branch,
           commits, files, diff, truncated,
-          qaVerdict: task?.qaVerdict ?? null, summary: task?.summary ?? null,
+          qaVerdict: task?.qaVerdict ?? null, summary: task?.summary ?? null, plan: task?.plan ?? null, journal: task?.journal ?? [],
         }));
       } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
       return;

@@ -176,7 +176,10 @@ export function TankStatusBar({ working, muted, reduced, onToggleMuted }: {
             }`}
           />
         )}
-        <span className={`flex-1 min-w-0 truncate text-[11px] font-semibold ${alarm ? 'text-rose-700' : 'text-slate-700'}`}>
+        {/* Wrap to a second line rather than hard-truncating: a status the user can't read
+            ("…default, 2 tas…") is worse than a row one line taller. line-clamp-2 keeps it
+            bounded, and items-center still centres the counts against the taller block. */}
+        <span className={`flex-1 min-w-0 line-clamp-2 leading-snug text-2xs font-semibold ${alarm ? 'text-rose-700' : 'text-slate-700'}`}>
           {alarm ? alarm.text : line}
         </span>
 

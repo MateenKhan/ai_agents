@@ -19,9 +19,9 @@ const fmtAgo = (iso: string) => fmtMins(Date.now() - new Date(iso).getTime()) + 
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+    <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
       <p className="eyebrow">{label}</p>
-      <p className="text-2xl font-bold text-slate-900 mt-1">{value}</p>
+      <p className="text-2xl font-bold text-slate-900 mt-0.5">{value}</p>
       {sub && <p className="text-2xs text-slate-500 mt-0.5">{sub}</p>}
     </div>
   );
@@ -34,6 +34,19 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
         {icon} {title}
       </h3>
       {children}
+    </div>
+  );
+}
+
+// Compact single-line variant — for sections that hold only one row or a placeholder,
+// so a lone item doesn't eat a full padded card's height.
+function ThinSection({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 shadow-sm flex items-center gap-3">
+      <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-900 shrink-0">
+        {icon} {title}
+      </h3>
+      <div className="ml-auto min-w-0">{children}</div>
     </div>
   );
 }
@@ -100,7 +113,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
   const neverSearched = [...claimedAgents].filter(a => !(dbUsage ?? []).some(u => u.agentName === a));
 
   return (
-    <div className="p-3 sm:p-4 space-y-4 pb-24 h-full overflow-y-auto custom-scrollbar" data-feature-id="tasks-analytics-tab">
+    <div className="p-3 sm:p-4 space-y-3 pb-24 h-full overflow-y-auto custom-scrollbar" data-feature-id="tasks-analytics-tab">
       {/* Headline stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Defined" value={tasks.length} sub={`${byStatus['AVAILABLE'] || 0} available, ${byStatus['TODO'] || 0} todo`} />
@@ -109,11 +122,20 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
         <StatCard label="Stuck" value={stuck.length} sub={`${byStatus['BLOCKED'] || 0} blocked, ${byStatus['WORKING'] || 0} working`} />
       </div>
 
-      {/* Models */}
-      <Section icon={<Cpu size={14} className="text-accent-600" />} title="Models used">
-        {Object.keys(byModel).length === 0 ? (
-          <p className="text-xs text-slate-500">No model data yet — recorded on each dispatch (set CLAUDE_MODEL env to name it explicitly).</p>
-        ) : (
+      {/* Models — a lone bar or an empty state collapses to a thin single line */}
+      {Object.keys(byModel).length <= 1 ? (
+        <ThinSection icon={<Cpu size={14} className="text-accent-600" />} title="Models used">
+          {Object.keys(byModel).length === 0 ? (
+            <span className="text-xs text-slate-500">No model data yet — set CLAUDE_MODEL env to name it.</span>
+          ) : (
+            <span className="flex items-center gap-2 text-xs">
+              <span className="font-mono text-slate-800 truncate">{Object.entries(byModel)[0][0]}</span>
+              <span className="font-semibold text-slate-600 shrink-0">{Object.entries(byModel)[0][1]}</span>
+            </span>
+          )}
+        </ThinSection>
+      ) : (
+        <Section icon={<Cpu size={14} className="text-accent-600" />} title="Models used">
           <div className="space-y-1.5">
             {Object.entries(byModel).sort((a, b) => b[1] - a[1]).map(([model, count]) => (
               <div key={model} className="flex items-center gap-3">
@@ -121,18 +143,27 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
                 <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div className="h-full bg-accent-500 rounded-full" style={{ width: `${(count / tasks.length) * 100}%` }} />
                 </div>
-                <span className="text-xs font-bold text-slate-600 w-8 text-right">{count}</span>
+                <span className="text-xs font-semibold text-slate-600 w-8 text-right">{count}</span>
               </div>
             ))}
           </div>
-        )}
-      </Section>
+        </Section>
+      )}
 
-      {/* Slowest tasks */}
-      <Section icon={<Clock size={14} className="text-amber-700" />} title="Slowest completions">
-        {slowest.length === 0 ? (
-          <p className="text-xs text-slate-500">No completed timed tasks yet.</p>
-        ) : (
+      {/* Slowest tasks — a single completion or the empty state collapses to a thin line */}
+      {slowest.length <= 1 ? (
+        <ThinSection icon={<Clock size={14} className="text-amber-700" />} title="Slowest completions">
+          {slowest.length === 0 ? (
+            <span className="text-xs text-slate-500">No completed timed tasks yet.</span>
+          ) : (
+            <span className="flex items-center gap-2 text-xs min-w-0">
+              <span className="text-slate-800 truncate">{slowest[0].title}</span>
+              <span className="font-bold text-amber-700 shrink-0">{fmtMins(slowest[0].ms)}{slowest[0].attempts ? ` · ${slowest[0].attempts} attempt${slowest[0].attempts > 1 ? 's' : ''}` : ''}</span>
+            </span>
+          )}
+        </ThinSection>
+      ) : (
+        <Section icon={<Clock size={14} className="text-amber-700" />} title="Slowest completions">
           <div className="space-y-2">
             {slowest.map(t => (
               <div key={t.id} className="flex items-center justify-between gap-3 text-xs">
@@ -141,8 +172,8 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
               </div>
             ))}
           </div>
-        )}
-      </Section>
+        </Section>
+      )}
 
       {/* Agent time by role — who took how long (actual, measured) */}
       <Section icon={<Clock size={14} className="text-fuchsia-600" />} title="Agent time by role — who took how long">

@@ -195,10 +195,11 @@ function rowToTask(r: any): Task {
     // a JSON object or null; consultAnswer is a plain string.
     consultLog: (() => { const v = parseMaybeJson(r.consultLog); return Array.isArray(v) ? v : []; })(),
     pendingConsult: (() => { const v = parseMaybeJson(r.pendingConsult); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; })(),
+    journal: (() => { const v = parseMaybeJson(r.journal); return Array.isArray(v) ? v : []; })(),
   };
 }
 
-const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath,intent,ownerNote,ownerBounces,lastOutcome,handoffFrom,hops,consultLog,pendingConsult,consultAnswer';
+const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath,intent,ownerNote,ownerBounces,lastOutcome,handoffFrom,hops,consultLog,pendingConsult,consultAnswer,failureDetail,plan,journal';
 
 function toRow(t: Partial<Task>): any[] {
   return [
@@ -213,7 +214,8 @@ function toRow(t: Partial<Task>): any[] {
     t.logPath ?? null, t.intent ?? null, t.ownerNote ?? null, t.ownerBounces ?? 0,
     t.lastOutcome ?? null, t.handoffFrom ?? null, t.hops ?? 0,
     JSON.stringify(t.consultLog ?? []), t.pendingConsult ? JSON.stringify(t.pendingConsult) : null,
-    t.consultAnswer ?? null,
+    t.consultAnswer ?? null, t.failureDetail ?? null, t.plan ?? null,
+    JSON.stringify(t.journal ?? []),
   ];
 }
 
@@ -675,6 +677,9 @@ export async function updateProject(id: string, patch: { name?: string; repoPath
 export async function deleteProject(id: string): Promise<void> {
   if (id === 'default') throw new Error('cannot delete the default project');
   const s = await store();
+  // Agent memory keys on taskId (not projectId), so drop this project's memory rows via its
+  // tasks BEFORE the tasks themselves are deleted — otherwise they orphan in memory forever.
+  await s.run(`DELETE FROM memory WHERE taskId IN (SELECT id FROM tasks WHERE projectId = ?)`, [id]);
   await s.run(`DELETE FROM tasks WHERE projectId = ?`, [id]);
   // Deleting a project must NOT delete git credentials. Tokens and GitHub Apps are
   // account-owned and shared by every project — dropping them here used to destroy the

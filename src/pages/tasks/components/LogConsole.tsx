@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Tooltip } from './Tooltip';
-import { RefreshCw, Pause, Play, Copy, Check, ArrowDownToLine, Clock, Trash2, SlidersHorizontal } from 'lucide-react';
+import { RefreshCw, Pause, Play, Copy, Check, ArrowDownToLine, Clock, Trash2, SlidersHorizontal, Maximize2, Minimize2 } from 'lucide-react';
 
 /**
  * LogConsole — the ONE log/terminal component used everywhere in the app.
@@ -61,6 +62,9 @@ export interface LogConsoleProps {
   bare?: boolean;
   /** Fill the parent (flex-1) instead of a fixed max-height (for full-tab consoles). */
   fill?: boolean;
+  /** Offer a full-screen button in the toolbar. A cramped max-h-64 log in a modal is where
+   *  this earns its place; a full-tab console (`fill`) already has the room. */
+  fullscreenable?: boolean;
   maxHeight?: string;
   empty?: string;
   className?: string;
@@ -118,12 +122,22 @@ function parseLine(msg: string): Parsed {
 }
 
 export function LogConsole({
-  lines, text, title, live, footer, toolbarLeft,
+  lines, text, title, live, footer, toolbarLeft, fullscreenable,
   searchable, timeToggle, sizeControls, historyControl, liveControl, tailControl, copyable, onRefresh, onClear, controlsKey,
   onLiveChange, historyOptions = [200, 400, 1000, 5000], defaultHistory = 400, onHistoryLengthChange,
   parsed = false, bare, fill, maxHeight = 'max-h-52', empty = '…', className = '',
 }: LogConsoleProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  // Esc leaves fullscreen; a log you maximised to read shouldn't trap you.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+  // In fullscreen the body must fill height regardless of the caller's `fill`/`maxHeight`.
+  const ff = fill || fullscreen;
   const [filter, setFilter] = useState('');
   const [showTime, setShowTime] = useState(false);
   const [fontSize, setFontSize] = useState(13);
@@ -202,7 +216,9 @@ export function LogConsole({
   const bodyInner = shown.length === 0
     ? <span className="text-slate-500">{filter ? 'No lines match the filter.' : empty}</span>
     : !parsed
-      ? shown.map((l, i) => <div key={i} className="whitespace-pre-wrap break-words">{l}</div>)
+      // text-slate-300 to match parsed lines: without a colour these inherit the app's dark
+      // body text and render invisibly on the dark terminal surface (Run/Clone/Index logs).
+      ? shown.map((l, i) => <div key={i} className="whitespace-pre-wrap break-words text-slate-300">{l}</div>)
       : (() => {
         // Collapse consecutive "noise" lines (reads/searches) into a foldable group.
         const blocks: Array<{ g: Array<{ raw: string; i: number }> } | { l: { raw: string; i: number } }> = [];
@@ -227,14 +243,14 @@ export function LogConsole({
   const body = (
     <div
       ref={bodyRef}
-      className={`${fill ? 'flex-1' : maxHeight} overflow-y-auto custom-scrollbar font-mono leading-relaxed ${bare ? 'p-2.5' : 'p-4'} ${bare && !fill ? className : ''}`}
+      className={`${ff ? 'flex-1 min-h-0' : maxHeight} overflow-y-auto custom-scrollbar font-mono leading-relaxed ${bare ? 'p-2.5' : 'p-4'} ${bare && !ff ? className : ''}`}
       style={{ fontSize }}
     >
       {bodyInner}
     </div>
   );
 
-  const hasToolbar = searchable || timeToggle || sizeControls || historyControl || liveControl || tailControl || copyable || onRefresh || onClear || toolbarLeft || title;
+  const hasToolbar = searchable || timeToggle || sizeControls || historyControl || liveControl || tailControl || copyable || onRefresh || onClear || toolbarLeft || title || fullscreenable;
 
   const toolbar = hasToolbar && (
     <div className="flex items-center gap-2 flex-wrap">
@@ -319,6 +335,16 @@ export function LogConsole({
             {copied ? <Check size={15} /> : <Copy size={15} />}
           </button></Tooltip>
         )}
+        {fullscreenable && (
+          <Tooltip label={fullscreen ? 'Exit full screen' : 'Full screen'}><button
+            onClick={() => setFullscreen(v => !v)}
+            aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
+            data-feature-id="logs-fullscreen"
+            className={`${toolbarBtn} text-slate-600 bg-white border-slate-300 hover:bg-slate-50`}
+          >
+            {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button></Tooltip>
+        )}
         {onClear && show('clear') && (
           <Tooltip label="Clear this log"><button
             onClick={onClear}
@@ -379,15 +405,28 @@ export function LogConsole({
   // Bare mode: just the scrolling body (for slotting into a panel with its own chrome).
   if (bare && !hasToolbar) return body;
 
-  return (
-    <div className={`${fill ? 'flex flex-col h-full min-h-0' : ''} space-y-2 ${!bare && !fill ? className : ''}`}>
+  const content = (
+    <div className={`${ff ? 'flex flex-col h-full min-h-0' : ''} space-y-2 ${!bare && !ff ? className : ''}`}>
       {toolbar}
-      <div className={`${fill ? 'flex-1 min-h-0 flex flex-col' : ''} bg-surface-terminal border border-slate-300 rounded-xl overflow-hidden`}>
+      <div className={`${ff ? 'flex-1 min-h-0 flex flex-col' : ''} bg-surface-terminal border border-slate-300 rounded-xl overflow-hidden`}>
         {body}
       </div>
       {footer && <div className="text-2xs text-slate-500 shrink-0">{footer}</div>}
     </div>
   );
+
+  // Portalled to <body> so the overlay escapes any clipping/transformed ancestor (the Git
+  // modal, a slide-over). Padded so the console keeps its rounded frame against the edges.
+  if (fullscreen) {
+    return createPortal(
+      <div className="fixed inset-0 z-[1200] bg-slate-900/70 backdrop-blur-sm p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Log — full screen" data-feature-id="logs-fullscreen-overlay">
+        <div className="w-full h-full flex flex-col">{content}</div>
+      </div>,
+      document.body,
+    );
+  }
+
+  return content;
 }
 
 export default LogConsole;

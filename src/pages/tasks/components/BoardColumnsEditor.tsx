@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tooltip } from './Tooltip';
-import { Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, ArrowUp, ArrowDown, EyeOff } from 'lucide-react';
 import type { Column } from '../types';
 import { BUILTIN_COLUMNS, makeColumnId } from '../boardConfig';
 
@@ -38,7 +38,7 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
   const addBuiltin = (b: Column) => onChange([...columns, b]);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <section>
         <div className="flex items-center justify-between mb-3">
           <h3 className="eyebrow">Swimlanes ({columns.length})</h3>
@@ -51,19 +51,19 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
           </button>
         </div>
 
-        <div className="space-y-2.5">
+        <div className="space-y-1.5">
           {columns.map((lane, i) => (
-            <div key={lane.id} className="flex items-center gap-3 p-3 rounded-xl border bg-slate-50 border-slate-200">
-              <div className="flex flex-col gap-0.5 shrink-0">
-                <Tooltip label="Move up"><button onClick={() => move(lane.id, -1)} disabled={i === 0} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowUp size={14} /></button></Tooltip>
-                <Tooltip label="Move down"><button onClick={() => move(lane.id, 1)} disabled={i === columns.length - 1} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowDown size={14} /></button></Tooltip>
+            <div key={lane.id} className="flex items-center gap-2 p-2 rounded-lg border bg-slate-50 border-slate-200">
+              <div className="flex flex-col shrink-0">
+                <Tooltip label="Move up"><button onClick={() => move(lane.id, -1)} disabled={i === 0} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowUp size={13} /></button></Tooltip>
+                <Tooltip label="Move down"><button onClick={() => move(lane.id, 1)} disabled={i === columns.length - 1} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowDown size={13} /></button></Tooltip>
               </div>
 
               <input
                 type="color"
                 value={lane.color}
                 onChange={e => patch(lane.id, { color: e.target.value })}
-                className="w-8 h-8 rounded-lg border border-slate-300 bg-white cursor-pointer shrink-0 p-0.5"
+                className="w-7 h-7 rounded-md border border-slate-300 bg-white cursor-pointer shrink-0 p-0.5"
                 aria-label="Lane color"
               />
 
@@ -71,23 +71,34 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
                 type="text"
                 value={lane.label}
                 onChange={e => patch(lane.id, { label: e.target.value })}
-                className="flex-1 min-w-0 bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-bold text-slate-800 focus:outline-none focus:border-accent-400"
+                className="flex-1 min-w-0 bg-white border border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:border-accent-400"
               />
 
-              <span className="hidden sm:inline text-[9px] font-bold text-slate-500 uppercase tracking-tighter shrink-0">
+              {/* Fixed-width status column so every input lines up (a short label like DONE no
+                  longer lets its row's input grow wider than the others). */}
+              <span className="hidden sm:block w-16 shrink-0 text-right text-[9px] font-bold text-slate-500 uppercase tracking-tighter truncate">
                 {lane.builtin ? lane.id : 'custom'}
               </span>
 
-              <Tooltip label="Remove lane"><button
-                onClick={() => remove(lane.id)}
-                className="p-1.5 rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors shrink-0"
-              >
-                <Trash2 size={15} />
-              </button></Tooltip>
+              {/* Built-in lanes are re-addable (below), so removing one only HIDES it — an EyeOff,
+                  not a destructive trash. Custom lanes are a real delete. Matches the danger tiers. */}
+              {lane.builtin ? (
+                <Tooltip label="Hide from board — re-add below anytime"><button
+                  onClick={() => remove(lane.id)}
+                  aria-label="Hide lane"
+                  className="p-1.5 rounded-md text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors shrink-0"
+                ><EyeOff size={15} /></button></Tooltip>
+              ) : (
+                <Tooltip label="Delete lane"><button
+                  onClick={() => remove(lane.id)}
+                  aria-label="Delete lane"
+                  className="p-1.5 rounded-md text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors shrink-0"
+                ><Trash2 size={15} /></button></Tooltip>
+              )}
             </div>
           ))}
           {columns.length === 0 && (
-            <p className="text-2xs text-amber-700 font-medium p-3 bg-amber-50 border border-amber-200 rounded-xl">Add at least one lane.</p>
+            <p className="text-2xs text-amber-700 font-medium p-3 bg-amber-50 border border-amber-200 rounded-lg">Add at least one lane.</p>
           )}
         </div>
       </section>

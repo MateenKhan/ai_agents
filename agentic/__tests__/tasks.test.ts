@@ -237,6 +237,32 @@ describe('consult columns round-trip', () => {
   });
 });
 
+// The failure/handoff columns added for the architect-review gaps. A COLS/toRow misalignment
+// would surface as a value in the wrong column, so this pins all three at once.
+describe('failureDetail / plan / journal round-trip', () => {
+  it('stores and reads back failureDetail, plan, and the journal intact', async () => {
+    await createTask({
+      id: 'gaps1', title: 'g', status: 'WORKING', hops: 3,
+      failureDetail: 'crash\nTypeError: x is undefined',
+      plan: 'Step 1: do the thing. Step 2: test it.',
+      journal: [{ ts: '2020-01-01T00:00:00Z', stage: 'build', agent: 'dev', outcome: 'fail:crash', note: 'boom' }],
+    });
+    const t = await getTask('gaps1');
+    expect(t!.failureDetail).toBe('crash\nTypeError: x is undefined');
+    expect(t!.plan).toBe('Step 1: do the thing. Step 2: test it.');
+    expect(t!.journal).toEqual([{ ts: '2020-01-01T00:00:00Z', stage: 'build', agent: 'dev', outcome: 'fail:crash', note: 'boom' }]);
+    expect(t!.hops).toBe(3); // neighbouring column not corrupted
+  });
+
+  it('defaults to null detail/plan and an empty journal', async () => {
+    await createTask({ id: 'gaps2', title: 'g2', status: 'WORKING' });
+    const t = await getTask('gaps2');
+    expect(t!.failureDetail ?? null).toBeNull();
+    expect(t!.plan ?? null).toBeNull();
+    expect(t!.journal).toEqual([]);
+  });
+});
+
 describe('workers heartbeat + staleness', () => {
   it('a freshly-registered/heartbeat worker is not stale; a wide window makes it stale', async () => {
     await registerWorker('wkr-1');

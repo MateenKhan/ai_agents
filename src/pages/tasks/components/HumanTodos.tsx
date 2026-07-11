@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { X, CheckCircle2, XCircle, GitBranch, ClipboardCheck, AlertCircle, BookOpen, ChevronDown, ExternalLink, Loader2, Eye, Search } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, CheckCircle2, XCircle, GitBranch, ClipboardCheck, AlertCircle, BookOpen, ChevronDown, ExternalLink, Loader2, Eye, Search, FileCode2 } from 'lucide-react';
 import type { Task } from '../types';
-import { API_BASE } from '../../../apiBase';
+import { API_BASE, getActiveProject } from '../../../apiBase';
 import { SlideOver } from './SlideOver';
+import { ChangesPanel } from './ChangesPanel';
+import { inferPreviewable } from '../previewable';
 
 interface HumanTodosProps {
   isOpen: boolean;
@@ -24,9 +26,30 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
   const [specs, setSpecs] = useState<Record<string, string | null>>({}); // specName → content
   const [previews, setPreviews] = useState<Record<string, { status: string; url?: string; port?: number; apiPort?: number; error?: string; logTail?: string; logName?: string }>>({});
   const [query, setQuery] = useState('');
+  // "Code changes" is opened per card, and only then does ChangesPanel mount and fetch — a
+  // 10-task review queue must not fire 10 diff requests on open.
+  const [changesOpen, setChangesOpen] = useState<Set<string>>(new Set());
+  const toggleChanges = (id: string) => setChangesOpen(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   // A single task opens automatically; a queue stays collapsed so it can be skimmed.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(tasks.length === 1 ? [tasks[0].id] : []));
   const toggle = (id: string) => setExpanded(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  // Whether each task has anything visual to preview, inferred from its changed files. A
+  // backend/library task (only non-UI files) hides the Build Preview button and reviews by diff.
+  // Fetched lazily per expanded card (meta=1 = the file list without the heavy diff), and only
+  // once per task, so a review queue doesn't fan out requests for collapsed cards.
+  const [previewable, setPreviewable] = useState<Record<string, boolean>>({});
+  const previewChecked = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    expanded.forEach(id => {
+      if (previewChecked.current.has(id)) return;
+      previewChecked.current.add(id);
+      fetch(`${API_BASE}/tasks/${encodeURIComponent(id)}/changes?project=${encodeURIComponent(getActiveProject())}&meta=1`)
+        .then(r => r.json())
+        .then(d => setPreviewable(p => ({ ...p, [id]: d.exists === false ? true : inferPreviewable(d.files) })))
+        .catch(() => setPreviewable(p => ({ ...p, [id]: true }))); // fail open — never hide on error
+    });
+  }, [expanded, tasks]);
 
   const pollPreview = (taskId: string) => {
     fetch(`${API_BASE}/tasks/${taskId}/preview`)
@@ -344,6 +367,26 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                       </details>
                     )}
 
+                    {/* Code changes — the universal review artifact. Every branch has a diff;
+                        only UI tasks build a preview. Collapsed so the card stays skimmable,
+                        and lazy so opening the card doesn't fetch every task's diff at once. */}
+                    <div className="rounded-lg border border-slate-200 overflow-hidden">
+                      <button
+                        onClick={() => toggleChanges(task.id)}
+                        aria-expanded={changesOpen.has(task.id)}
+                        data-feature-id="human-todo-toggle-changes"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-2xs font-bold uppercase tracking-wide text-slate-600 hover:bg-slate-50 transition-colors"
+                      >
+                        <ChevronDown size={14} className={`transition-transform ${changesOpen.has(task.id) ? 'rotate-180' : ''}`} />
+                        <GitBranch size={13} className="text-accent-600" /> Code changes
+                      </button>
+                      {changesOpen.has(task.id) && (
+                        <div className="p-3 border-t border-slate-100">
+                          <ChangesPanel taskId={task.id} />
+                        </div>
+                      )}
+                    </div>
+
                     {/* Live preview — build & serve the real branch on its own port before approving */}
                     <div>
                       {(() => {
@@ -377,6 +420,16 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                                 <pre className="text-micro leading-snug text-rose-800 bg-rose-50/60 border border-rose-200 rounded-lg p-2 max-h-40 overflow-auto whitespace-pre-wrap break-words">{pv.logTail}</pre>
                               )}
                               {pv.logName && <p className="text-micro text-slate-500">Full build log: open <span className="font-mono">{pv.logName}</span> in the Logs tab.</p>}
+                            </div>
+                          );
+                        }
+                        // Non-visual task (only non-UI files changed) — nothing to serve, so
+                        // hide the button and point the reviewer at the diff instead.
+                        if (previewable[task.id] === false) {
+                          return (
+                            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-200 text-2xs text-slate-500" data-feature-id="human-todo-no-preview">
+                              <FileCode2 size={14} className="text-slate-400 shrink-0" />
+                              No visual preview — this task changed only non-UI files. Review the code changes above.
                             </div>
                           );
                         }

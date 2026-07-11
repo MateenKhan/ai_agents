@@ -138,6 +138,25 @@ export interface Task {
   /** Transient slot a read-only advisor writes its reply into. The orchestrator reads it back,
    *  appends it to consultLog, and clears it before re-dispatching the asking stage. */
   consultAnswer?: string | null;
+  /** Distilled reason the LAST run failed: the failure kind plus the tail of the run's output.
+   *  Set on every failure, cleared on a successful advance. Injected into the next attempt's
+   *  prompt so a retry sees WHY the previous one failed instead of repeating it blind. */
+  failureDetail?: string | null;
+  /** The architect's PLAN, split from `summary` so the dev's own summary cannot overwrite it.
+   *  A plan-behaviour stage's summary is copied here on advance; the dev reads `{{plan}}`. */
+  plan?: string | null;
+  /** Append-only history of what each stage did — pass, reject (with reason), failure. Feeds
+   *  both the next agent's prompt (the trail it inherits) and the human reviewer. Capped. */
+  journal?: JournalEntry[];
+}
+
+/** One line in a task's stage journal: what a stage did and when. */
+export interface JournalEntry {
+  ts: string;       // ISO timestamp
+  stage: string;    // the stage id that acted
+  agent: string;    // the role that ran it
+  outcome: string;  // 'pass' | 'reject' | 'blocked' | 'fail:<kind>' | 'conflict' …
+  note?: string;    // short context: the reject reason, the failure note, a summary headline
 }
 
 /** One completed consult: who asked (their stage), whom they asked, the question and the

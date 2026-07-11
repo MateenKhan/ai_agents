@@ -324,6 +324,7 @@ const TasksPage: React.FC = () => {
                     </>
                   )}
                   <button
+                    type="button"
                     data-feature-id={`tasks-tab-${t.id}`}
                     onClick={() => setActiveTab(t.id)}
                     className="self-stretch flex items-center gap-1.5 pl-2 pr-2"
@@ -376,12 +377,6 @@ const TasksPage: React.FC = () => {
                     )}
                   </button>
                 </Tooltip>
-                {/* The one action you take most. Never behind a menu. */}
-                <Tooltip label="New task">
-                  <button onClick={() => handleAddTask()} aria-label="New task" className={iconBtn}>
-                    <Plus size={14} strokeWidth={3} />
-                  </button>
-                </Tooltip>
                 <BoardMenu
                   onChat={() => setChatOpen(true)}
                   onRefresh={fetchTasks}
@@ -392,6 +387,13 @@ const TasksPage: React.FC = () => {
                 />
               </div>
             )}
+            {/* The one action you take most. Never behind a menu — so it lives OUTSIDE the
+                collapsible group and stays visible even when the chevron folds the rest away. */}
+            <Tooltip label="New task">
+              <button onClick={() => handleAddTask()} aria-label="New task" className={iconBtn}>
+                <Plus size={14} strokeWidth={3} />
+              </button>
+            </Tooltip>
             {/* Chevron points AT the icons: left when they are hidden (they will appear to the
                 left), right when shown (they will fold away to the right). Direction is a
                 promise about where things go, not decoration. */}

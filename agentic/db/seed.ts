@@ -17,6 +17,13 @@
 //   board_settings  Only the keys in DEFAULT_BOARD_SETTINGS. `heartbeat` is live runtime
 //                   state, `code_index:<project>` points at a real checkout, and `default`
 //                   holds the orchestrator's run/pause state. None are configuration.
+//
+// A `delete` (factory reset) ALSO clears ORPHANED logs.db telemetry (agent_logs,
+// agent_db_usage): rows for tasks no longer on the board, plus the __system__ orchestrator
+// noise. It KEEPS the run history of any task still on the board — failed, completed, or
+// waiting for review — so a reset never destroys logs you might still want to read. It is
+// best-effort: a busy logs.db leaves the history and the reset still succeeds. `overwrite`
+// touches no logs at all.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Store } from './store';
@@ -38,6 +45,12 @@ export type RestoreMode =
 export const RESTORABLE_TABLES = ['agents', 'board_settings'] as const;
 export type RestorableTable = (typeof RESTORABLE_TABLES)[number];
 
+/** Disposable telemetry in logs.db, wiped by a `delete` (factory reset) but NOT by `overwrite`.
+ *  These are run history / usage audit — not configuration and not user work. logs.db is
+ *  gitignored and rebuilds itself as agents run, so clearing it is always safe. `overwrite`
+ *  leaves them so the everyday "revert my config" does not also erase the run history. */
+export const TRANSIENT_LOG_TABLES = ['agent_logs', 'agent_db_usage'] as const;
+
 /** The only `board_settings` keys that are configuration. Everything else in that table is
  *  runtime state or points at a real checkout — see the header. */
 export const DEFAULT_BOARD_SETTINGS: Readonly<Record<string, unknown>> = Object.freeze({
@@ -57,6 +70,10 @@ export interface RestoreResult {
   mode: RestoreMode;
   agents: { deleted: number; written: number };
   boardSettings: { deleted: number; written: number };
+  /** Rows removed from the disposable logs.db telemetry — only non-zero for `delete`.
+   *  `error` is set (and deleted stays 0) when logs.db was busy/unreadable: the reset still
+   *  succeeds, the run history is just left in place. */
+  logs: { deleted: number; error?: string };
   /** Named so the caller can show the user exactly what was spared. */
   untouched: string[];
 }
@@ -94,33 +111,62 @@ export async function restoreDefaults(mode: RestoreMode): Promise<RestoreResult>
     mode,
     agents: { deleted: 0, written: 0 },
     boardSettings: { deleted: 0, written: 0 },
+    logs: { deleted: 0 },
     untouched: ['projects', 'tasks', 'memory', 'git_tokens', 'github_apps', 'workers', 'locks'],
   };
 
-  // ── agents ──────────────────────────────────────────────────────────────────
-  if (mode === 'delete') {
-    const before = Number((await s.get(`SELECT COUNT(*) c FROM agents`) as any)?.c ?? 0);
-    await s.exec(`DELETE FROM agents`);
-    result.agents.deleted = before;
-  }
-  for (const a of DEFAULT_AGENTS) {
-    await insertAgent(s, a); // upsert on role — safe in both modes
-    result.agents.written++;
-  }
+  // ── agents + board_settings ─────────────────────────────────────────────────
+  // Both live in tasks.db, so do them as ONE transaction: a failure can't leave a
+  // half-reseeded roster with the old settings, or vice versa. (logs.db is a separate
+  // file, handled best-effort below — it can never join this transaction.)
+  await s.tx(async t => {
+    if (mode === 'delete') {
+      const before = Number((await t.get(`SELECT COUNT(*) c FROM agents`) as any)?.c ?? 0);
+      await t.exec(`DELETE FROM agents`);
+      result.agents.deleted = before;
+    }
+    for (const a of DEFAULT_AGENTS) {
+      await insertAgent(t, a); // upsert on role — safe in both modes
+      result.agents.written++;
+    }
 
-  // ── board_settings (declared keys ONLY) ─────────────────────────────────────
-  if (mode === 'delete') {
-    for (const id of RESTORABLE_SETTING_KEYS) {
-      const row = await s.get(`SELECT id FROM board_settings WHERE id = ?`, [id]);
-      if (row) {
-        await s.run(`DELETE FROM board_settings WHERE id = ?`, [id]);
-        result.boardSettings.deleted++;
+    // board_settings — declared config keys ONLY.
+    if (mode === 'delete') {
+      for (const id of RESTORABLE_SETTING_KEYS) {
+        const row = await t.get(`SELECT id FROM board_settings WHERE id = ?`, [id]);
+        if (row) {
+          await t.run(`DELETE FROM board_settings WHERE id = ?`, [id]);
+          result.boardSettings.deleted++;
+        }
       }
     }
-  }
-  for (const [id, value] of Object.entries(DEFAULT_BOARD_SETTINGS)) {
-    await writeBoardSetting(s, id, value);
-    result.boardSettings.written++;
+    for (const [id, value] of Object.entries(DEFAULT_BOARD_SETTINGS)) {
+      await writeBoardSetting(t, id, value);
+      result.boardSettings.written++;
+    }
+  });
+
+  // ── logs.db telemetry (delete-mode only) ────────────────────────────────────
+  // Best-effort: logs.db is a SEPARATE file AND the orchestrator's hot path, so a busy or
+  // unreadable logs.db must NOT fail the reset — the config above already succeeded and is
+  // what matters. We KEEP any row tied to a task still on the board (a failed, completed, or
+  // in-review task keeps its run history) and delete only orphans: rows for tasks that no
+  // longer exist, plus the taskId='__system__' orchestrator noise.
+  if (mode === 'delete') {
+    try {
+      const live = (await s.all(`SELECT id FROM tasks`) as Array<{ id: string }>).map(r => r.id);
+      await ensureMigrated('logs');
+      const logs = getStore('logs');
+      for (const table of TRANSIENT_LOG_TABLES) {
+        // `NOT IN ()` is a syntax error; an empty board means every row is an orphan.
+        const where = live.length ? `WHERE taskId NOT IN (${live.map(() => '?').join(',')})` : '';
+        const before = Number((await logs.get(`SELECT COUNT(*) c FROM ${table} ${where}`, live) as any)?.c ?? 0);
+        await logs.run(`DELETE FROM ${table} ${where}`, live);
+        result.logs.deleted += before;
+      }
+    } catch (e: any) {
+      result.logs.error = String(e?.message || e);
+    }
   }
 
   return result;
@@ -136,6 +182,8 @@ export async function previewRestore(mode: RestoreMode): Promise<{
   customAgentsRemoved: string[];
   builtInAgentsReverted: string[];
   settingsReverted: string[];
+  /** logs.db tables cleared, with their current row counts — only for `delete`. */
+  logsCleared: string[];
   untouched: string[];
 }> {
   await ensureMigrated('tasks');
@@ -145,12 +193,27 @@ export async function previewRestore(mode: RestoreMode): Promise<{
   const builtIn = new Set(DEFAULT_AGENTS.map(a => a.role));
   const custom = rows.map(r => r.role).filter(r => !builtIn.has(r as any));
 
+  // logs.db lives in its own database — read the ORPHAN counts (rows a delete would actually
+  // remove: not tied to any live task), so the preview matches what runs. Delete-mode only.
+  let logsCleared: string[] = [];
+  if (mode === 'delete') {
+    const live = (await s.all(`SELECT id FROM tasks`) as Array<{ id: string }>).map(r => r.id);
+    await ensureMigrated('logs');
+    const logs = getStore('logs');
+    logsCleared = await Promise.all(TRANSIENT_LOG_TABLES.map(async table => {
+      const where = live.length ? `WHERE taskId NOT IN (${live.map(() => '?').join(',')})` : '';
+      const c = Number((await logs.get(`SELECT COUNT(*) c FROM ${table} ${where}`, live) as any)?.c ?? 0);
+      return `${table} (${c} ${c === 1 ? 'row' : 'rows'})`;
+    }));
+  }
+
   return {
     mode,
     // `overwrite` keeps custom agents; `delete` wipes the table first, so they go.
     customAgentsRemoved: mode === 'delete' ? custom : [],
     builtInAgentsReverted: DEFAULT_AGENTS.map(a => a.role),
     settingsReverted: [...RESTORABLE_SETTING_KEYS],
+    logsCleared,
     untouched: ['projects', 'tasks', 'memory', 'git_tokens', 'github_apps', 'workers', 'locks',
                 'board_settings: heartbeat, code_index:*, default'],
   };

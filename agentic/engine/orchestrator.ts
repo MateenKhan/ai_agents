@@ -53,7 +53,7 @@ async function reconcileContextAfterMerge(taskId: string): Promise<void> {
     if (removed.length) log(taskId, `🧹 context: dropped ${removed.length} file(s) deleted by the merge`, 'info');
   } catch { /* context reconcile is best-effort — never block a merge */ }
 }
-import type { AgenticConfig, AgentConfig, AgentRole, Task, FailureKind, QaVerdict, RunResult } from '../types';
+import type { AgenticConfig, AgentConfig, AgentRole, Task, FailureKind, QaVerdict, RunResult, JournalEntry } from '../types';
 import { setConfig, getConfig } from '../runtime-context';
 import {
   getAllTasks, getTask, updateTask, getBoardSettings, updateBoardSettings, beatHeartbeat, getTasksDb, getProject, listProjects, getAgentDefaults,
@@ -472,19 +472,55 @@ async function projectCap(pid: string): Promise<number> {
 }
 
 // ── retry / dead-letter ──────────────────────────────────────────────────────
-async function scheduleRetry(id: string, attempts: number, note: string): Promise<void> {
+/** The durable failure summary the NEXT attempt reads: the failure kind plus the last ~40 lines
+ *  of the run's output. `lastError` stays a short one-liner (for the board/triage); this is the
+ *  fuller evidence the retrying agent needs so it does not repeat the same mistake blind. */
+/** Scrub the obvious secrets out of captured agent output before it is stored in the task,
+ *  injected into the next prompt, or shown to a human. Targeted, not exhaustive — GitHub tokens,
+ *  `Bearer`/`token=`/`password=` pairs, and `user:pass@` embedded in URLs. */
+export function redactSecrets(s: string): string {
+  return (s || '')
+    // URL credentials FIRST — otherwise the `token:` pattern below greedily eats the rest of the
+    // URL (still safe, but it mangles the host). Redacting `user:pass@` here keeps the host visible.
+    .replace(/(https?:\/\/)[^@/\s]+@/g, '$1***@')
+    .replace(/gh[posur]_[A-Za-z0-9_]{20,}/g, 'gh?_***')
+    .replace(/\b(Bearer|token|password|secret|api[_-]?key)\b(\s*[:=]\s*|\s+)\S+/gi, '$1$2***');
+}
+
+export function failureDetailFrom(label: string, outputTail: string): string {
+  const tail = redactSecrets((outputTail || '').split('\n').slice(-40).join('\n').trim());
+  return `${label}${tail ? `\n${tail}` : ''}`;
+}
+
+// ── stage journal ──────────────────────────────────────────────────────────────
+const JOURNAL_CAP = 20; // keep the last N entries; the trail, not the whole archaeology.
+/** The task's journal with one entry appended (timestamped, capped). Returned so the caller can
+ *  fold it into the SAME updateTask as the transition — one write, no separate round-trip. */
+export function withJournal(task: Task, entry: Omit<JournalEntry, 'ts'>): JournalEntry[] {
+  const prior = Array.isArray(task.journal) ? task.journal : [];
+  const note = entry.note ? String(entry.note).replace(/\s+/g, ' ').trim().slice(0, 200) : undefined;
+  return [...prior, { ts: new Date().toISOString(), ...entry, note }].slice(-JOURNAL_CAP);
+}
+async function scheduleRetry(id: string, attempts: number, note: string, detail?: string): Promise<void> {
   const backoff = Math.min(5 * 60 * 1000, 5000 * 2 ** attempts);
-  await updateTask(id, { nextRetryAt: new Date(Date.now() + backoff).toISOString(), started: null, claimedBy: null, lastError: note });
+  const upd: Partial<Task> = { nextRetryAt: new Date(Date.now() + backoff).toISOString(), started: null, claimedBy: null, lastError: note };
+  // Only a GENUINE agent failure records failureDetail (fed into the retry prompt). An infra
+  // wait passes no detail — the agent never ran, so there is nothing to warn the next run about.
+  if (detail !== undefined) upd.failureDetail = detail;
+  await updateTask(id, upd);
   log(id, `↻ retry in ${Math.round(backoff / 1000)}s (attempt ${attempts}) — ${note}`, 'warning');
 }
-async function deadLetter(id: string, note: string): Promise<void> {
+async function deadLetter(id: string, note: string, detail?: string): Promise<void> {
   // Move to BLOCKED (not left in WORKING) so the failure is VISIBLE on the board with
   // its reason, instead of a stuck task masquerading as active. Heal/human can revive.
-  await updateTask(id, { status: 'BLOCKED', started: null, claimedBy: null, nextRetryAt: DEAD_LETTER_AT, lastError: note });
+  await updateTask(id, { status: 'BLOCKED', started: null, claimedBy: null, nextRetryAt: DEAD_LETTER_AT, lastError: note, failureDetail: detail ?? note });
   log(id, `☠ dead-letter → BLOCKED — ${note}. Fix the cause and re-trigger, or Heal to retry.`, 'error');
 }
-async function failTask(task: Task, kind: FailureKind, note: string): Promise<void> {
+async function failTask(task: Task, kind: FailureKind, note: string, detail?: string): Promise<void> {
   breakerFailure(kind);
+  // The durable, fuller failure summary the next attempt reads. Defaults to the short note when
+  // the caller has no run output (e.g. a watchdog kill), so every failure records SOMETHING.
+  const failDetail = detail ?? note;
   const attempts = task.attempts || 0;
   const doc = await workflowFor(projectOf(task));
   const stage = task.stage ? doc.stages.find(s => s.id === task.stage) : undefined;
@@ -511,6 +547,14 @@ async function failTask(task: Task, kind: FailureKind, note: string): Promise<vo
     qaPassed: task.qaVerdict === 'pass',
   });
 
+  // Journal every GENUINE failure (an infra wait is not the agent's fault, so it is not one) —
+  // the trail records that this stage failed and what the outcome was, for the next agent/human.
+  if (action !== 'infra-wait') {
+    const journal = withJournal(task, { stage: stage.id, agent: stage.agentRef ?? stage.id, outcome: `fail:${kind}`, note });
+    await updateTask(task.id, { journal });
+    task.journal = journal; // keep the in-memory task current for any later reads in this call
+  }
+
   switch (action) {
     case 'infra-wait': {
       // REFUND the attempt. dispatch() already spent one before the agent even reached the API,
@@ -525,12 +569,13 @@ async function failTask(task: Task, kind: FailureKind, note: string): Promise<vo
       return;
     }
     case 'retry':
-      await scheduleRetry(task.id, attempts, note);
+      await scheduleRetry(task.id, attempts, note, failDetail);
       return;
     case 'human-review':
       await updateTask(task.id, {
         stage: gate!, handoffFrom: stage.id, status: 'WORKING',
         started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0,
+        failureDetail: failDetail,
       });
       log(task.id, `🧑‍⚖️ "${stage.id}" could not finish (${note}) — passing already-verified work to "${gate}" rather than blocking it`, 'warning');
       return;
@@ -541,7 +586,7 @@ async function failTask(task: Task, kind: FailureKind, note: string): Promise<vo
       await updateTask(task.id, {
         stage: blocked!.to, handoffFrom: stage.id, lastOutcome: 'blocked', status: 'WORKING',
         started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
-        attempts: 0, rescueCount: rescues, lastError: note,
+        attempts: 0, rescueCount: rescues, lastError: note, failureDetail: failDetail,
         reviewNote: `BLOCKED — the "${stage.id}" stage failed and could not self-recover (${note}). Diagnose the root cause and REVISE the plan so a fresh run can succeed; do not just repeat the old brief.`,
       });
       log(task.id, `🩺 "${stage.id}" exhausted its retries → escalating to "${blocked!.to}" (${rescues}/${perStage?.rescues ?? MAX_RESCUE})`, 'warning');
@@ -847,7 +892,8 @@ async function applyReject(doc: WorkflowDoc, task: Task, stage: WfStage): Promis
     }
     await updateTask(task.id, {
       stage: decision.to, hops: decision.hops, lastOutcome: 'reject', handoffFrom: stage.id,
-      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0,
+      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0, failureDetail: null,
+      journal: withJournal(task, { stage: stage.id, agent: stage.agentRef ?? stage.id, outcome: 'reject', note: task.reviewNote ?? undefined }),
     });
     log(task.id, `🛑 hop cap reached (${decision.hops}/${doc.hopCap}) — sending to "${decision.to}" for a person to settle`, 'warning');
     return;
@@ -855,7 +901,8 @@ async function applyReject(doc: WorkflowDoc, task: Task, stage: WfStage): Promis
 
   await updateTask(task.id, {
     stage: decision.to, hops: decision.hops, lastOutcome: 'reject', handoffFrom: stage.id,
-    started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0,
+    started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, attempts: 0, failureDetail: null,
+    journal: withJournal(task, { stage: stage.id, agent: stage.agentRef ?? stage.id, outcome: 'reject', note: task.reviewNote ?? undefined }),
   });
   log(task.id, `↩ "${stage.id}" rejected back to its sender "${decision.to}" — hop ${decision.hops}/${doc.hopCap}`, 'warning');
 }
@@ -1045,7 +1092,8 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
         log(taskId, `🩹 "${stage.id}" reported no outcome, but the db-server was DOWN — infra fault, not the agent; retrying once healed`, 'warning');
         return;
       }
-      await failTask(fresh, 'crash', `agent finished without reporting an outcome (expected one of: ${stage.outcomes.map(o => o.when).join(', ') || 'none'})`);
+      const noReport = `agent finished without reporting an outcome (expected one of: ${stage.outcomes.map(o => o.when).join(', ') || 'none'})`;
+      await failTask(fresh, 'crash', noReport, failureDetailFrom(noReport, r.outputTail));
       return;
     }
 
@@ -1070,11 +1118,15 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
 
     // Clear started/claimedBy so the NEXT stage is dispatched, and reset attempts so the retry
     // budget counts RETRIES PER STAGE rather than cumulative dispatches across the pipeline.
+    // A plan-behaviour stage's summary IS the plan: freeze it into `plan` now, before the dev's
+    // own summary overwrites `summary`, so the build stage still reads the original brief.
     await updateTask(taskId, {
       stage: decision.to,
       handoffFrom: stage.id,          // set by the control plane; a reject returns to the sender
       lastOutcome: outcome,
-      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null, attempts: 0,
+      ...(stage.behaviour === 'plan' && fresh.summary ? { plan: fresh.summary } : {}),
+      journal: withJournal(fresh, { stage: stage.id, agent: role, outcome, note: fresh.summary ?? undefined }),
+      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null, failureDetail: null, attempts: 0,
     });
 
     if (takesMergeLock(stage)) {
@@ -1121,7 +1173,7 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
     await updateTask(taskId, {
       stage: conflict.to, handoffFrom: stage.id, lastOutcome: 'conflict',
       qaVerdict: null, status: 'WORKING',
-      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null,
+      started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null, lastError: null, failureDetail: null,
       attempts: 0, mergeBounces: bounces,
       reviewNote: `MERGE CONFLICT: your branch task/${taskId} no longer merges cleanly into ${base}. Reconcile it: run \`git rebase ${base}\` (or \`git merge ${base}\` into your branch), resolve the conflicts, re-run the sanity checks, and re-commit. Do NOT change scope — only bring your branch up to date with ${base}.`,
     });
@@ -1132,7 +1184,7 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
 
   const note = `${r.failure}: ${r.outputTail.slice(-200)}`;
   log(taskId, `❌ ${name} failed at "${stage.id}" — ${note}`, 'error');
-  await failTask((await getTask(taskId)) || fresh, r.failure, note);
+  await failTask((await getTask(taskId)) || fresh, r.failure, note, failureDetailFrom(r.failure, r.outputTail));
 }
 
 // ── watchdog + stall ─────────────────────────────────────────────────────────

@@ -158,6 +158,16 @@ const TASKS: Col[] = [
   { name: 'consultLog', type: 'text' },
   { name: 'pendingConsult', type: 'text' },
   { name: 'consultAnswer', type: 'text' },
+  // The distilled reason the LAST run failed (kind + tail of its output). Set on every failure,
+  // cleared on a successful advance. Fed back into the retry prompt so a re-run is not blind.
+  { name: 'failureDetail', type: 'text' },
+  // The architect's PLAN, kept separate from `summary`. A plan-behaviour stage's summary is
+  // copied here on advance; the dev then reads `plan` and writes its own `summary`, so the
+  // "what to build" and the "what I did" no longer fight over one column.
+  { name: 'plan', type: 'text' },
+  // Append-only stage journal (JSON array of {ts,stage,agent,outcome,note}). The trail every
+  // agent inherits and the reviewer reads — not just the latest summary.
+  { name: 'journal', type: 'text' },
 ];
 
 const BOARD_SETTINGS: Col[] = [
@@ -359,6 +369,12 @@ const ADDITIVE: Array<[string, Col]> = [
   ['tasks', { name: 'consultLog', type: 'text' }],
   ['tasks', { name: 'pendingConsult', type: 'text' }],
   ['tasks', { name: 'consultAnswer', type: 'text' }],
+  // Distilled reason the last run failed — fed into the next attempt's prompt.
+  ['tasks', { name: 'failureDetail', type: 'text' }],
+  // The architect's plan, split out of `summary` so the dev's summary cannot overwrite it.
+  ['tasks', { name: 'plan', type: 'text' }],
+  // Append-only stage journal — the trail agents and reviewers read.
+  ['tasks', { name: 'journal', type: 'text' }],
 ];
 
 /**

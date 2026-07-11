@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, cleanup } from '@testing-library/react';
 import { TaskBoard } from '../TaskBoard';
+import { ConfirmProvider } from '../ConfirmProvider';
+
+// TaskBoard's bulk-delete now goes through useConfirm(), which throws outside a provider.
+const render = (ui: React.ReactElement) => rtlRender(<ConfirmProvider>{ui}</ConfirmProvider>);
 import type { Column, Task } from '../../types';
 
 afterEach(cleanup);
@@ -57,10 +61,26 @@ describe('TaskBoard', () => {
     expect(screen.getByText('Task P')).toBeTruthy();
   });
 
-  it('shows the empty state for lanes with no tasks', () => {
+  it('shows a single New task empty state when the whole board is empty, wired to onAddTask', () => {
+    const props = baseProps();
     const cols: Column[] = [{ id: 'TODO', label: 'Todo', color: '#000' }];
-    render(<TaskBoard {...baseProps()} columns={cols} tasks={[]} />);
-    expect(screen.getByText('Empty lane. Drop a task in, or hit + to feed one.')).toBeTruthy();
+    const { container } = render(<TaskBoard {...props} columns={cols} tasks={[]} />);
+    const cta = container.querySelector('[data-feature-id="tasks-empty-new"]') as HTMLElement;
+    expect(cta).toBeTruthy();
+    expect(cta.textContent).toContain('New task');
+    fireEvent.click(cta);
+    // Reuses the same handler as the lane-header +, targeting the first lane.
+    expect(props.onAddTask).toHaveBeenCalledWith('TODO');
+  });
+
+  it('shows a quiet drop hint (not the empty-board CTA) in a lane that is empty while others have tasks', () => {
+    const cols: Column[] = [
+      { id: 'TODO', label: 'Todo', color: '#000' },
+      { id: 'DONE', label: 'Done', color: '#000' },
+    ];
+    const { container } = render(<TaskBoard {...baseProps()} columns={cols} tasks={[task('A', 'TODO')]} />);
+    expect(screen.getByText('Drop here')).toBeTruthy();
+    expect(container.querySelector('[data-feature-id="tasks-empty-new"]')).toBeNull();
   });
 
   it('the lane add button calls onAddTask with the lane id', () => {

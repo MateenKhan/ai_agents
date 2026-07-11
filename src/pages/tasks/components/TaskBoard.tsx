@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import type { Task, Column, TaskControlAction } from '../types';
 import { COLUMNS } from '../types';
 import { TaskCard } from './TaskCard';
-import { btnGhostCaps } from '../ui';
+import { btnGhostCaps, btnDanger, btnPrimarySm } from '../ui';
+import { useConfirm } from './ConfirmProvider';
 import { Plus, Trash2, X } from 'lucide-react';
 
 interface DragState {
@@ -61,6 +62,10 @@ function DropIndicator({ color }: { color: string }) {
 
 export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAddTask, onMove, onBulkDelete, onView, onOpenLogs, triggeringIds, controllingIds, columns }: TaskBoardProps) {
   const lanes = columns ?? COLUMNS;
+  // Whole board empty = no visible lane holds a single card. Drives the ONE centered
+  // empty state (with a real "New task" CTA) instead of an identical hint in every lane.
+  const boardEmpty = !lanes.some(col => tasks.some(t => t.status === col.id));
+  const confirm = useConfirm();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<DragState | null>(null);
 
@@ -105,13 +110,25 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
 
   const clearSelection = () => setSelected(new Set());
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
+    const n = selected.size;
+    // Bulk delete is irreversible and used to fire on a single click. A count-aware confirm
+    // is the friction the danger tier promises; the button carries the colour, this carries
+    // the stop. Not type-to-confirm — that gate is for deleting a whole project/repo, and
+    // demanding typing to clear a few selected tasks would train users to ignore the dialog.
+    const ok = await confirm({
+      title: `Delete ${n} ${n === 1 ? 'task' : 'tasks'}?`,
+      message: `${n === 1 ? 'This task' : `These ${n} tasks`} will be permanently deleted. This cannot be undone.`,
+      confirmLabel: `Delete ${n}`,
+      tone: 'danger',
+    });
+    if (!ok) return;
     onBulkDelete([...selected]);
     clearSelection();
   };
 
   return (
-    <div className="flex gap-3 sm:gap-4 p-3 sm:p-4 h-full overflow-x-auto overflow-y-hidden custom-scrollbar items-start snap-x snap-mandatory sm:snap-none [-webkit-overflow-scrolling:touch]">
+    <div className="relative flex gap-3 sm:gap-4 p-3 sm:p-4 h-full overflow-x-auto overflow-y-hidden custom-scrollbar items-stretch snap-x snap-mandatory sm:snap-none [-webkit-overflow-scrolling:touch]">
       {lanes.map(col => {
         const colTasks = tasks.filter(t => t.status === col.id)
           .sort((a, b) => a.priority - b.priority);
@@ -124,7 +141,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
           <div
             key={col.id}
             data-feature-id={`tasks-lane-${col.id.toLowerCase()}`}
-            className={`flex flex-col max-h-full min-w-[86vw] max-w-[86vw] sm:min-w-[300px] sm:max-w-[320px] snap-center sm:snap-align-none rounded-2xl overflow-hidden shadow-sm transition-all duration-200 border-2 ${
+            className={`flex flex-col h-full min-h-0 min-w-[86vw] max-w-[86vw] sm:min-w-[300px] sm:max-w-[320px] snap-center sm:snap-align-none rounded-2xl overflow-hidden shadow-sm transition-all duration-200 border-2 ${
               isDropTarget ? 'shadow-lg' : 'bg-slate-50 sm:hover:border-[color:var(--lane)]'
             }`}
             // Each lane is identified by its OWN colour: a tinted border at rest, and the
@@ -158,7 +175,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
                 <h2 className="text-xs font-bold uppercase tracking-widest text-slate-900 truncate">
                   {col.label}
                 </h2>
-                <span className="text-2xs font-bold px-2 py-0.5 bg-slate-100 rounded-full text-slate-600 shrink-0">
+                <span className="text-2xs font-semibold px-2 py-0.5 bg-slate-100 rounded-full text-slate-600 shrink-0">
                   {colTasks.length}
                 </span>
               </div>
@@ -180,12 +197,18 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
                 if (taskId) onMove(taskId, col.id);
                 endDrag();
               }}
-              className="flex-1 flex flex-col gap-3 p-3 overflow-y-auto custom-scrollbar [-webkit-overflow-scrolling:touch]"
+              className="flex-1 min-h-0 flex flex-col gap-3 p-3 overflow-y-auto custom-scrollbar [-webkit-overflow-scrolling:touch]"
             >
               {colTasks.length === 0 && !isDropTarget ? (
-                <div className="flex-1 flex items-center justify-center p-8 border-2 border-dashed border-slate-200 rounded-xl text-2xs font-medium text-slate-500 text-center">
-                  Empty lane. Drop a task in, or hit + to feed one.
-                </div>
+                boardEmpty ? (
+                  // The whole board is empty — the single centered CTA below owns the
+                  // "new task" affordance, so each lane is just a calm, open drop zone.
+                  <div className="flex-1" aria-hidden />
+                ) : (
+                  <div className="flex-1 flex items-center justify-center p-6 text-micro font-semibold uppercase tracking-widest text-slate-400 text-center select-none">
+                    Drop here
+                  </div>
+                )
               ) : (
                 <>
                   {colTasks.map((task, i) => (
@@ -225,6 +248,24 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
         );
       })}
 
+      {/* Empty board — ONE centered CTA over the calm, open lanes (not a hint per lane).
+          pointer-events-none lets lane headers/+ stay clickable; only the button catches clicks. */}
+      {boardEmpty && (
+        <div className="absolute inset-0 flex items-center justify-center p-6 pointer-events-none">
+          <div className="pointer-events-auto flex flex-col items-center gap-2.5 text-center max-w-xs">
+            <p className="eyebrow text-slate-400">No tasks yet</p>
+            <p className="text-2xs text-slate-500">Create your first task, or drop one into a lane to get started.</p>
+            <button
+              onClick={() => onAddTask(lanes[0]?.id ?? COLUMNS[0].id)}
+              data-feature-id="tasks-empty-new"
+              className={`${btnPrimarySm} mt-1`}
+            >
+              <Plus size={16} /> New task
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Bulk Action Bar — floats above iOS home indicator */}
       {selected.size > 0 && (
         <div
@@ -237,7 +278,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
             <button
               data-feature-id="tasks-bulk-delete"
               onClick={handleBulkDelete}
-              className="flex items-center gap-1.5 px-4 min-h-control-lg text-xs font-bold uppercase tracking-wide bg-rose-50 text-rose-600 border border-rose-300 rounded-xl active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors"
+              className={`${btnDanger} uppercase tracking-wide text-xs`}
             >
               <Trash2 size={14} /> Delete
             </button>

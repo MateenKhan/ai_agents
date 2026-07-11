@@ -2,7 +2,7 @@
      `piranha`, find-and-replace `airtajal/ai-agents` → `airtajal/piranha`. -->
 
 <p align="center">
-  <img src="docs/assets/logo-mark.svg" width="130" alt="Piranha"/>
+  <img src="docs/assets/hero.png" width="380" alt="Piranha"/>
 </p>
 
 <h1 align="center">Piranha</h1>

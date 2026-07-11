@@ -186,3 +186,37 @@ describe('renaming a stage touches no prompt', () => {
     expect(after).not.toContain('tapora');   // the dev is never told where `done` leads
   });
 });
+
+// The retry no longer runs blind: a failed attempt's distilled reason is prepended so the
+// re-dispatched agent reads WHAT went wrong (architect-review gap #1/#2).
+describe('failureDetail injection', () => {
+  it('prepends "PREVIOUS ATTEMPT FAILED" with the detail when failureDetail is set', async () => {
+    const out = await render('dev', 'build', task({ failureDetail: 'crash\nTypeError: slugify is not a function' }));
+    expect(out).toContain('PREVIOUS ATTEMPT FAILED');
+    expect(out).toContain('TypeError: slugify is not a function');
+  });
+
+  it('says nothing about a previous failure on a clean first run', async () => {
+    const out = await render('dev', 'build');
+    expect(out).not.toContain('PREVIOUS ATTEMPT FAILED');
+  });
+});
+
+// The stage journal gives a re-dispatched or downstream agent the trail, not just the latest
+// summary (architect-review gap #4).
+describe('stage journal injection', () => {
+  it('renders STAGE HISTORY from the journal, most-recent-last', async () => {
+    const out = await render('dev', 'build', task({ journal: [
+      { ts: '2020-01-01T00:00:00Z', stage: 'plan', agent: 'architect', outcome: 'done', note: 'the plan' },
+      { ts: '2020-01-01T00:05:00Z', stage: 'qa', agent: 'qa', outcome: 'reject', note: 'test missing' },
+    ] }));
+    expect(out).toContain('STAGE HISTORY');
+    expect(out).toContain('plan (architect) → done');
+    expect(out).toContain('qa (qa) → reject: test missing');
+  });
+
+  it('renders nothing when the journal is empty', async () => {
+    const out = await render('dev', 'build', task({ journal: [] }));
+    expect(out).not.toContain('STAGE HISTORY');
+  });
+});

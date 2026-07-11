@@ -72,14 +72,15 @@ describe('BoardColumnsEditor', () => {
 
   it('Remove deletes a lane', () => {
     render(<Harness initial={DEFAULT_COLUMNS} />);
-    fireEvent.click(screen.getAllByLabelText('Remove lane')[0]); // remove Todo
+    // Built-in lanes are re-addable, so their remove is a "Hide lane" (EyeOff); custom lanes get "Delete lane".
+    fireEvent.click(screen.getAllByLabelText('Hide lane')[0]); // remove Todo
     expect(labels()).toBe('Available|In Progress|Done');
     expect(screen.getByText('Swimlanes (3)')).toBeTruthy();
   });
 
   it('shows the empty-state message when all lanes are removed', () => {
     render(<Harness initial={[DEFAULT_COLUMNS[0]]} />);
-    fireEvent.click(screen.getByLabelText('Remove lane'));
+    fireEvent.click(screen.getByLabelText('Hide lane'));
     expect(screen.getByText('Add at least one lane.')).toBeTruthy();
   });
 
