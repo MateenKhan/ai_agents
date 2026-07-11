@@ -132,5 +132,14 @@ Status: ✅ done · 🚧 in a running wave · ⬜ pending · 🔴 human-only · 
 ---
 
 ## Wave log
-- **Wave 1** ✅ b24f2eb — gaps 1–7 (A–G). 579 tests green.
-- **Wave 2** 🚧 — dispatched below.
+- **Wave 1** ✅ b24f2eb — gaps 1–7 (A–G). 579 tests.
+- **Wave 2** ✅ 6f62972 — gaps 42–50, 84 (coverage + DB indexes). 625 tests.
+- **Wave 3** ✅ ae3b57f — gaps 15, 52, 57, 59, 65, 88 (server harden + typed mapper + tests).
+- **Wave 4** ✅ 2c5f95e — gaps 30, 46, 96 (one redact util + migration/prompt tests).
+- **Wave 5** ✅ d6a9c4c — gaps 8, 33, 94 + a found bug (GET /tasks/:id was unimplemented).
+
+**~30 of 100 closed, all pushed.** Remaining pool now needs one of: (a) your call —
+security 8–13; (b) your UI files to settle — the UI gaps collide with live editing;
+(c) design — observability/streaming/auto-refine are features, not quick fixes. The cheap,
+isolated, autonomous-safe backend wins are largely spent. Next high-value move is the
+**security batch (8–13)**, which is human-led by design.
