@@ -44,9 +44,32 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
   const [showArchPlan, setShowArchPlan] = useState(false);
   const [showDesc, setShowDesc] = useState(false);
   const [showChanges, setShowChanges] = useState(false);
+  // A short skeleton bridges the accordion opening and the diff fetch settling, so the panel
+  // reveals content instead of snapping from blank to a spinner to the diff.
+  const [changesReady, setChangesReady] = useState(false);
+  useEffect(() => {
+    if (!showChanges) { setChangesReady(false); return; }
+    const t = setTimeout(() => setChangesReady(true), 450);
+    return () => clearTimeout(t);
+  }, [showChanges]);
   // A branch only exists once the task has been picked up for work. Showing "Changes" on a
   // still-queued task would just render the empty state for no reason.
   const hasBranch = ['WORKING', 'TESTING', 'DONE', 'BLOCKED'].includes(task.status);
+  // Only LONG descriptions get folded behind an accordion; a one-liner should just render,
+  // not cost the reader a click to see two words.
+  const descLong = (task.description?.length ?? 0) > 240 || (task.description?.split('\n').length ?? 0) > 4;
+
+  // A plain status timeline built from the timestamps the task already carries. The last node
+  // is the live one — "Completed" if it finished, otherwise "Now: <lane>".
+  const fmtTs = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  const timeline: Array<{ label: string; at?: string | null; current?: boolean }> = [
+    { label: 'Created', at: task.createdAt },
+    ...(task.started ? [{ label: 'Started work', at: task.started }] : []),
+    ...(task.completed
+      ? [{ label: 'Completed', at: task.completed, current: true }]
+      : [{ label: `Now: ${col?.label ?? task.status}`, at: task.updatedAt, current: true }]),
+  ];
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const isWorking = task.status === 'WORKING';
   const isPaused = task.control === 'paused';
@@ -187,22 +210,47 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
               </button>
               {showChanges && (
                 <div className="px-4 py-4 border-t border-slate-200">
-                  <ChangesPanel taskId={task.id} />
+                  {changesReady ? <ChangesPanel taskId={task.id} /> : (
+                    <div className="space-y-3 animate-pulse" data-feature-id="task-detail-changes-skeleton" aria-hidden="true">
+                      <div className="flex items-center gap-2">
+                        <div className="h-3.5 w-3.5 rounded bg-slate-200" />
+                        <div className="h-3 w-40 rounded bg-slate-200" />
+                        <div className="h-4 w-20 rounded-full bg-slate-200 ml-auto" />
+                      </div>
+                      <div className="h-10 rounded-lg bg-slate-100" />
+                      <div className="rounded-lg border border-slate-200 divide-y divide-slate-100">
+                        {[0, 1, 2].map(i => (
+                          <div key={i} className="flex items-center gap-2 px-2.5 py-2">
+                            <div className="h-3.5 w-4 rounded bg-slate-200" />
+                            <div className="h-3 flex-1 rounded bg-slate-100" />
+                            <div className="h-3 w-10 rounded bg-slate-100" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="h-28 rounded-lg bg-slate-100" />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
 
           {task.description && (
-            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-              <button onClick={() => setShowDesc(v => !v)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition-colors">
-                <span className="eyebrow">Description</span>
-                <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showDesc ? 'rotate-180' : ''}`} />
-              </button>
-              {showDesc
-                ? <div className="px-4 py-4 border-t border-slate-200 min-h-[120px] max-h-[45vh] overflow-y-auto custom-scrollbar text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{task.description}</div>
-                : <div className="px-4 py-2.5 border-t border-slate-100 text-xs text-slate-500 italic truncate">{task.description.split('\n').find(Boolean)?.slice(0, 90)}…</div>}
-            </div>
+            descLong ? (
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                <button onClick={() => setShowDesc(v => !v)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition-colors">
+                  <span className="eyebrow">Description</span>
+                  <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showDesc ? 'rotate-180' : ''}`} />
+                </button>
+                {showDesc
+                  ? <div className="px-4 py-4 border-t border-slate-200 min-h-[120px] max-h-[45vh] overflow-y-auto custom-scrollbar text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{task.description}</div>
+                  : <div className="px-4 py-2.5 border-t border-slate-100 text-xs text-slate-500 italic truncate">{task.description.split('\n').find(Boolean)?.slice(0, 90)}…</div>}
+              </div>
+            ) : (
+              <Meta label="Description">
+                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{task.description}</p>
+              </Meta>
+            )
           )}
 
           <Meta label="Acceptance scenarios">
@@ -269,6 +317,22 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
               </div>
             </Meta>
           )}
+
+          {/* Status timeline — the task's own timestamps, most-recent last */}
+          <Meta label="Timeline">
+            <ol className="relative pl-4">
+              {timeline.map((e, i) => (
+                <li key={i} className="relative pb-3 last:pb-0">
+                  {i < timeline.length - 1 && <span className="absolute left-[3px] top-2 bottom-0 w-px bg-slate-200" />}
+                  <span className={`absolute left-0 top-1 w-[7px] h-[7px] rounded-full ${e.current ? 'bg-accent-600 ring-2 ring-accent-100' : 'bg-emerald-500'}`} />
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className={`text-xs font-semibold ${e.current ? 'text-accent-700' : 'text-slate-700'}`}>{e.label}</span>
+                    {e.at && <span className="text-2xs text-slate-500 tabular-nums shrink-0">{fmtTs(e.at)}</span>}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </Meta>
 
           {/* History */}
           <Meta label="History">

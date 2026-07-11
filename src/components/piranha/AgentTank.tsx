@@ -107,7 +107,10 @@ function IdleLine() {
   }
 
   return (
-    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-6 flex justify-center pointer-events-none select-none">
+    // Decorative idle voice — flavour copy that rotates every few seconds and is retyped
+    // character by character. To a screen reader that's a stream of half-words; the real
+    // idle state lives in the status bar's line + counts. Hide the whole line from AT.
+    <div aria-hidden className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-6 flex justify-center pointer-events-none select-none">
       <p className="max-w-[26ch] text-center text-[13px] font-semibold leading-snug tracking-tight text-slate-700">
         {body}
         <span className="pz-caret" aria-hidden />

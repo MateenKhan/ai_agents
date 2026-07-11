@@ -51,8 +51,18 @@ const KIND_STYLE: Record<ToastKind, { ring: string; icon: React.ReactNode; bar: 
   info: { ring: 'border-sky-200', bar: 'bg-sky-500', icon: <Info size={18} className="text-sky-600" /> },
 };
 
-const DISMISS_MS = 4200;       // success / info
-const DISMISS_MS_ERROR = 9000; // errors & anything with details — longer, so it can be read/copied
+/**
+ * Auto-dismiss durations (item 97) — one source of truth, two tiers keyed by how much the
+ * toast asks of the reader:
+ *   transient  (success / info) ......... 4.2s — confirms something already on screen.
+ *   persistent (error, OR any toast with a details/stack block) .. 9s — must be read, and
+ *                                          often expanded + copied, so it lingers.
+ * Hovering a row pauses its own timer (see ToastRow), so these are minimums, not deadlines.
+ * Position/stacking is unified separately, at the ToastProvider container.
+ */
+const DISMISS_MS = { transient: 4200, persistent: 9000 } as const;
+const durationFor = (t: Toast) =>
+  t.kind === 'error' || t.details ? DISMISS_MS.persistent : DISMISS_MS.transient;
 
 /** One toast row: self-managed auto-hide (paused on hover), expand + copy. */
 function ToastRow({ t, onDismiss }: { t: Toast; onDismiss: (id: number) => void }) {
@@ -64,8 +74,7 @@ function ToastRow({ t, onDismiss }: { t: Toast; onDismiss: (id: number) => void 
   // Auto-hide, longer for errors/details; pause while hovered so it can be read/copied.
   useEffect(() => {
     if (paused) return;
-    const ms = (t.kind === 'error' || t.details) ? DISMISS_MS_ERROR : DISMISS_MS;
-    const id = setTimeout(() => onDismiss(t.id), ms);
+    const id = setTimeout(() => onDismiss(t.id), durationFor(t));
     return () => clearTimeout(id);
   }, [paused, t.id, t.kind, t.details, onDismiss]);
 
@@ -101,7 +110,12 @@ function ToastRow({ t, onDismiss }: { t: Toast; onDismiss: (id: number) => void 
             <p className="text-sm font-bold text-slate-900 leading-tight">{t.title}</p>
             {t.message && <p className="text-xs text-slate-500 mt-0.5 leading-snug break-words">{t.message}</p>}
             {t.details && (
-              <div className="mt-1.5 flex items-center gap-2">
+              // aria-live="off" (item 84): the title+message above are the announcement, made
+              // ONCE when the row is inserted. This footer and the <pre> below mutate on user
+              // action (expand, Copy→Copied) — carving them out of the live region stops those
+              // mutations from re-announcing the whole atomic toast (incl. the full stack trace).
+              // The buttons stay reachable/announced via focus, which is independent of aria-live.
+              <div aria-live="off" className="mt-1.5 flex items-center gap-2">
                 <button onClick={() => setOpen(o => !o)} className="flex items-center gap-1 text-2xs font-bold text-slate-500 hover:text-slate-800">
                   <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} /> Details
                 </button>
@@ -116,7 +130,7 @@ function ToastRow({ t, onDismiss }: { t: Toast; onDismiss: (id: number) => void 
           </button>
         </div>
         {t.details && open && (
-          <pre className="mx-4 mb-3 max-h-52 overflow-auto custom-scrollbar rounded-lg bg-slate-900 text-slate-100 text-[10.5px] leading-relaxed font-mono p-2.5 whitespace-pre-wrap break-words">{t.details}</pre>
+          <pre aria-live="off" className="mx-4 mb-3 max-h-52 overflow-auto custom-scrollbar rounded-lg bg-slate-900 text-slate-100 text-[10.5px] leading-relaxed font-mono p-2.5 whitespace-pre-wrap break-words">{t.details}</pre>
         )}
       </div>
     </motion.div>
@@ -169,7 +183,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastCtx.Provider value={api}>
       {children}
-      {/* Stack: bottom-right. Newest at the bottom; older ones move up as new arrive. */}
+      {/* Position/stacking (item 97) — unified for every toast regardless of kind:
+       *   • Anchored bottom-right (bottom-left inset honours the safe-area on mobile).
+       *   • Single vertical column, gap-2 between rows; newest at the BOTTOM, older ones
+       *     move up as new arrive, trimmed to MAX_TOASTS.
+       *   • Mobile (<sm): full-width edge-to-edge; ≥sm: right-aligned, min-w 320 / max-w md.
+       * The errors (assertive) and rest (polite) stacks share the same gap-2/alignment so the
+       * two live regions read as one continuous column. */}
       <div className="fixed z-[85] bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 left-4 sm:left-auto sm:right-6 flex flex-col gap-2 items-stretch sm:items-end pointer-events-none">
         <div role="alert" aria-live="assertive" aria-atomic="false" aria-label="Errors" className={stack}>
           <AnimatePresence initial={false}>

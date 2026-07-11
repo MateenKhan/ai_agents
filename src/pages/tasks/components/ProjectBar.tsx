@@ -302,6 +302,38 @@ export function ProjectBar(
   // Long-press support (mobile) — hold a tab ~500ms to open its edit modal.
   const pressTimer = React.useRef<any>(null);
 
+  // First run: only the seeded host "Default" exists — the user hasn't pointed the swarm at
+  // any of their own repos yet. Drives the onboarding hint (item 92).
+  const onlyDefault = projects.length === 1 && projects[0]?.id === DEFAULT_PROJECT;
+
+  // Keyboard access to the switcher (item 79): the tabs are focusable buttons that already
+  // switch on Enter/Space, and arrow keys move-and-select between them like a real tablist.
+  const tabRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
+  const focusTab = (idx: number) => {
+    const n = projects.length;
+    if (n === 0) return;
+    const i = ((idx % n) + n) % n;
+    setActiveId(projects[i].id);
+    tabRefs.current[i]?.focus();
+  };
+  const onTabKeyDown = (e: React.KeyboardEvent, i: number) => {
+    switch (e.key) {
+      case 'ArrowRight': case 'ArrowDown': e.preventDefault(); focusTab(i + 1); break;
+      case 'ArrowLeft':  case 'ArrowUp':   e.preventDefault(); focusTab(i - 1); break;
+      case 'Home': e.preventDefault(); focusTab(0); break;
+      case 'End':  e.preventDefault(); focusTab(projects.length - 1); break;
+    }
+  };
+  // From the collapsed header, ArrowDown opens the strip and lands focus on the active tab.
+  const onAccordionKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown' && !open) {
+      e.preventDefault();
+      setOpen(true);
+      const active = Math.max(0, projects.findIndex(p => p.id === activeId));
+      setTimeout(() => tabRefs.current[active]?.focus(), 0);
+    }
+  };
+
   const startPress = (p: Project) => {
     pressTimer.current = setTimeout(() => setEditing(p), 500);
   };
@@ -352,13 +384,19 @@ export function ProjectBar(
           {/* Accordion header — minimized by default; shows the active project. */}
           <button
             onClick={() => setOpen(o => !o)}
+            onKeyDown={onAccordionKeyDown}
+            aria-expanded={open}
             data-feature-id="projects-accordion-toggle"
             className="flex-1 min-w-0 flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg sm:hover:bg-slate-50 transition-colors"
           >
           <span className="eyebrow flex items-center gap-2 min-w-0">
             <FolderGit2 className="w-4 h-4 text-accent-600 shrink-0" /> Projects
-            <span className="flex items-center gap-1 text-slate-500 font-bold normal-case tracking-normal truncate">
-              · <span>{activeProject?.emoji || '📁'}</span> {activeProject?.name ?? 'Default'}
+            <span className="flex items-center gap-1 min-w-0 text-slate-500 font-bold normal-case tracking-normal">
+              <span className="shrink-0">·</span>
+              <span className="shrink-0">{activeProject?.emoji || '📁'}</span>
+              {/* A long project name can't be allowed to shove the git button off-screen —
+                  truncate it and expose the full name on hover via title (item 75). */}
+              <span className="truncate" title={activeProject?.name ?? 'Default'}>{activeProject?.name ?? 'Default'}</span>
             </span>
           </span>
           {open ? <ChevronDown size={16} className="text-slate-400 shrink-0" /> : <ChevronRight size={16} className="text-slate-400 shrink-0" />}
@@ -376,6 +414,25 @@ export function ProjectBar(
           )}
         </div>
 
+        {/* First-run onboarding (item 92): a brand-new user has only the seeded host "Default"
+            and no idea the swarm needs pointing at a repo. A quiet dashed hint — shown until
+            they import their first project — that opens the same import modal as the + button. */}
+        {onlyDefault && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed border-accent-300 bg-accent-50/60 px-3 py-1.5">
+            <FolderGit2 className="w-3.5 h-3.5 text-accent-600 shrink-0" />
+            <p className="flex-1 min-w-0 text-2xs text-slate-600">
+              Welcome. Import your first git repo to point the swarm at your code — Piranha works inside it.
+            </p>
+            <button
+              onClick={() => setCreateOpen(true)}
+              data-feature-id="project-onboard-import"
+              className="shrink-0 flex items-center gap-1 text-2xs font-bold text-accent-600 sm:hover:text-accent-700 transition-colors"
+            >
+              <Plus size={13} strokeWidth={3} /> Import project
+            </button>
+          </div>
+        )}
+
         {open && (
           <div className="mt-2 flex items-center gap-2 overflow-x-auto custom-scrollbar" data-feature-id="project-bar">
             {/* Bordered tab strip — same visual language as the Board/Analytics tabs. */}
@@ -385,12 +442,14 @@ export function ProjectBar(
                 const isFirst = i === 0;
                 const isLast = i === projects.length - 1;
                 return (
-                  <Tooltip label={p.name}><button
-                    key={p.id}
+                  <Tooltip key={p.id} label={p.name}><button
+                    ref={el => { tabRefs.current[i] = el; }}
                     onClick={() => setActiveId(p.id)}
+                    onKeyDown={e => onTabKeyDown(e, i)}
                     onTouchStart={() => startPress(p)}
                     onTouchEnd={cancelPress}
                     onTouchMove={cancelPress}
+                    aria-current={active ? 'true' : undefined}
                     data-feature-id={`project-tab-${p.id}`}
                     className={`relative flex items-center gap-1.5 px-4 min-h-control-lg text-sm font-bold whitespace-nowrap transition-colors ${isFirst ? 'rounded-l-xl' : 'border-l border-slate-200'} ${isLast ? 'rounded-r-xl' : ''} ${active
                       ? 'text-accent-700 bg-gradient-to-b from-white to-accent-50/70'

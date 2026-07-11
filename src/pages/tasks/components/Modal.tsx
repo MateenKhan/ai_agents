@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { Tooltip } from './Tooltip';
 import { X } from 'lucide-react';
 
@@ -13,19 +13,34 @@ interface ModalProps {
   /** Tailwind max-width class for desktop, e.g. 'sm:max-w-md' */
   maxW?: string;
   featureId?: string;
+  /**
+   * Accessible name for the dialog. Defaults to the visible `title`.
+   * Provide this when `title` is non-textual (icon/element) so screen
+   * readers still announce a meaningful label.
+   */
+  ariaLabel?: string;
 }
 
 /**
  * Common modal: bottom sheet on mobile, centered card on desktop.
  * Closes on X, Esc, and backdrop click — consistently, everywhere.
+ * Announced as a labelled dialog and receives focus on open.
  */
-export function Modal({ isOpen, onClose, title, subtitle, icon, children, footer, maxW = 'sm:max-w-md', featureId }: ModalProps) {
+export function Modal({ isOpen, onClose, title, subtitle, icon, children, footer, maxW = 'sm:max-w-md', featureId, ariaLabel }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
+
+  // Move focus into the dialog on open so keyboard/AT users land inside it.
+  useEffect(() => {
+    if (isOpen) panelRef.current?.focus();
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -36,8 +51,14 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, footer
       data-feature-id={featureId ?? 'common-modal'}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabel ? undefined : titleId}
+        tabIndex={-1}
         onClick={e => e.stopPropagation()}
-        className={`bg-white border border-slate-200 rounded-t-3xl sm:rounded-2xl w-full ${maxW} max-h-[90dvh] flex flex-col shadow-2xl shadow-slate-500/30 overflow-hidden`}
+        className={`bg-white border border-slate-200 rounded-t-3xl sm:rounded-2xl w-full ${maxW} max-h-[90dvh] flex flex-col shadow-2xl shadow-slate-500/30 overflow-hidden outline-none`}
       >
         {/* Grab handle (mobile affordance) */}
         <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mt-3" />
@@ -46,7 +67,7 @@ export function Modal({ isOpen, onClose, title, subtitle, icon, children, footer
           <div className="flex items-center gap-3 min-w-0">
             {icon && <div className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl shrink-0">{icon}</div>}
             <div className="min-w-0">
-              <h2 className="text-base font-bold text-slate-900 leading-tight">{title}</h2>
+              <h2 id={titleId} className="text-base font-bold text-slate-900 leading-tight">{title}</h2>
               {subtitle && <p className="text-xs text-slate-500 mt-0.5 truncate">{subtitle}</p>}
             </div>
           </div>

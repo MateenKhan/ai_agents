@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import type { Task, Column, TaskControlAction } from '../types';
 import { COLUMNS } from '../types';
 import { TaskCard } from './TaskCard';
+import { Tooltip } from './Tooltip';
+import { useOverflowEdges } from '../hooks/useOverflowEdges';
 import { btnGhostCaps, btnDanger, btnPrimarySm } from '../ui';
 import { useConfirm } from './ConfirmProvider';
 import { Plus, Trash2, X } from 'lucide-react';
@@ -62,12 +64,67 @@ function DropIndicator({ color }: { color: string }) {
 
 export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAddTask, onMove, onBulkDelete, onView, onOpenLogs, triggeringIds, controllingIds, columns }: TaskBoardProps) {
   const lanes = columns ?? COLUMNS;
-  // Whole board empty = no visible lane holds a single card. Drives the ONE centered
-  // empty state (with a real "New task" CTA) instead of an identical hint in every lane.
-  const boardEmpty = !lanes.some(col => tasks.some(t => t.status === col.id));
   const confirm = useConfirm();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<DragState | null>(null);
+
+  // Horizontal-scroll affordance (item 102): lanes scroll sideways, which is invisible on a
+  // narrow/mobile viewport where only one lane fits. `edges` reports whether content is hidden
+  // off the left/right so we can fade that edge and say "there's more this way".
+  const { ref: scrollRef, edges } = useOverflowEdges<HTMLDivElement>();
+
+  // ── Optimistic move (item 93) ──────────────────────────────────────────────
+  // `onMove` round-trips to the server and the parent only refetches on success, so a dropped
+  // card visibly lags in its old lane until the network answers. We paint the move immediately
+  // by holding a per-task status override, then reconcile against the parent's data (drop the
+  // override once it agrees) or revert on a timeout if the move never lands (failure).
+  const [pendingMoves, setPendingMoves] = useState<Map<string, string>>(new Map());
+  const revertTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const clearPending = useCallback((id: string) => {
+    const timer = revertTimers.current.get(id);
+    if (timer) { clearTimeout(timer); revertTimers.current.delete(id); }
+    setPendingMoves(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Map(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const handleMove = useCallback((taskId: string, newStatus: string) => {
+    setPendingMoves(prev => {
+      const next = new Map(prev);
+      next.set(taskId, newStatus);
+      return next;
+    });
+    const existing = revertTimers.current.get(taskId);
+    if (existing) clearTimeout(existing);
+    // Safety net: if the server never confirms, stop pretending and let the card snap back to
+    // its real lane. The parent owns the error toast; here we only undo the optimistic paint.
+    revertTimers.current.set(taskId, setTimeout(() => clearPending(taskId), 8000));
+    onMove(taskId, newStatus);
+  }, [onMove, clearPending]);
+
+  // Reconcile: once the parent's data reflects the target status (or the task is gone), the
+  // override has served its purpose — retire it so real data drives the card again.
+  useEffect(() => {
+    if (pendingMoves.size === 0) return;
+    pendingMoves.forEach((target, id) => {
+      const t = tasks.find(x => x.id === id);
+      if (!t || t.status === target) clearPending(id);
+    });
+  }, [tasks, pendingMoves, clearPending]);
+
+  // Don't leave revert timers running after unmount.
+  useEffect(() => () => { revertTimers.current.forEach(clearTimeout); }, []);
+
+  // A task's lane is its optimistic target while a move is settling, else its real status.
+  const statusOf = (t: Task) => pendingMoves.get(t.id) ?? t.status;
+
+  // Whole board empty = no visible lane holds a single card. Drives the ONE centered
+  // empty state (with a real "New task" CTA) instead of an identical hint in every lane.
+  const boardEmpty = !lanes.some(col => tasks.some(t => statusOf(t) === col.id));
 
   // Compute insertion index from the cursor's Y position over a lane's card list.
   const indexFromPointer = (container: HTMLElement, clientY: number) => {
@@ -128,9 +185,18 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
   };
 
   return (
-    <div className="relative flex gap-3 sm:gap-4 p-3 sm:p-4 h-full overflow-x-auto overflow-y-hidden custom-scrollbar items-stretch snap-x snap-mandatory sm:snap-none [-webkit-overflow-scrolling:touch]">
+    <div className="relative h-full min-h-0">
+    {/* Entrance (item 105): the board mounts on tab-switch, so a fade-in here IS the tab
+        transition. reducedMotion="user" (MotionConfig in main.tsx) drops the y-shift for users
+        who ask for less motion and keeps the opacity fade, which is vestibular-safe. */}
+    <motion.div
+      ref={scrollRef}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 40, mass: 0.8 }}
+      className="relative flex gap-3 sm:gap-4 p-3 sm:p-4 h-full overflow-x-auto overflow-y-hidden custom-scrollbar items-stretch snap-x snap-mandatory sm:snap-none [-webkit-overflow-scrolling:touch]">
       {lanes.map(col => {
-        const colTasks = tasks.filter(t => t.status === col.id)
+        const colTasks = tasks.filter(t => statusOf(t) === col.id)
           .sort((a, b) => a.priority - b.priority);
         const allInLaneSelected = colTasks.length > 0 && colTasks.every(t => selected.has(t.id));
         const someInLaneSelected = colTasks.some(t => selected.has(t.id));
@@ -141,7 +207,7 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
           <div
             key={col.id}
             data-feature-id={`tasks-lane-${col.id.toLowerCase()}`}
-            className={`flex flex-col h-full min-h-0 min-w-[86vw] max-w-[86vw] sm:min-w-[300px] sm:max-w-[320px] snap-center sm:snap-align-none rounded-2xl overflow-hidden shadow-sm transition-all duration-200 border-2 ${
+            className={`flex flex-col shrink-0 h-full min-h-0 min-w-[86vw] max-w-[86vw] sm:min-w-[300px] sm:max-w-[320px] snap-center sm:snap-align-none rounded-2xl overflow-hidden shadow-sm transition-all duration-200 border-2 ${
               isDropTarget ? 'shadow-lg' : 'bg-slate-50 sm:hover:border-[color:var(--lane)]'
             }`}
             // Each lane is identified by its OWN colour: a tinted border at rest, and the
@@ -175,17 +241,22 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
                 <h2 className="text-xs font-bold uppercase tracking-widest text-slate-900 truncate">
                   {col.label}
                 </h2>
-                <span className="text-2xs font-semibold px-2 py-0.5 bg-slate-100 rounded-full text-slate-600 shrink-0">
+                {/* Empty reads grey and quiet; a non-zero count wears a subtle wash of the
+                    lane's own colour so a full lane draws the eye without shouting. */}
+                <span
+                  className={`text-2xs font-bold px-2 py-0.5 rounded-full shrink-0 ${colTasks.length === 0 ? 'bg-slate-100 text-slate-400' : ''}`}
+                  style={colTasks.length === 0 ? undefined : { backgroundColor: withAlpha(col.color, '1f'), color: col.color }}
+                >
                   {colTasks.length}
                 </span>
               </div>
-              <button
+              <Tooltip label={`Add task to ${col.label}`}><button
                 onClick={() => onAddTask(col.id)}
                 data-feature-id="tasks-lane-add"
                 className="flex items-center justify-center min-w-control-lg min-h-control-lg -m-1.5 active:bg-slate-200 sm:hover:bg-slate-100 rounded-md text-slate-500 sm:hover:text-slate-900 transition-all shrink-0"
               >
                 <Plus size={18} />
-              </button>
+              </button></Tooltip>
             </div>
 
             {/* Cards Area */}
@@ -194,29 +265,34 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
               onDrop={(e) => {
                 e.preventDefault();
                 const taskId = e.dataTransfer.getData('taskId');
-                if (taskId) onMove(taskId, col.id);
+                if (taskId) handleMove(taskId, col.id);
                 endDrag();
               }}
               className="flex-1 min-h-0 flex flex-col gap-3 p-3 overflow-y-auto custom-scrollbar [-webkit-overflow-scrolling:touch]"
             >
               {colTasks.length === 0 && !isDropTarget ? (
-                boardEmpty ? (
-                  // The whole board is empty — the single centered CTA below owns the
-                  // "new task" affordance, so each lane is just a calm, open drop zone.
-                  <div className="flex-1" aria-hidden />
-                ) : (
+                // A "Drop here" sign on every empty lane at rest is noise — the hint only
+                // earns its place once a drag is actually in flight (and the whole-board-empty
+                // case defers to the single centered CTA below). Otherwise: a calm, open zone.
+                !boardEmpty && drag ? (
                   <div className="flex-1 flex items-center justify-center p-6 text-micro font-semibold uppercase tracking-widest text-slate-400 text-center select-none">
                     Drop here
                   </div>
+                ) : (
+                  <div className="flex-1" aria-hidden />
                 )
               ) : (
                 <>
                   {colTasks.map((task, i) => (
                     <React.Fragment key={task.id}>
                       {isDropTarget && drag?.index === i && <DropIndicator color={col.color} />}
+                      {/* Card-enter (item 105): fade+lift in on mount. A settling optimistic move
+                          dims the card so "pending" reads without blocking interaction. */}
                       <motion.div
                         layout
                         data-card-wrapper
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: pendingMoves.has(task.id) ? 0.6 : 1, y: 0 }}
                         transition={{ type: 'spring', stiffness: 500, damping: 40, mass: 0.6 }}
                       >
                         <TaskCard
@@ -225,12 +301,13 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
                           onDelete={onDelete}
                           onTrigger={onTrigger}
                           onControl={onControl}
-                          onMove={onMove}
+                          onMove={handleMove}
                           onView={onView}
                           onOpenLogs={onOpenLogs}
                           isTriggering={triggeringIds.has(task.id)}
                           isControlling={controllingIds?.has(task.id)}
                           selected={selected.has(task.id)}
+                          anySelected={selected.size > 0}
                           onToggleSelect={toggleSelect}
                           isDragging={drag?.id === task.id}
                           onDragStart={() => setDrag({ id: task.id, fromStatus: col.id, overLane: col.id, index: i })}
@@ -265,8 +342,21 @@ export function TaskBoard({ tasks, onEdit, onDelete, onTrigger, onControl, onAdd
           </div>
         </div>
       )}
+    </motion.div>
 
-      {/* Bulk Action Bar — floats above iOS home indicator */}
+    {/* Scroll affordance (item 102): edge fades that show only when lanes overflow off that
+        side — pointer-events-none so they never intercept a drag or a scroll, aria-hidden as
+        they're a purely visual cue. On sm+ where lanes usually fit, both stay at opacity 0. */}
+    <div
+      aria-hidden
+      className={`pointer-events-none absolute inset-y-0 left-0 w-6 sm:w-10 bg-gradient-to-r from-white to-transparent transition-opacity duration-200 ${edges.left ? 'opacity-100' : 'opacity-0'}`}
+    />
+    <div
+      aria-hidden
+      className={`pointer-events-none absolute inset-y-0 right-0 w-6 sm:w-10 bg-gradient-to-l from-white to-transparent transition-opacity duration-200 ${edges.right ? 'opacity-100' : 'opacity-0'}`}
+    />
+
+    {/* Bulk Action Bar — floats above iOS home indicator */}
       {selected.size > 0 && (
         <div
           data-feature-id="tasks-bulk-action-bar"

@@ -178,8 +178,13 @@ export function TankStatusBar({ working, muted, reduced, onToggleMuted }: {
         )}
         {/* Wrap to a second line rather than hard-truncating: a status the user can't read
             ("…default, 2 tas…") is worse than a row one line taller. line-clamp-2 keeps it
-            bounded, and items-center still centres the counts against the taller block. */}
-        <span className={`flex-1 min-w-0 line-clamp-2 leading-snug text-2xs font-semibold ${alarm ? 'text-rose-700' : 'text-slate-700'}`}>
+            bounded, and items-center still centres the counts against the taller block.
+
+            AT: the non-alarm line is rotating voice copy ("No blood yet", "Idle — nothing to
+            dispatch") that changes on every 4s poll — read aloud it's noise, and the real state
+            is already in the counts below. So hide it from screen readers unless it's carrying a
+            genuine alarm (offline / board corrupt), which must always be announced. */}
+        <span aria-hidden={!alarm} className={`flex-1 min-w-0 line-clamp-2 leading-snug text-2xs font-semibold ${alarm ? 'text-rose-700' : 'text-slate-700'}`}>
           {alarm ? alarm.text : line}
         </span>
 
@@ -193,10 +198,13 @@ export function TankStatusBar({ working, muted, reduced, onToggleMuted }: {
             ] as const).map(([label, n, hot]) => (
               <span
                 key={label}
+                // The counts are the real, announceable status — read them as one unit
+                // ("3 Working") instead of letting AT spell out the mono uppercase label.
+                aria-label={`${n} ${label}`}
                 className={`flex items-baseline gap-1 px-1.5 py-0.5 rounded ${hot ? 'bg-accent-100' : ''}`}
               >
-                <b className={`text-2xs font-extrabold tabular-nums ${hot ? 'text-accent-700' : 'text-slate-700'}`}>{n}</b>
-                <span className={`text-micro font-mono uppercase tracking-wider ${hot ? 'text-accent-600' : 'text-slate-500'}`}>
+                <b aria-hidden className={`text-2xs font-extrabold tabular-nums ${hot ? 'text-accent-700' : 'text-slate-700'}`}>{n}</b>
+                <span aria-hidden className={`text-micro font-mono uppercase tracking-wider ${hot ? 'text-accent-600' : 'text-slate-500'}`}>
                   {label}
                 </span>
               </span>

@@ -3,7 +3,7 @@ import { Tooltip } from './Tooltip';
 import { motion } from 'framer-motion';
 import {
   GitBranch, Github, Gitlab, KeyRound, X, Eye, EyeOff, RefreshCw, FileDiff,
-  Copy, Check, ChevronDown, Trash2, Plus, DownloadCloud, GitCommit,
+  Copy, Check, ChevronDown, ChevronLeft, ChevronRight, Trash2, Plus, DownloadCloud, GitCommit,
   Upload, History, FolderGit2, Bot, Database, HeartPulse,
   ExternalLink, Radar, CheckCircle2, Play, Square, Wand2, Save, Pencil, FolderTree,
 } from 'lucide-react';
@@ -16,6 +16,7 @@ import { DiffView } from './DiffView';
 import { FileBrowser } from './FileBrowser';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { btnPrimarySm, btnSm, inputSm, iconBtnDanger } from '../ui';
+import { timeAgo, formatWhen } from '../lib/timeUtil';
 
 // lucide has no Bitbucket brand glyph — minimal inline SVG matching the icon-size API.
 const Bitbucket = ({ size = 16, className = '' }: { size?: number; className?: string }) => (
@@ -87,6 +88,17 @@ type Tab = 'repo' | 'clone' | 'run' | 'files' | 'tokens' | 'agents' | 'worktrees
 interface IndexStatus { root: string; glob: string; isDefault: boolean; files: number; nodes: number; embedded: number; coverage: number; healthy: boolean; rebuilding: boolean; }
 type Msg = { kind: 'ok' | 'err'; text: string } | null;
 
+// Cheap "does this look like a git URL?" for inline clone validation — permissive on
+// purpose (https/ssh/git@ forms + owner/repo shorthand), just enough to catch typos early.
+function isGitUrl(u: string): boolean {
+  const s = u.trim();
+  if (!s) return false;
+  if (/^(https?|git|ssh):\/\/\S+\/\S+/.test(s)) return true;
+  if (/^git@[\w.-]+:\S+\/\S+/.test(s)) return true;
+  if (/^[\w.-]+\/[\w.-]+(\.git)?$/.test(s)) return true;
+  return false;
+}
+
 function fileColors(f: GitFile): string {
   if (f.staged) return 'bg-emerald-50 border-emerald-200 text-emerald-700';
   const s = `${f.x}${f.y}`.toUpperCase();
@@ -152,8 +164,12 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const { refreshProjects, setActiveId } = useProjects();
-  useEscapeKey(onClose, isOpen);
   const [tab, setTab] = useState<Tab>('tokens');
+  // Focus trap + tab-strip scroll affordances (23/31) and clipboard-paste feedback (27).
+  const modalRef = useRef<HTMLDivElement>(null);
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const [tabFade, setTabFade] = useState({ left: false, right: false });
+  const [tokPasted, setTokPasted] = useState(false);
 
   // ---- tokens ----
   const [tokens, setTokens] = useState<TokenMasked[]>([]);
@@ -551,6 +567,58 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
     return () => { cancelled = true; };
   }, [isOpen, tab, activeId, activeRun]);
 
+  // Close guard (32): don't silently drop a typed-but-unsaved commit message or token.
+  const isDirty = () => Boolean(commitMsg.trim() || tVal.trim() || (editingId && tLabel.trim()) || manualKey.trim());
+  const requestClose = async () => {
+    if (isDirty()) {
+      const ok = await confirm({
+        title: 'Discard unsaved input?',
+        message: 'There is unsaved text in a form (a commit message or a token). Close and discard it?',
+        confirmLabel: 'Discard & close',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    onClose();
+  };
+  useEscapeKey(requestClose, isOpen);
+
+  // Focus trap (31): keep Tab/Shift+Tab cycling within the modal instead of escaping to the page.
+  useEffect(() => {
+    if (!isOpen) return;
+    const el = modalRef.current; if (!el) return;
+    const sel = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const nodes = Array.from(el.querySelectorAll<HTMLElement>(sel)).filter(n => n.offsetParent !== null);
+      if (nodes.length === 0) return;
+      const first = nodes[0], last = nodes[nodes.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey) {
+        if (!active || active === first || !el.contains(active)) { e.preventDefault(); last.focus(); }
+      } else {
+        if (!active || active === last || !el.contains(active)) { e.preventDefault(); first.focus(); }
+      }
+    };
+    el.addEventListener('keydown', onKey);
+    return () => el.removeEventListener('keydown', onKey);
+  }, [isOpen]);
+
+  // Tab-strip fade/arrow discoverability (23): reflect whether more tabs are hidden left/right.
+  const updateTabFade = () => {
+    const el = tabBarRef.current; if (!el) return;
+    setTabFade({ left: el.scrollLeft > 4, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+  };
+  useEffect(() => {
+    if (!isOpen) return;
+    updateTabFade();
+    const el = tabBarRef.current; if (!el) return;
+    el.addEventListener('scroll', updateTabFade, { passive: true });
+    window.addEventListener('resize', updateTabFade);
+    return () => { el.removeEventListener('scroll', updateTabFade); window.removeEventListener('resize', updateTabFade); };
+    /* eslint-disable-next-line */
+  }, [isOpen, tab]);
+
   if (!isOpen) return null;
   const activeProvider = PROVIDERS[provider];
   const ProviderIcon = activeProvider.Icon;
@@ -801,9 +869,10 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
 
   const copyLink = async () => { try { await navigator.clipboard.writeText(PROVIDERS[provider].tokenUrl); setCopiedLink(true); setTimeout(() => setCopiedLink(false), 1500); } catch {} };
 
-  const tokenOptions = (val: string, onChange: (v: string) => void, filter?: (t: TokenMasked) => boolean) => (
-    <select value={val} onChange={e => onChange(e.target.value)} className={`${inputSm} w-full appearance-none`}>
-      <option value="">— default —</option>
+  const tokenOptions = (val: string, onChange: (v: string) => void, filter?: (t: TokenMasked) => boolean, markUnassigned?: boolean) => (
+    <select value={val} onChange={e => onChange(e.target.value)}
+      className={`${inputSm} w-full appearance-none ${markUnassigned && !val ? 'italic text-slate-400 border-dashed border-slate-300 bg-slate-50' : ''}`}>
+      <option value="">{markUnassigned ? '— unassigned —' : '— default —'}</option>
       {tokens.filter(t => !filter || filter(t)).map(t => <option key={t.id} value={t.id}>{t.label} ({t.scope})</option>)}
     </select>
   );
@@ -838,8 +907,9 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
   );
 
   return (
-    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
-      <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md" onClick={requestClose}>
+      <motion.div ref={modalRef} role="dialog" aria-modal="true" aria-label="Git Control"
+        initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
         onClick={e => e.stopPropagation()}
         className="relative w-full max-w-4xl bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
         {/* Header */}
@@ -847,22 +917,39 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 min-w-0">
             <GitBranch className="w-4 h-4 text-accent-600 shrink-0" /> Git Control
           </h2>
-          <Tooltip label="Close (Esc)"><button onClick={onClose} aria-label="Close (Esc)" className="flex items-center justify-center p-1.5 min-h-control min-w-control hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 shrink-0">
+          <Tooltip label="Close (Esc)"><button onClick={requestClose} aria-label="Close (Esc)" className="flex items-center justify-center p-1.5 min-h-control min-w-control hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-900 shrink-0">
             <X size={18} />
           </button></Tooltip>
         </div>
 
-        {/* Tab bar (scrollable on mobile) */}
-        <div className="flex gap-1 px-2 sm:px-3 pt-1.5 overflow-x-auto custom-scrollbar border-b border-slate-100 shrink-0">
-          {TABS.map(t => {
-            const Icon = t.icon;
-            return (
-              <button key={t.id} onClick={() => { setTab(t.id); if (t.id === 'worktrees') loadWorktrees(); if (t.id === 'index') loadIndex(); if (t.id === 'tokens') loadGithubApps(); }}
-                className={`shrink-0 min-h-control px-3 text-xs font-bold uppercase tracking-wider rounded-t-lg flex items-center gap-1.5 transition-colors ${tab === t.id ? 'bg-accent-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
-                <Icon size={14} /> {t.label}
-              </button>
-            );
-          })}
+        {/* Tab bar — scrollable; edge fades + arrow buttons reveal the tabs that scroll off (23).
+            Active tab is ink (not the identity red fill), with the icon carrying the accent (34). */}
+        <div className="relative shrink-0 border-b border-slate-100">
+          <div ref={tabBarRef} className="flex gap-1 px-2 sm:px-3 pt-1.5 overflow-x-auto custom-scrollbar">
+            {TABS.map(t => {
+              const Icon = t.icon;
+              const active = tab === t.id;
+              return (
+                <button key={t.id} onClick={() => { setTab(t.id); if (t.id === 'worktrees') loadWorktrees(); if (t.id === 'index') loadIndex(); if (t.id === 'tokens') loadGithubApps(); }}
+                  aria-current={active ? 'page' : undefined}
+                  className={`shrink-0 min-h-control px-3 text-xs font-bold uppercase tracking-wider rounded-t-lg flex items-center gap-1.5 transition-colors ${active ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                  <Icon size={14} className={active ? 'text-accent-500' : ''} /> {t.label}
+                </button>
+              );
+            })}
+          </div>
+          {tabFade.left && (
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-1 pr-6 bg-gradient-to-r from-white via-white/90 to-transparent">
+              <button type="button" onClick={() => tabBarRef.current?.scrollBy({ left: -180, behavior: 'smooth' })} aria-label="Scroll tabs left"
+                className="pointer-events-auto flex items-center justify-center w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-900 shadow-sm"><ChevronLeft size={15} /></button>
+            </div>
+          )}
+          {tabFade.right && (
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-1 pl-6 bg-gradient-to-l from-white via-white/90 to-transparent">
+              <button type="button" onClick={() => tabBarRef.current?.scrollBy({ left: 180, behavior: 'smooth' })} aria-label="Scroll tabs right"
+                className="pointer-events-auto flex items-center justify-center w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 hover:text-slate-900 shadow-sm"><ChevronRight size={15} /></button>
+            </div>
+          )}
         </div>
 
         {/* Body */}
@@ -898,9 +985,10 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         const active = selectedFile === f.path;
                         return (
                           <div key={f.path}>
-                            <button onClick={() => loadDiff(f.path)} className={`w-full min-h-control flex items-center gap-2.5 text-left px-2.5 py-2 rounded-lg border transition-colors ${active ? 'ring-2 ring-accent-300 ' : ''}${fileColors(f)}`}>
+                            <button onClick={() => loadDiff(f.path)} title={active ? 'Hide diff' : 'Show diff'} className={`w-full min-h-control flex items-center gap-2.5 text-left px-2.5 py-2 rounded-lg border transition-colors ${active ? 'ring-2 ring-accent-300 ' : ''}${fileColors(f)}`}>
                               <span className="text-micro font-bold uppercase tracking-wider shrink-0 rounded px-1.5 py-0.5 bg-white/60 border border-black/10">{f.label}</span>
-                              <span className="font-mono text-xs text-slate-700 break-all min-w-0">{f.path}</span>
+                              <span className="font-mono text-xs text-slate-700 break-all min-w-0 flex-1">{f.path}</span>
+                              <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${active ? 'rotate-180' : ''}`} />
                             </button>
                             {active && (
                               <div className="mt-1.5 mb-2 rounded-lg border border-slate-200 bg-slate-900 overflow-hidden">
@@ -977,7 +1065,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                     <SearchSelect
                       value={cloneUrl}
                       disabled={repoListBusy}
-                      placeholder="Search repos…"
+                      placeholder="search repos…"
                       options={repoList.map(r => ({ value: r.clone_url, label: r.full_name, hint: r.private ? '🔒 private' : 'public' }))}
                       onChange={url => {
                         setCloneUrl(url);
@@ -990,7 +1078,12 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
               )}
               {/* 3) URL — auto-filled by the repo picker; editable for public/manual clones */}
               <div className="flex flex-wrap items-center gap-2"><label className="eyebrow shrink-0">URL</label>
-                <input value={cloneUrl} onChange={e => setCloneUrl(e.target.value)} placeholder="https://github.com/owner/repo.git" className={`${inputSm} flex-1 min-w-[10rem] font-mono text-xs sm:text-sm`} /></div>
+                <input value={cloneUrl} onChange={e => setCloneUrl(e.target.value)} placeholder="https://github.com/owner/repo.git"
+                  aria-invalid={cloneUrl.trim() !== '' && !isGitUrl(cloneUrl)}
+                  className={`${inputSm} flex-1 min-w-[10rem] font-mono text-xs sm:text-sm ${cloneUrl.trim() && !isGitUrl(cloneUrl) ? 'border-rose-300 focus:ring-rose-300' : ''}`} /></div>
+              {cloneUrl.trim() !== '' && !isGitUrl(cloneUrl) && (
+                <p className="text-2xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">That doesn't look like a git URL — use <span className="font-mono">https://host/owner/repo(.git)</span>, <span className="font-mono">git@host:owner/repo</span>, or <span className="font-mono">owner/repo</span>.</p>
+              )}
               {/* 4) target dir — auto-suggested from the repo name */}
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="eyebrow block mb-1">Target directory</label>
@@ -1010,7 +1103,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 <Tooltip label="Delete the target directory (removes the cloned repo)"><button onClick={deleteRepo} disabled={deletingRepo || cloning || !cloneDir.trim()} className={`${btnSm} text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100`}>
                   {deletingRepo ? <span className="w-3 h-3 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" /> : <Trash2 size={15} />} Delete repo
                 </button></Tooltip>
-                <button onClick={doClone} disabled={cloning || !cloneUrl.trim()} className={btnPrimarySm}>{cloning && <span className="w-3 h-3 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />}<DownloadCloud size={15} /> Clone</button>
+                <button onClick={doClone} disabled={cloning || !cloneUrl.trim() || !isGitUrl(cloneUrl)} className={btnPrimarySm}>{cloning && <span className="w-3 h-3 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />}<DownloadCloud size={15} /> Clone</button>
               </div>
 
               {/* Live clone output — streams git progress (Receiving/Resolving %) */}
@@ -1037,12 +1130,12 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 <span className="font-mono break-all">{runRepoPath || 'the project repo'}</span>.
               </div>
 
-              {/* detect + commands */}
-              <div className="flex gap-2">
-                <button onClick={detectRun} disabled={detecting} className={`${btnSm} flex-1`}>
+              {/* detect + commands — sized to content, not full-width (26) */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={detectRun} disabled={detecting} className={btnSm}>
                   {detecting ? <span className="w-3 h-3 border-2 border-slate-400/60 border-t-transparent rounded-full animate-spin" /> : <Wand2 size={15} />} {detecting ? 'Detecting…' : 'Detect with AI'}
                 </button>
-                <button onClick={saveRunConfig} disabled={savingRun} className={`${btnSm} shrink-0`}><Save size={15} /> Save</button>
+                <button onClick={saveRunConfig} disabled={savingRun} className={btnSm}><Save size={15} /> Save</button>
               </div>
               {detectSource && <div className="text-micro text-slate-500">Detected stack: <span className="font-mono">{detectSource}</span></div>}
 
@@ -1173,7 +1266,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                                 <input
                                   autoFocus value={renameVal} onChange={e => setRenameVal(e.target.value)}
                                   onKeyDown={e => { if (e.key === 'Enter') saveRename(app.id); if (e.key === 'Escape') setRenamingId(null); }}
-                                  className={`${inputSm} h-8 py-1 text-sm flex-1 min-w-0`} placeholder="Label for this app" />
+                                  className={`${inputSm} h-8 py-1 text-sm flex-1 min-w-0`} placeholder="label for this app" />
                                 <button onClick={() => saveRename(app.id)} disabled={renameBusy} className="p-2 min-h-control min-w-control flex items-center justify-center text-emerald-600 hover:bg-emerald-50 rounded-lg" aria-label="Save label"><CheckCircle2 size={16} /></button>
                                 <button onClick={() => setRenamingId(null)} className="p-2 min-h-control min-w-control flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg" aria-label="Cancel"><X size={16} /></button>
                               </>
@@ -1290,7 +1383,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                           On GitHub open the app → <strong>Settings</strong> → <strong>Generate a private key</strong> (downloads a <code>.pem</code>). Paste its <strong>App ID</strong> and the whole key below.
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <input value={manualAppId} onChange={e => setManualAppId(e.target.value)} inputMode="numeric" placeholder="App ID e.g. 123456" className={inputSm} />
+                          <input value={manualAppId} onChange={e => setManualAppId(e.target.value)} inputMode="numeric" placeholder="app ID e.g. 123456" className={inputSm} />
                           <input value={manualName} onChange={e => setManualName(e.target.value)} placeholder="name (optional)" className={inputSm} />
                         </div>
                         <textarea value={manualKey} onChange={e => setManualKey(e.target.value)} rows={4}
@@ -1337,7 +1430,10 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                   </select>
                 </div>
                 <div className="relative">
-                  <input type={showToken ? 'text' : 'password'} value={tVal} onChange={e => setTVal(e.target.value)} placeholder={editingId ? 'paste to replace, blank keeps existing' : activeProvider.placeholder} autoComplete="off" className={`${inputSm} pr-12 font-mono`} />
+                  <input type={showToken ? 'text' : 'password'} value={tVal} onChange={e => setTVal(e.target.value)}
+                    onPaste={() => { setTokPasted(true); window.setTimeout(() => setTokPasted(false), 1800); }}
+                    placeholder={editingId ? 'paste to replace, blank keeps existing' : activeProvider.placeholder} autoComplete="off" className={`${inputSm} pr-20 font-mono`} />
+                  {tokPasted && <span className="absolute right-10 top-1/2 -translate-y-1/2 flex items-center gap-1 text-micro font-bold text-emerald-600" aria-live="polite"><Check size={13} /> pasted</span>}
                   <button type="button" onClick={() => setShowToken(s => !s)} className="absolute right-1 top-1/2 -translate-y-1/2 p-2 min-h-control min-w-control flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg" aria-label="toggle">{showToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1380,13 +1476,13 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
               <div className="flex items-center gap-2 p-2.5 rounded-lg border border-accent-200 bg-accent-50/50">
                 <Bot size={16} className="text-accent-600 shrink-0" />
                 <span className="text-sm font-bold text-slate-800 flex-1 min-w-0">Default — all agents</span>
-                <div className="w-[46%] max-w-[220px]">{tokenOptions(assignments['*'] || '', v => setAssign('*', v))}</div>
+                <div className="w-[46%] max-w-[220px]">{tokenOptions(assignments['*'] || '', v => setAssign('*', v), undefined, true)}</div>
               </div>
               {agents.map(a => (
                 <div key={a.role} className="flex items-center gap-2 p-2.5 rounded-lg border border-slate-200">
                   <Bot size={16} className="text-slate-400 shrink-0" />
                   <div className="flex-1 min-w-0"><div className="text-sm font-bold text-slate-800 truncate">{a.label || a.role}</div><div className="text-micro text-slate-500 uppercase tracking-wider">{a.role}</div></div>
-                  <div className="w-[46%] max-w-[220px]">{tokenOptions(assignments[a.role] || '', v => setAssign(a.role, v))}</div>
+                  <div className="w-[46%] max-w-[220px]">{tokenOptions(assignments[a.role] || '', v => setAssign(a.role, v), undefined, true)}</div>
                 </div>
               ))}
               {agents.length === 0 && <p className="text-xs text-slate-500">No agents found.</p>}
@@ -1401,7 +1497,13 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 <span className="text-2xs text-slate-500">Isolated worktrees where agents build each task.</span>
                 <button onClick={loadWorktrees} disabled={wtLoading} className={btnSm}><RefreshCw size={14} className={wtLoading ? 'animate-spin' : ''} /> Refresh</button>
               </div>
-              {worktrees.length === 0 && !wtLoading && <p className="text-xs text-slate-500">No active agent worktrees.</p>}
+              {worktrees.length === 0 && !wtLoading && (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center space-y-1.5">
+                  <FolderGit2 size={22} className="mx-auto text-slate-300" />
+                  <p className="text-xs font-bold text-slate-600">No worktrees yet</p>
+                  <p className="text-2xs text-slate-500 max-w-sm mx-auto">Each agent builds its task in an isolated git worktree. One shows up here once an agent starts working — assign a task on the board to spin one up, then Refresh.</p>
+                </div>
+              )}
               {worktrees.map(wt => (
                 <div key={wt.path} className="p-3 rounded-lg border border-slate-200 space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1453,7 +1555,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                         </div>
                         <div className="text-micro text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
                           <span className="inline-flex items-center gap-1 font-bold text-slate-600"><GitCommit size={11} /> {c.author}</span>
-                          <span>{(c.date || '').slice(0, 16).replace('T', ' ')}</span>
+                          <span title={formatWhen(c.date)}>{timeAgo(c.date)}</span>
                         </div>
                       </button>
                       {open && (
@@ -1462,7 +1564,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                             : showData.ok === false ? <div className="px-3 py-3 text-xs text-rose-600">Could not load commit.</div>
                             : (<>
                                 <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 text-2xs text-slate-600">
-                                  <span className="font-bold">{showData.author}</span> &lt;{showData.email}&gt; · {(showData.date || '').slice(0, 16).replace('T', ' ')}
+                                  <span className="font-bold">{showData.author}</span> &lt;{showData.email}&gt; · {formatWhen(showData.date)}
                                   <div className="mt-1 flex flex-wrap gap-1">
                                     {(showData.files || []).map((f: any, i: number) => (
                                       <span key={i} className="font-mono text-micro rounded px-1.5 py-0.5 bg-white border border-slate-200 text-slate-600">{f.status} {f.path}</span>
@@ -1512,6 +1614,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 <button onClick={loadIndex} className={btnSm}><RefreshCw size={14} /> Refresh</button>
                 <button onClick={rebuildIndex} disabled={idxBusy} className={btnPrimarySm}><HeartPulse size={15} /> Rebuild / Heal now</button>
               </div>
+              <p className="text-micro text-slate-500">Reads every file and re-embeds the repo — a large repo can take a few minutes. Safe to leave running; agents keep searching the previous index until the new one is ready.</p>
 
               <div className="p-3 rounded-lg border border-slate-200 space-y-2">
                 <label className="eyebrow">Index a different repo</label>

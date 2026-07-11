@@ -13,6 +13,9 @@ tsconfig.tsbuildinfo
 .agent_logs
 local.db
 
+# Claude agent worktrees & internal state (transient — never commit)
+.claude/
+
 # Secrets & backend config (never commit)
 db/.secret.key
 db/backend.json

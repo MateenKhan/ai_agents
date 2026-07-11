@@ -4,6 +4,8 @@ import type { Task } from '../types';
 import { API_BASE, getActiveProject } from '../../../apiBase';
 import { SlideOver } from './SlideOver';
 import { ChangesPanel } from './ChangesPanel';
+import { LogConsole } from './LogConsole';
+import { btnDanger } from '../ui';
 import { inferPreviewable } from '../previewable';
 
 interface HumanTodosProps {
@@ -417,7 +419,7 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                                 <AlertCircle size={15} /> Preview failed — retry {pv.error ? `(${pv.error})` : ''}
                               </button>
                               {pv.logTail && (
-                                <pre className="text-micro leading-snug text-rose-800 bg-rose-50/60 border border-rose-200 rounded-lg p-2 max-h-40 overflow-auto whitespace-pre-wrap break-words">{pv.logTail}</pre>
+                                <LogConsole lines={pv.logTail.split('\n')} parsed maxHeight="max-h-40" />
                               )}
                               {pv.logName && <p className="text-micro text-slate-500">Full build log: open <span className="font-mono">{pv.logName}</span> in the Logs tab.</p>}
                             </div>
@@ -465,13 +467,13 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                           <button
                             onClick={() => submitReject(task.id)}
                             disabled={!feedback.trim()}
-                            className="flex-1 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-rose-600 text-white rounded-lg disabled:opacity-40 active:bg-rose-700 sm:hover:bg-rose-500 transition-colors"
+                            className={`flex-1 uppercase tracking-wide text-[13px] ${btnDanger}`}
                           >
                             Send back to agent
                           </button>
                           <button
                             onClick={() => setRejectingId(null)}
-                            className="px-5 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-white text-slate-700 border border-slate-300 rounded-lg active:bg-slate-100 sm:hover:bg-slate-50 transition-colors"
+                            className="px-5 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-white text-slate-700 border border-slate-300 rounded-xl active:bg-slate-100 sm:hover:bg-slate-50 transition-colors"
                           >
                             Cancel
                           </button>
@@ -479,17 +481,20 @@ export function HumanTodos({ isOpen, tasks, onClose, onApprove, onReject }: Huma
                       </div>
                     ) : (
                       <div className="flex gap-2">
+                        {/* Approve is routine tier-2 (merges to main, but it's the expected happy
+                            path): quiet ink. Reject is the destructive tier-3 action and must
+                            out-shout it — saturated rose + ring + warning icon (btnDanger). */}
                         <button
                           data-feature-id="human-todo-approve"
                           onClick={() => onApprove(task.id)}
-                          className="flex-1 flex items-center justify-center gap-2 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-emerald-600 text-white rounded-lg active:bg-emerald-700 sm:hover:bg-emerald-500 transition-colors"
+                          className="flex-1 flex items-center justify-center gap-2 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-slate-900 text-white rounded-xl active:bg-slate-950 sm:hover:bg-slate-800 transition-colors"
                         >
                           <CheckCircle2 size={16} /> Approve
                         </button>
                         <button
                           data-feature-id="human-todo-reject"
                           onClick={() => startReject(task)}
-                          className="flex-1 flex items-center justify-center gap-2 min-h-control-lg text-[13px] font-bold uppercase tracking-wide bg-white text-rose-600 border border-rose-300 rounded-lg active:bg-rose-600 active:text-white sm:hover:bg-rose-50 transition-colors"
+                          className={`flex-1 uppercase tracking-wide text-[13px] ${btnDanger}`}
                         >
                           <XCircle size={16} /> Reject
                         </button>

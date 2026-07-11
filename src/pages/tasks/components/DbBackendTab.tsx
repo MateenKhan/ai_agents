@@ -78,6 +78,13 @@ export default function DbBackendTab() {
 
   const canSave = kind === 'sqlite' || url.trim().length > 0;
 
+  // Live reachability of the db-server, reflected as a connected/checking/failed pill.
+  const conn = loading
+    ? { label: 'Checking…', cls: 'bg-amber-50 border-amber-200 text-amber-700', dot: 'bg-amber-500' }
+    : current
+      ? { label: 'Connected', cls: 'bg-emerald-50 border-emerald-200 text-emerald-700', dot: 'bg-emerald-500' }
+      : { label: 'Unreachable', cls: 'bg-rose-50 border-rose-200 text-rose-700', dot: 'bg-rose-500' };
+
   return (
     <div className="space-y-5">
       {/* Current backend */}
@@ -91,9 +98,15 @@ export default function DbBackendTab() {
             ) : 'Unavailable (db-server unreachable)'}
           </div>
         </div>
-        <Tooltip label="Refresh"><button onClick={load} disabled={loading} className={`${btnGhost} ml-auto shrink-0`}>
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-        </button></Tooltip>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full border text-micro font-bold ${conn.cls}`} data-feature-id="db-backend-status" role="status">
+            <span className={`w-1.5 h-1.5 rounded-full ${conn.dot} ${loading ? 'animate-pulse' : ''}`} />
+            {conn.label}
+          </span>
+          <Tooltip label="Refresh"><button onClick={load} disabled={loading} className={`${btnGhost} shrink-0`}>
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button></Tooltip>
+        </div>
       </div>
 
       {/* Backend picker */}

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { BarChart3, Clock, Cpu, AlertOctagon, SearchX, Search, FileCode, Pin } from 'lucide-react';
+import { BarChart3, Clock, Cpu, AlertOctagon, SearchX, Search, FileCode, Pin, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import type { Task } from '../types';
 import { API_BASE, withProject } from '../../../apiBase';
+import { Tooltip } from './Tooltip';
 
 interface AnalyticsTabProps {
   tasks: Task[];
@@ -17,12 +18,47 @@ const fmtMins = (ms: number) => {
 
 const fmtAgo = (iso: string) => fmtMins(Date.now() - new Date(iso).getTime()) + ' ago';
 
-function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function StatCard({ label, value, sub, muted, delta }: { label: string; value: string | number; sub?: string; muted?: boolean; delta?: React.ReactNode }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
       <p className="eyebrow">{label}</p>
-      <p className="text-2xl font-bold text-slate-900 mt-0.5">{value}</p>
+      <p className={`mt-0.5 ${muted ? 'text-base font-semibold text-slate-400' : 'text-2xl font-bold text-slate-900'}`}>{value}</p>
+      {delta && <div className="mt-0.5">{delta}</div>}
       {sub && <p className="text-2xs text-slate-500 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+// Trend chip vs the prior 7-day window (item 41). Presentation only — it renders a
+// separately-derived delta and never alters the headline total above it.
+function Delta({ value, tone = 'neutral', suffix }: { value: number; tone?: 'neutral' | 'up-good'; suffix?: string }) {
+  if (value === 0) {
+    return <span className="inline-flex items-center gap-0.5 text-micro text-slate-400"><Minus size={10} /> no change vs last week</span>;
+  }
+  const up = value > 0;
+  const color = tone === 'up-good' ? (up ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-500';
+  const Icon = up ? TrendingUp : TrendingDown;
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-micro font-semibold ${color}`}>
+      <Icon size={11} />{up ? '+' : ''}{value}{suffix} vs last week
+    </span>
+  );
+}
+
+// Agent-role palette, hoisted so the bars, the stacked swimlanes and the shared legend
+// all read from ONE source — keeping the role legend consistent with the bar colours (item 44).
+const ROLE_ORDER = ['architect', 'dev', 'qa', 'merge'];
+const ROLE_COLOR: Record<string, string> = { architect: 'bg-fuchsia-500', dev: 'bg-accent-500', qa: 'bg-amber-500', merge: 'bg-emerald-500' };
+
+function RoleLegend() {
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
+      {ROLE_ORDER.map(role => (
+        <span key={role} className="inline-flex items-center gap-1 text-micro text-slate-500 capitalize">
+          <span className={`inline-block w-2 h-2 rounded-sm ${ROLE_COLOR[role]}`} />
+          {role}
+        </span>
+      ))}
     </div>
   );
 }
@@ -47,6 +83,22 @@ function ThinSection({ icon, title, children }: { icon: React.ReactNode; title: 
         {icon} {title}
       </h3>
       <div className="ml-auto min-w-0">{children}</div>
+    </div>
+  );
+}
+
+// Loading skeleton for the two async sections (item 88) — animate-pulse blocks that hold the
+// section's shape while db-usage / context-usage fetch, instead of a blank flash then a pop-in.
+function SkeletonRows({ rows = 3, bar }: { rows?: number; bar?: boolean }) {
+  return (
+    <div className="space-y-2" aria-hidden="true">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <div className="h-3 rounded bg-slate-100 animate-pulse" style={{ width: `${34 + (i % 3) * 14}%` }} />
+          {bar && <div className="h-2 flex-1 rounded-full bg-slate-100 animate-pulse" />}
+          <div className="h-3 w-12 rounded bg-slate-100 animate-pulse ml-auto" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -81,8 +133,6 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
   const slowest = [...timed].sort((a, b) => b.ms - a.ms).slice(0, 5);
 
   // ── Actual agent time (from stageTimings: role → ms) ──
-  const ROLE_ORDER = ['architect', 'dev', 'qa', 'merge'];
-  const ROLE_COLOR: Record<string, string> = { architect: 'bg-fuchsia-500', dev: 'bg-accent-500', qa: 'bg-amber-500', merge: 'bg-emerald-500' };
   const tasksWithTime = tasks
     .map(t => { const timings = t.stageTimings || {}; return { t, timings, total: Object.values(timings).reduce((s, v) => s + v, 0) }; })
     .filter(x => x.total > 0);
@@ -112,13 +162,46 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
   const claimedAgents = new Set(tasks.map(t => t.claimedBy).filter(Boolean));
   const neverSearched = [...claimedAgents].filter(a => !(dbUsage ?? []).some(u => u.agentName === a));
 
+  // ── Trend vs the prior 7-day window (item 41) ──
+  // Purely additive: counts this-week against last-week using timestamps already on the
+  // tasks, so the four headline totals above are unchanged.
+  const WEEK = 7 * 24 * 3_600_000;
+  const nowMs = Date.now();
+  const inWin = (iso: string | null | undefined, from: number, to: number) => {
+    if (!iso) return false;
+    const ts = new Date(iso).getTime();
+    return ts >= from && ts < to;
+  };
+  const createdDelta =
+    tasks.filter(t => inWin(t.createdAt, nowMs - WEEK, nowMs)).length -
+    tasks.filter(t => inWin(t.createdAt, nowMs - 2 * WEEK, nowMs - WEEK)).length;
+  const doneDelta =
+    tasks.filter(t => inWin(t.completed, nowMs - WEEK, nowMs)).length -
+    tasks.filter(t => inWin(t.completed, nowMs - 2 * WEEK, nowMs - WEEK)).length;
+
+  // Whole-tab empty state (item 46) — a project with zero tasks has no numbers to show, so
+  // mirror the board's calm centred voice instead of a grid of zeros (item 100).
+  if (tasks.length === 0) {
+    return (
+      <div className="p-3 sm:p-4 h-full overflow-y-auto custom-scrollbar" data-feature-id="tasks-analytics-tab">
+        <div className="h-full min-h-[60vh] flex items-center justify-center p-6 text-center">
+          <div className="flex flex-col items-center gap-2.5 max-w-xs">
+            <BarChart3 size={28} className="text-slate-300" />
+            <p className="eyebrow text-slate-400">No analytics yet</p>
+            <p className="text-2xs text-slate-500">Numbers show up here once this project has tasks — define your first one on the board and throughput, timings and token-burn start flowing in.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-3 sm:p-4 space-y-3 pb-24 h-full overflow-y-auto custom-scrollbar" data-feature-id="tasks-analytics-tab">
       {/* Headline stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard label="Defined" value={tasks.length} sub={`${byStatus['AVAILABLE'] || 0} available, ${byStatus['TODO'] || 0} todo`} />
-        <StatCard label="Done" value={byStatus['DONE'] || 0} sub={`${byStatus['TESTING'] || 0} awaiting your review`} />
-        <StatCard label="Avg completion" value={timed.length ? fmtMins(avgMs) : '—'} sub={timed.length ? `across ${timed.length} timed tasks` : 'no timed completions yet'} />
+        <StatCard label="Defined" value={tasks.length} delta={<Delta value={createdDelta} />} sub={`${byStatus['AVAILABLE'] || 0} available, ${byStatus['TODO'] || 0} todo`} />
+        <StatCard label="Done" value={byStatus['DONE'] || 0} delta={<Delta value={doneDelta} tone="up-good" />} sub={`${byStatus['TESTING'] || 0} awaiting your review`} />
+        <StatCard label="Avg completion" value={timed.length ? fmtMins(avgMs) : 'No data yet'} muted={!timed.length} sub={timed.length ? `across ${timed.length} timed tasks` : 'no timed completions yet'} />
         <StatCard label="Stuck" value={stuck.length} sub={`${byStatus['BLOCKED'] || 0} blocked, ${byStatus['WORKING'] || 0} working`} />
       </div>
 
@@ -138,12 +221,14 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
         <Section icon={<Cpu size={14} className="text-accent-600" />} title="Models used">
           <div className="space-y-1.5">
             {Object.entries(byModel).sort((a, b) => b[1] - a[1]).map(([model, count]) => (
-              <div key={model} className="flex items-center gap-3">
-                <span className="text-xs font-mono text-slate-800 min-w-[160px] truncate">{model}</span>
-                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-accent-500 rounded-full" style={{ width: `${(count / tasks.length) * 100}%` }} />
-                </div>
-                <span className="text-xs font-semibold text-slate-600 w-8 text-right">{count}</span>
+              <div key={model} className="grid grid-cols-[minmax(0,160px)_1fr_2rem] items-center gap-3">
+                <span className="text-xs font-mono text-slate-800 truncate">{model}</span>
+                <Tooltip label={`${model}: ${count} of ${tasks.length} task${tasks.length !== 1 ? 's' : ''}`}>
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-accent-500 rounded-full" style={{ width: `${(count / tasks.length) * 100}%` }} />
+                  </div>
+                </Tooltip>
+                <span className="text-xs font-semibold text-slate-600 text-right">{count}</span>
               </div>
             ))}
           </div>
@@ -182,19 +267,22 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
         ) : (
           <div className="space-y-1.5">
             {ROLE_ORDER.filter(r => roleTotals[r]).map(role => (
-              <div key={role} className="flex items-center gap-3">
-                <span className="text-xs font-semibold text-slate-800 capitalize min-w-[72px]">{role}</span>
-                <div className="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                  <div className={`h-full ${ROLE_COLOR[role] || 'bg-slate-400'} rounded-full`} style={{ width: `${(roleTotals[role] / grandTotal) * 100}%` }} />
-                </div>
-                <span className="text-xs font-bold text-slate-700 w-14 text-right">{fmtMins(roleTotals[role])}</span>
-                <span className="text-micro text-slate-500 w-9 text-right">{Math.round((roleTotals[role] / grandTotal) * 100)}%</span>
+              <div key={role} className="grid grid-cols-[72px_1fr_3.5rem_2.25rem] items-center gap-3">
+                <span className="text-xs font-semibold text-slate-800 capitalize">{role}</span>
+                <Tooltip label={`${role}: ${fmtMins(roleTotals[role])} (${Math.round((roleTotals[role] / grandTotal) * 100)}%)`}>
+                  <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div className={`h-full ${ROLE_COLOR[role] || 'bg-slate-400'} rounded-full`} style={{ width: `${(roleTotals[role] / grandTotal) * 100}%` }} />
+                  </div>
+                </Tooltip>
+                <span className="text-xs font-bold text-slate-700 text-right">{fmtMins(roleTotals[role])}</span>
+                <span className="text-micro text-slate-500 text-right">{Math.round((roleTotals[role] / grandTotal) * 100)}%</span>
               </div>
             ))}
             <div className="pt-1.5 mt-1 border-t border-slate-100 flex justify-between text-2xs text-slate-500">
               <span>Total agent time across {tasksWithTime.length} task{tasksWithTime.length !== 1 ? 's' : ''}</span>
               <span className="font-bold text-slate-700">{fmtMins(grandTotal)}</span>
             </div>
+            <RoleLegend />
           </div>
         )}
       </Section>
@@ -207,13 +295,17 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
           <div className="space-y-3">
             {topByTime.map(({ t, timings, total }) => (
               <div key={t.id}>
-                <div className="flex items-center justify-between gap-2 text-xs mb-1">
-                  <span className="text-slate-800 truncate">{t.title}</span>
-                  <span className="font-bold text-slate-700 shrink-0">{fmtMins(total)}</span>
+                <div className="grid grid-cols-[1fr_auto] items-center gap-2 text-xs mb-1">
+                  <Tooltip label={t.title}>
+                    <span className="flex-1 min-w-0 truncate text-slate-800">{t.title}</span>
+                  </Tooltip>
+                  <span className="font-bold text-slate-700">{fmtMins(total)}</span>
                 </div>
-                <div className="flex h-2 rounded-full overflow-hidden bg-slate-100">
+                <div className="grid h-2 rounded-full overflow-hidden bg-slate-100" style={{ gridTemplateColumns: ROLE_ORDER.filter(r => timings[r]).map(r => `${timings[r]}fr`).join(' ') }}>
                   {ROLE_ORDER.filter(r => timings[r]).map(role => (
-                    <div key={role} className={ROLE_COLOR[role] || 'bg-slate-400'} style={{ width: `${(timings[role] / total) * 100}%` }} title={`${role}: ${fmtMins(timings[role])}`} />
+                    <Tooltip key={role} label={`${role}: ${fmtMins(timings[role])}`}>
+                      <div className={`w-full h-full ${ROLE_COLOR[role] || 'bg-slate-400'}`} />
+                    </Tooltip>
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
@@ -253,7 +345,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
       {/* Index usage — the token-burn audit */}
       <Section icon={<Search size={14} className="text-cyan-700" />} title="Code index usage per agent">
         {dbUsage === null ? (
-          <p className="text-xs text-slate-500">Loading…</p>
+          <SkeletonRows rows={3} />
         ) : dbUsage.length === 0 && neverSearched.length === 0 ? (
           <p className="text-xs text-slate-500">No usage recorded yet — populates as headless agents run tasks.</p>
         ) : (
@@ -282,7 +374,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
           distinct agents touched each. Sourced from the context op-log. */}
       <Section icon={<FileCode size={14} className="text-ai-600" />} title="Most-used context files">
         {fileUsage === null ? (
-          <p className="text-xs text-slate-500">Loading…</p>
+          <SkeletonRows rows={4} bar />
         ) : fileUsage.length === 0 ? (
           <p className="text-xs text-slate-500">No context activity yet — agents populate this as they read files.</p>
         ) : (

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Tooltip } from './Tooltip';
-import { RefreshCw, Pause, Play, Copy, Check, ArrowDownToLine, Clock, Trash2, SlidersHorizontal, Maximize2, Minimize2 } from 'lucide-react';
+import { RefreshCw, Pause, Play, Copy, Check, ArrowDownToLine, ArrowDown, Clock, Trash2, SlidersHorizontal, Maximize2, Minimize2, WrapText, ChevronUp, ChevronDown } from 'lucide-react';
 
 /**
  * LogConsole — the ONE log/terminal component used everywhere in the app.
@@ -35,6 +35,16 @@ export interface LogConsoleProps {
 
   // ── toolbar features (opt-in; compact callers omit them) ──
   searchable?: boolean;
+  /** Upgrade the search box from filter-out to find-in-place: highlight matches, show a
+   *  running "3/12" count, and step through them with prev/next. Opt-in so the compact
+   *  filter callers (git run/clone/index) keep their existing filter-only behavior. */
+  searchNav?: boolean;
+  /** Offer a line-wrap toggle. Default view still wraps (unchanged for existing callers);
+   *  toggling off switches long lines to horizontal scroll. */
+  wrapControl?: boolean;
+  /** Show a floating "jump to latest" button when the stream is live and the user has
+   *  scrolled up off the tail. Opt-in; independent of the persistent tail toggle. */
+  jumpToBottom?: boolean;
   timeToggle?: boolean;
   sizeControls?: boolean;
   historyControl?: boolean;
@@ -89,6 +99,7 @@ const TOOLBAR_CONTROLS: Array<{ id: string; label: string; on: (p: Record<string
   { id: 'live',    label: 'Live',       on: p => !!p.liveControl },
   { id: 'tail',    label: 'Tail',       on: p => !!p.tailControl },
   { id: 'time',    label: 'Date/Time',  on: p => !!p.timeToggle },
+  { id: 'wrap',    label: 'Line wrap',  on: p => !!p.wrapControl },
   { id: 'size',    label: 'Font size',  on: p => !!p.sizeControls },
   { id: 'copy',    label: 'Copy',       on: p => !!p.copyable },
   { id: 'clear',   label: 'Clear',      on: p => !!p.onClear },
@@ -123,7 +134,7 @@ function parseLine(msg: string): Parsed {
 
 export function LogConsole({
   lines, text, title, live, footer, toolbarLeft, fullscreenable,
-  searchable, timeToggle, sizeControls, historyControl, liveControl, tailControl, copyable, onRefresh, onClear, controlsKey,
+  searchable, searchNav, wrapControl, jumpToBottom, timeToggle, sizeControls, historyControl, liveControl, tailControl, copyable, onRefresh, onClear, controlsKey,
   onLiveChange, historyOptions = [200, 400, 1000, 5000], defaultHistory = 400, onHistoryLengthChange,
   parsed = false, bare, fill, maxHeight = 'max-h-52', empty = '…', className = '',
 }: LogConsoleProps) {
@@ -147,6 +158,12 @@ export function LogConsole({
   const [history, setHistory] = useState(defaultHistory);
   const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState(false);
+  // Line wrap defaults ON so callers that don't opt into the toggle keep today's look.
+  const [wrap, setWrap] = useState(true);
+  // Whether the body is scrolled to (near) the tail — drives the jump-to-latest button.
+  const [atBottom, setAtBottom] = useState(true);
+  // Which search match is "current" for the find-in-place next/prev stepper.
+  const [matchIdx, setMatchIdx] = useState(0);
 
   // Per-control visibility, same idea as hiding a tab: the toolbar is dense and not every
   // console needs every control. Persisted so the choice survives a reload.
@@ -175,7 +192,40 @@ export function LogConsole({
   const rawArr = useMemo(() => lines ?? (text != null ? text.split('\n') : []), [lines, text]);
   // Client-side history cap (server-backed callers also raise their fetch tail via callback).
   const capped = historyControl && history > 0 ? rawArr.slice(-history) : rawArr;
-  const shown = filter ? capped.filter(l => l.toLowerCase().includes(filter.toLowerCase())) : capped;
+  // Two search modes: legacy filter (hide non-matches) vs find-in-place (keep every line,
+  // highlight matches, step through them). searchNav opts into the latter, so filtering
+  // stays the behavior for the compact git run/clone/index consoles.
+  const legacyFilter = searchable && !searchNav;
+  const shown = filter && legacyFilter ? capped.filter(l => l.toLowerCase().includes(filter.toLowerCase())) : capped;
+
+  // Find-in-place matches: line indices (into `shown`) containing the query.
+  const matchSet = useMemo(() => {
+    const s = new Set<number>();
+    if (searchNav && filter) { const q = filter.toLowerCase(); shown.forEach((l, i) => { if (l.toLowerCase().includes(q)) s.add(i); }); }
+    return s;
+  }, [searchNav, filter, shown]);
+  const matches = useMemo(() => [...matchSet].sort((a, b) => a - b), [matchSet]);
+  // Reset the cursor to the first match whenever the query changes.
+  useEffect(() => { setMatchIdx(0); }, [filter]);
+  // Keep the cursor in range as matches come and go (a live tail changes the set).
+  useEffect(() => { setMatchIdx(i => (matches.length ? Math.min(i, matches.length - 1) : 0)); }, [matches.length]);
+  const stepMatch = (d: number) => { if (matches.length) setMatchIdx(i => (i + d + matches.length) % matches.length); };
+  // Scroll the current match into view when the cursor moves.
+  useEffect(() => {
+    if (!searchNav || !matches.length) return;
+    const el = bodyRef.current?.querySelector(`[data-line-index="${matches[matchIdx]}"]`);
+    el?.scrollIntoView({ block: 'center' });
+  }, [matchIdx, matches, searchNav]);
+
+  const ws = wrap ? 'whitespace-pre-wrap break-words' : 'whitespace-pre';
+  const rowHL = (i: number): string => {
+    if (!searchNav || matchSet.size === 0) return '';
+    if (i === matches[matchIdx]) return 'bg-amber-400/25 rounded';
+    if (matchSet.has(i)) return 'bg-amber-400/10 rounded';
+    return '';
+  };
+  const scrollToBottom = () => { const el = bodyRef.current; if (el) { el.scrollTop = el.scrollHeight; setAtBottom(true); } };
+  const onBodyScroll = () => { const el = bodyRef.current; if (el) setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 60); };
 
   // Stick to the bottom on update when tailing (or, for compact boxes without a tail
   // control, whenever the user is already near the bottom).
@@ -203,9 +253,10 @@ export function LogConsole({
 
   const renderRow = (raw: string, key: React.Key) => {
     const p = parseLine(raw);
-    if (p.type === 'divider') return <div key={key} className="mt-2 mb-1 border-t border-slate-700/70 pt-1 text-[0.8em] text-slate-500 uppercase tracking-widest">{p.text}</div>;
+    const i = typeof key === 'number' ? key : -1;
+    if (p.type === 'divider') return <div key={key} data-line-index={i} className="mt-2 mb-1 border-t border-slate-700/70 pt-1 text-[0.8em] text-slate-500 uppercase tracking-widest">{p.text}</div>;
     return (
-      <div key={key} className={`flex gap-2 whitespace-pre-wrap break-words py-0.5 ${p.type === 'msg' ? 'italic' : ''}`}>
+      <div key={key} data-line-index={i} className={`flex gap-2 ${ws} py-0.5 ${p.type === 'msg' ? 'italic' : ''} ${rowHL(i)}`}>
         {showTime && p.time && <span className="shrink-0 text-[0.75em] text-slate-600 pt-0.5 font-mono tabular-nums select-none">{p.date ? `${p.date} ${p.time}` : p.time}</span>}
         {p.tag && <span className={`shrink-0 font-bold uppercase text-[0.8em] w-9 pt-0.5 ${p.color}`}>{p.tag}</span>}
         <span className={p.color}>{p.text}</span>
@@ -214,11 +265,11 @@ export function LogConsole({
   };
 
   const bodyInner = shown.length === 0
-    ? <span className="text-slate-500">{filter ? 'No lines match the filter.' : empty}</span>
+    ? <span className="text-slate-500">{filter && legacyFilter ? 'No lines match the filter.' : empty}</span>
     : !parsed
       // text-slate-300 to match parsed lines: without a colour these inherit the app's dark
       // body text and render invisibly on the dark terminal surface (Run/Clone/Index logs).
-      ? shown.map((l, i) => <div key={i} className="whitespace-pre-wrap break-words text-slate-300">{l}</div>)
+      ? shown.map((l, i) => <div key={i} data-line-index={i} className={`${ws} text-slate-300 ${rowHL(i)}`}>{l}</div>)
       : (() => {
         // Collapse consecutive "noise" lines (reads/searches) into a foldable group.
         const blocks: Array<{ g: Array<{ raw: string; i: number }> } | { l: { raw: string; i: number } }> = [];
@@ -230,12 +281,17 @@ export function LogConsole({
         if (grp.length) blocks.push({ g: grp });
         return blocks.map(b => 'g' in b
           ? (b.g.length > 1
-            ? <div key={`g${b.g[0].i}`}>
+            // Force the group open when find-in-place has a match inside it — otherwise
+            // the stepper would scroll to a line hidden in a collapsed fold.
+            ? (() => {
+              const grpOpen = openGroups.has(b.g[0].i) || (searchNav && b.g.some(x => matchSet.has(x.i)));
+              return <div key={`g${b.g[0].i}`}>
                 <button onClick={() => toggleGroup(b.g[0].i)} className="text-slate-500 hover:text-slate-300 flex items-center gap-1.5 py-0.5 italic">
-                  <span className="w-3">{openGroups.has(b.g[0].i) ? '▾' : '▸'}</span> {b.g.length} context reads &amp; searches
+                  <span className="w-3">{grpOpen ? '▾' : '▸'}</span> {b.g.length} context reads &amp; searches
                 </button>
-                {openGroups.has(b.g[0].i) && <div className="pl-3 border-l border-slate-800 ml-1.5">{b.g.map(x => renderRow(x.raw, x.i))}</div>}
-              </div>
+                {grpOpen && <div className="pl-3 border-l border-slate-800 ml-1.5">{b.g.map(x => renderRow(x.raw, x.i))}</div>}
+              </div>;
+            })()
             : renderRow(b.g[0].raw, b.g[0].i))
           : renderRow(b.l.raw, b.l.i));
       })();
@@ -243,14 +299,15 @@ export function LogConsole({
   const body = (
     <div
       ref={bodyRef}
-      className={`${ff ? 'flex-1 min-h-0' : maxHeight} overflow-y-auto custom-scrollbar font-mono leading-relaxed ${bare ? 'p-2.5' : 'p-4'} ${bare && !ff ? className : ''}`}
+      onScroll={onBodyScroll}
+      className={`${ff ? 'flex-1 min-h-0' : maxHeight} overflow-y-auto ${wrap ? '' : 'overflow-x-auto'} custom-scrollbar font-mono leading-relaxed ${bare ? 'p-2.5' : 'p-4'} ${bare && !ff ? className : ''}`}
       style={{ fontSize }}
     >
       {bodyInner}
     </div>
   );
 
-  const hasToolbar = searchable || timeToggle || sizeControls || historyControl || liveControl || tailControl || copyable || onRefresh || onClear || toolbarLeft || title || fullscreenable;
+  const hasToolbar = searchable || timeToggle || sizeControls || historyControl || liveControl || tailControl || copyable || onRefresh || onClear || toolbarLeft || title || fullscreenable || wrapControl;
 
   const toolbar = hasToolbar && (
     <div className="flex items-center gap-2 flex-wrap">
@@ -270,6 +327,29 @@ export function LogConsole({
             data-feature-id="logs-filter"
             className="px-3 min-h-control text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500 placeholder:text-slate-400 w-40"
           />
+        )}
+        {/* Find-in-place: a running match count and prev/next stepper. Only meaningful with a
+            query, so the whole cluster is hidden until the user types. */}
+        {searchable && searchNav && show('search') && filter && (
+          <div className="flex items-center gap-1" data-feature-id="logs-search-nav">
+            <span className="text-2xs font-mono text-slate-500 tabular-nums select-none min-w-[3.5ch] text-center">
+              {matches.length ? `${matchIdx + 1}/${matches.length}` : '0/0'}
+            </span>
+            <Tooltip label="Previous match"><button
+              onClick={() => stepMatch(-1)}
+              disabled={!matches.length}
+              aria-label="Previous match"
+              data-feature-id="logs-search-prev"
+              className={`${toolbarBtn} bg-white border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white`}
+            ><ChevronUp size={15} /></button></Tooltip>
+            <Tooltip label="Next match"><button
+              onClick={() => stepMatch(1)}
+              disabled={!matches.length}
+              aria-label="Next match"
+              data-feature-id="logs-search-next"
+              className={`${toolbarBtn} bg-white border-slate-300 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white`}
+            ><ChevronDown size={15} /></button></Tooltip>
+          </div>
         )}
         {historyControl && show('history') && (
           <select
@@ -315,6 +395,16 @@ export function LogConsole({
             className={`${toolbarBtn} ${showTime ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
           >
             <Clock size={15} />
+          </button></Tooltip>
+        )}
+        {wrapControl && show('wrap') && (
+          <Tooltip label={wrap ? 'Wrapping long lines — switch to horizontal scroll' : 'Not wrapping — switch to wrap'}><button
+            onClick={() => setWrap(v => !v)}
+            aria-pressed={wrap}
+            data-feature-id="logs-wrap-toggle"
+            className={`${toolbarBtn} ${wrap ? 'bg-accent-50 text-accent-700 border-accent-300' : 'bg-white text-slate-600 border-slate-300'}`}
+          >
+            <WrapText size={15} />
           </button></Tooltip>
         )}
         {/* A− / A+ ARE the icons. The number between them is live state, not a label, so it
@@ -381,7 +471,7 @@ export function LogConsole({
                 <div className="fixed inset-0 z-[70]" onClick={() => setMenuOpen(false)} />
                 <div className="absolute right-0 top-full mt-1.5 z-[75] w-48 p-1.5 rounded-xl border border-slate-200 bg-white shadow-xl">
                   <p className="eyebrow px-2 py-1">Show controls</p>
-                  {TOOLBAR_CONTROLS.filter(c => c.on({ searchable, historyControl, liveControl, tailControl, timeToggle, sizeControls, copyable, onClear, onRefresh }))
+                  {TOOLBAR_CONTROLS.filter(c => c.on({ searchable, historyControl, liveControl, tailControl, timeToggle, wrapControl, sizeControls, copyable, onClear, onRefresh }))
                     .map(c => (
                       <label key={c.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
                         {c.label}
@@ -408,8 +498,17 @@ export function LogConsole({
   const content = (
     <div className={`${ff ? 'flex flex-col h-full min-h-0' : ''} space-y-2 ${!bare && !ff ? className : ''}`}>
       {toolbar}
-      <div className={`${ff ? 'flex-1 min-h-0 flex flex-col' : ''} bg-surface-terminal border border-slate-300 rounded-xl overflow-hidden`}>
+      <div className={`relative ${ff ? 'flex-1 min-h-0 flex flex-col' : ''} bg-surface-terminal border border-slate-300 rounded-xl overflow-hidden`}>
         {body}
+        {jumpToBottom && liveOn && !atBottom && (
+          <Tooltip label="Jump to the latest lines"><button
+            onClick={scrollToBottom}
+            data-feature-id="logs-jump-bottom"
+            className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 px-3 min-h-control rounded-lg bg-slate-800 text-emerald-300 border border-slate-700 shadow-lg text-2xs font-bold uppercase tracking-wide hover:bg-slate-700 active:scale-[0.97] transition-all"
+          >
+            <ArrowDown size={14} /> Latest
+          </button></Tooltip>
+        )}
       </div>
       {footer && <div className="text-2xs text-slate-500 shrink-0">{footer}</div>}
     </div>

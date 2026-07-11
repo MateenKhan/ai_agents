@@ -1,12 +1,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Sparkles, Send, Loader2, Check, X, FileCode, Plus, MessageSquareText, Settings2,
-  Trash2, Paperclip, ChevronDown, Search, Upload, MessagesSquare,
+  Trash2, Paperclip, ChevronDown, Search, Upload, MessagesSquare, Pencil, ArrowDown,
 } from 'lucide-react';
 import { API_BASE as API, withProject } from '../../../apiBase';
 import { useToast } from './Toast';
 import { useConfirm } from './ConfirmProvider';
 import { DiffView } from './DiffView';
+import { Tooltip } from './Tooltip';
 import { iconBtn, btnSm, selectSm } from '../ui';
 
 /**
@@ -28,7 +29,7 @@ import { iconBtn, btnSm, selectSm } from '../ui';
  */
 
 // ── types ────────────────────────────────────────────────────────────────────
-export interface Upload { name: string; content: string; }
+export interface Upload { name: string; content: string; size?: number; }
 export interface Proposal { path: string; oldContent: string; newContent: string; diff: string; }
 export interface ChatMetrics {
   responseMs: number; responseSec: number; ttftMs: number | null;
@@ -49,6 +50,10 @@ export interface ChatSettings { model: 'haiku' | 'sonnet' | 'opus'; effort: 'low
 
 const DEFAULT_SETTINGS: ChatSettings = { model: 'sonnet', effort: 'medium' };
 const SUGGESTIONS = ['Change the port to 4000', 'Add error handling', 'Write a test for this file', 'Add JSDoc comments'];
+// ~6 rows of the text-2xs composer before it stops growing and scrolls (item 14).
+const COMPOSER_MAX_H = 132;
+// Human-readable file size for upload chips (item 17).
+const fmtSize = (n?: number) => (n == null ? '' : n < 1024 ? `${n} B` : `${(n / 1024).toFixed(n < 102400 ? 1 : 0)} KB`);
 
 // ── store (context) ──────────────────────────────────────────────────────────
 interface Store {
@@ -60,6 +65,7 @@ interface Store {
   newSession: () => void;
   selectSession: (id: string) => void;
   deleteSession: (id: string) => void;
+  renameSession: (id: string, title: string) => void;
   patchActive: (fn: (s: ChatSession) => ChatSession) => void;
   tag: (path: string) => void;
 }
@@ -82,7 +88,7 @@ function slim(sessions: ChatSession[]): ChatSession[] {
   return sessions.map(s => ({
     ...s,
     messages: s.messages.map(m => ({ id: m.id, role: m.role, text: m.text, metrics: m.metrics })),
-    uploads: s.uploads.map(u => ({ name: u.name, content: '' })),
+    uploads: s.uploads.map(u => ({ name: u.name, content: '', size: u.size })),
   }));
 }
 
@@ -112,13 +118,17 @@ export function ChatStoreProvider({ activeId, children }: { activeId: string; ch
   const deleteSession = useCallback((id: string) => {
     setSessions(prev => { const next = prev.filter(s => s.id !== id); if (!next.length) { const f = freshSession(); setCurId(f.id); return [f]; } if (id === curId) setCurId(next[0].id); return next; });
   }, [curId]);
+  const renameSession = useCallback((id: string, title: string) => {
+    const t = title.trim();
+    setSessions(prev => prev.map(s => (s.id === id ? { ...s, title: t || 'New chat' } : s)));
+  }, []);
   const tag = useCallback((path: string) => { setSessions(prev => prev.map(s => (s.id === curId ? { ...s, tagged: s.tagged.includes(path) ? s.tagged : [...s.tagged, path] } : s))); }, [curId]);
 
   // Settings are per-thread: they read off the active thread and write back to it.
   const settings = active?.settings ?? DEFAULT_SETTINGS;
   const setSettings = useCallback((s: ChatSettings) => patchActive(sess => ({ ...sess, settings: s })), [patchActive]);
 
-  const store: Store = { sessions, activeId: curId, active, settings, setSettings, newSession, selectSession, deleteSession, patchActive, tag };
+  const store: Store = { sessions, activeId: curId, active, settings, setSettings, newSession, selectSession, deleteSession, renameSession, patchActive, tag };
   return <ChatCtx.Provider value={store}>{children}</ChatCtx.Provider>;
 }
 
@@ -232,26 +242,48 @@ export function FileChat({ activeId, className = '', onApplied }: {
 }) {
   const toast = useToast();
   const confirm = useConfirm();
-  const { sessions, activeId: curId, active, settings, newSession, selectSession, deleteSession, patchActive, tag } = useChatStore();
+  const { sessions, activeId: curId, active, settings, newSession, selectSession, deleteSession, renameSession, patchActive, tag } = useChatStore();
 
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [showSessions, setShowSessions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [atBottom, setAtBottom] = useState(true);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState('');
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
   const msgId = useRef(0);
 
   // Always land on the latest message: when the thread opens/switches and when it grows.
-  useEffect(() => { scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight }); }, [curId, active?.messages.length, sending]);
+  useEffect(() => { scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight }); setAtBottom(true); }, [curId, active?.messages.length, sending]);
+
+  // Item 16: track distance from the bottom so a "scroll to bottom" button can appear when the
+  // user has scrolled up in a long thread. 40px of slack absorbs sub-pixel/rounding jitter.
+  const onScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+  }, []);
+  const scrollToBottom = useCallback(() => { const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); }, []);
+
+  // Item 14: auto-grow the composer to fit its content, capped at ~6 rows (then it scrolls).
+  useEffect(() => {
+    const el = taRef.current; if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_H)}px`;
+  }, [input]);
+
+  const startRename = (s: ChatSession) => { setRenamingId(s.id); setRenameText(s.title); };
+  const commitRename = () => { if (renamingId) renameSession(renamingId, renameText); setRenamingId(null); };
 
   const untag = (path: string) => patchActive(s => ({ ...s, tagged: s.tagged.filter(p => p !== path) }));
   const removeUpload = (name: string) => patchActive(s => ({ ...s, uploads: s.uploads.filter(u => u.name !== name) }));
 
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;
-    const read = await Promise.all(Array.from(files).slice(0, 8).map(f => f.text().then(content => ({ name: f.name, content: content.slice(0, 512 * 1024) })).catch(() => null)));
+    const read = await Promise.all(Array.from(files).slice(0, 8).map(f => f.text().then(content => ({ name: f.name, content: content.slice(0, 512 * 1024), size: f.size })).catch(() => null)));
     const ups = read.filter(Boolean) as Upload[];
     if (ups.length) patchActive(s => ({ ...s, uploads: [...s.uploads.filter(u => !ups.some(n => n.name === u.name)), ...ups] }));
   };
@@ -260,7 +292,9 @@ export function FileChat({ activeId, className = '', onApplied }: {
     const instruction = input.trim();
     if (!instruction || sending) return;
     if (!active.tagged.length && !active.uploads.length) { toast.info('Tag a file first', 'Drag a file in, pick a repo file, or upload one — then describe the change.'); return; }
-    const title = active.messages.length ? active.title : instruction.slice(0, 40);
+    // Auto-title from the first message, but never clobber a title the user set by hand (item 18).
+    const hasCustomTitle = active.title && active.title !== 'New chat';
+    const title = active.messages.length || hasCustomTitle ? active.title : instruction.slice(0, 40);
     patchActive(s => ({ ...s, title, messages: [...s.messages, { id: ++msgId.current, role: 'user', text: instruction }] }));
     setInput(''); setSending(true);
     try {
@@ -285,8 +319,19 @@ export function FileChat({ activeId, className = '', onApplied }: {
     } catch (e: any) { toast.error('Apply failed', e?.message); }
   };
 
-  const clearThread = async () => {
-    if (await confirm({ title: 'Delete this chat?', message: 'The thread and its context are removed. This cannot be undone.', confirmLabel: 'Delete', tone: 'danger' })) deleteSession(curId);
+  // Item 15: drop a single proposal from a message without writing it — the reject to Apply's approve.
+  const dismissProposal = (msgIdx: number, p: Proposal) => {
+    patchActive(s => ({ ...s, messages: s.messages.map((m, i) => (i === msgIdx && m.proposals ? { ...m, proposals: m.proposals.filter(x => x !== p) } : m)) }));
+  };
+
+  // Item 22: an empty thread has nothing to lose, so its confirm says so plainly — a populated one
+  // warns about the messages and context it is about to destroy.
+  const confirmDelete = async (s: ChatSession) => {
+    const count = s.messages.filter(m => m.role === 'user').length;
+    const ok = count === 0
+      ? await confirm({ title: 'Delete this empty chat?', message: 'It has no messages yet, so nothing is lost.', confirmLabel: 'Delete', tone: 'danger' })
+      : await confirm({ title: 'Delete this chat?', message: `This removes ${count} message${count === 1 ? '' : 's'} and the thread's context. This cannot be undone.`, confirmLabel: 'Delete', tone: 'danger' });
+    if (ok) deleteSession(s.id);
   };
 
   return (
@@ -310,9 +355,25 @@ export function FileChat({ activeId, className = '', onApplied }: {
               {sessions.map(s => (
                 <div key={s.id} className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-md ${s.id === curId ? 'bg-accent-50' : 'hover:bg-slate-100'}`}>
                   <MessagesSquare size={12} className={s.id === curId ? 'text-accent-600 shrink-0' : 'text-slate-400 shrink-0'} />
-                  <button onClick={() => { selectSession(s.id); setShowSessions(false); }} className="flex-1 min-w-0 text-left text-2xs truncate">{s.title || 'New chat'}</button>
-                  <span className="text-micro text-slate-400 shrink-0">{s.messages.filter(m => m.role === 'user').length}</span>
-                  <button onClick={() => deleteSession(s.id)} className="shrink-0 text-slate-400 hover:text-rose-600 sm:opacity-0 sm:group-hover:opacity-100"><X size={12} /></button>
+                  {renamingId === s.id ? (
+                    <input
+                      autoFocus value={renameText}
+                      onChange={e => setRenameText(e.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitRename(); } else if (e.key === 'Escape') { e.preventDefault(); setRenamingId(null); } }}
+                      className="flex-1 min-w-0 text-2xs bg-white border border-slate-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-ai-300"
+                      aria-label="Rename chat"
+                    />
+                  ) : (
+                    <button onClick={() => { selectSession(s.id); setShowSessions(false); }} onDoubleClick={() => startRename(s)} className="flex-1 min-w-0 text-left text-2xs truncate">{s.title || 'New chat'}</button>
+                  )}
+                  {renamingId !== s.id && <span className="text-micro text-slate-400 shrink-0">{s.messages.filter(m => m.role === 'user').length}</span>}
+                  {renamingId !== s.id && (
+                    <Tooltip label="Rename">
+                      <button onClick={() => startRename(s)} className="shrink-0 text-slate-400 hover:text-slate-700 sm:opacity-0 sm:group-hover:opacity-100"><Pencil size={11} /></button>
+                    </Tooltip>
+                  )}
+                  <button onClick={() => confirmDelete(s)} aria-label="Delete chat" className="shrink-0 text-slate-400 hover:text-rose-600 sm:opacity-0 sm:group-hover:opacity-100"><X size={12} /></button>
                 </div>
               ))}
             </div>
@@ -320,7 +381,7 @@ export function FileChat({ activeId, className = '', onApplied }: {
         </div>
         <button onClick={newSession} className={iconBtn} aria-label="New chat" data-feature-id="fb-chat-new"><Plus size={15} /></button>
         <button onClick={() => { setShowSettings(o => !o); setShowSessions(false); }} className={iconBtn} aria-label="Chat settings" aria-pressed={showSettings}><Settings2 size={15} /></button>
-        <button onClick={clearThread} className={`${iconBtn} text-slate-400 hover:text-rose-600`} aria-label="Delete chat"><Trash2 size={14} /></button>
+        <button onClick={() => confirmDelete(active)} className={`${iconBtn} text-slate-400 hover:text-rose-600`} aria-label="Delete chat"><Trash2 size={14} /></button>
       </div>
 
       {showSettings ? (
@@ -328,7 +389,8 @@ export function FileChat({ activeId, className = '', onApplied }: {
       ) : (
         <>
           {/* messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2 min-h-0">
+          <div className="relative flex-1 min-h-0">
+          <div ref={scrollRef} onScroll={onScroll} className="absolute inset-0 overflow-y-auto custom-scrollbar p-2 space-y-2">
             {!active.messages.length ? (
               <div className="p-4 text-center text-2xs text-slate-500 leading-relaxed">
                 <MessageSquareText size={20} className="mx-auto mb-2 text-slate-300" />
@@ -348,6 +410,9 @@ export function FileChat({ activeId, className = '', onApplied }: {
                           <FileCode size={11} className="text-slate-400" />
                           <span className="flex-1 min-w-0 font-mono text-micro text-slate-300 truncate">{p.path}</span>
                           <button onClick={() => applyProposal(idx, p)} className="flex items-center gap-1 text-micro font-bold text-emerald-300 hover:text-emerald-200" data-feature-id="fb-apply"><Check size={11} /> Apply</button>
+                          <Tooltip label="Dismiss this change">
+                            <button onClick={() => dismissProposal(idx, p)} aria-label="Dismiss this change" className="flex items-center gap-1 text-micro font-bold text-slate-400 hover:text-rose-300" data-feature-id="fb-dismiss"><X size={11} /> Dismiss</button>
+                          </Tooltip>
                         </div>
                         <DiffView diff={p.diff} maxHeight="max-h-[30vh]" />
                       </div>
@@ -358,6 +423,20 @@ export function FileChat({ activeId, className = '', onApplied }: {
               </div>
             ))}
             {sending && <div className="flex items-center gap-2 text-2xs text-slate-500 px-1"><Loader2 size={13} className="animate-spin" /> Thinking…</div>}
+          </div>
+            {/* Item 16: only when the user has scrolled up in a non-empty thread. */}
+            {!atBottom && active.messages.length > 0 && (
+              <Tooltip label="Scroll to latest">
+                <button
+                  onClick={scrollToBottom}
+                  aria-label="Scroll to latest"
+                  className={`${iconBtn} absolute bottom-2 right-2 bg-white/95 border border-slate-200 text-slate-600 shadow-md hover:text-slate-900`}
+                  data-feature-id="fb-chat-scroll-bottom"
+                >
+                  <ArrowDown size={15} />
+                </button>
+              </Tooltip>
+            )}
           </div>
 
           {/* composer */}
@@ -373,6 +452,7 @@ export function FileChat({ activeId, className = '', onApplied }: {
                 {active.uploads.map(u => (
                   <span key={u.name} className="inline-flex items-center gap-1 max-w-full text-micro font-mono text-violet-800 bg-violet-50 border border-violet-200 rounded px-1.5 py-0.5">
                     <Upload size={10} className="shrink-0" /><span className="truncate">{u.name}</span>
+                    {u.size != null && <span className="shrink-0 text-violet-500 tabular-nums">{fmtSize(u.size)}</span>}
                     <button onClick={() => removeUpload(u.name)} className="shrink-0 hover:text-rose-600"><X size={10} /></button>
                   </span>
                 ))}
@@ -389,10 +469,12 @@ export function FileChat({ activeId, className = '', onApplied }: {
 
             <div className="flex items-end gap-1.5">
               <textarea
+                ref={taRef}
                 value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                 rows={1} placeholder="Describe the change…" data-feature-id="fb-chat-input"
-                className="flex-1 min-w-0 resize-none text-2xs text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-ai-200 placeholder:text-slate-400 max-h-24"
+                style={{ maxHeight: COMPOSER_MAX_H }}
+                className="flex-1 min-w-0 resize-none overflow-y-auto text-2xs text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-ai-200 placeholder:text-slate-400"
               />
               <button onClick={send} disabled={sending || !input.trim()} className={`${iconBtn} bg-ai-600 text-white hover:bg-ai-700 disabled:opacity-40`} aria-label="Send" data-feature-id="fb-chat-send">
                 {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}

@@ -138,6 +138,18 @@ describe('ToastProvider live regions', () => {
     expect(polite.textContent).not.toContain('Merge failed');
   });
 
+  it('carves the interactive details footer out of the live region with aria-live=off', () => {
+    // A toast with a details block gets an expand/Copy footer. Those controls mutate on user
+    // action; if they stayed live, toggling Details (which inserts the whole stack-trace <pre>)
+    // or flipping Copy→Copied would re-announce the atomic toast. aria-live=off stops that,
+    // so the toast is still announced exactly once — on insert.
+    const api = mountApi();
+    act(() => { api().error('Merge failed', 'conflict in db/server.ts', 'Error: conflict\n  at merge()'); });
+    const footer = document.querySelector('[data-feature-id="toast-copy"]')!.closest('[aria-live]');
+    expect(footer).not.toBeNull();
+    expect(footer!.getAttribute('aria-live')).toBe('off');
+  });
+
   it('does not put aria-live or a role on the toast row itself', () => {
     const api = mountApi();
     act(() => { api().info('Indexing', 'piranha'); });

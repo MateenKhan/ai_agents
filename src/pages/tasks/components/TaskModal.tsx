@@ -96,11 +96,21 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
         </div>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form
+        onSubmit={handleSubmit}
+        // Cmd/Ctrl+Enter submits from anywhere in the form — the multi-line DoD/description
+        // textareas swallow a bare Enter, so power users need a keyboard commit that works
+        // from inside them.
+        onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleSubmit(e); }}
+        className="space-y-6"
+      >
         {/* Basic Info */}
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <label className="eyebrow">Title</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="eyebrow">Title</label>
+              <span className="text-micro text-slate-400 tabular-nums">{title.length}</span>
+            </div>
             <input
               autoFocus
               required
@@ -113,13 +123,16 @@ export function TaskModal({ isOpen, onClose, onSave, editingTask }: TaskModalPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="eyebrow">Description</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="eyebrow">Description</label>
+              <span className="text-micro text-slate-400 tabular-nums">{description.length}</span>
+            </div>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
               rows={3}
               className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3.5 py-3 text-sm text-slate-900 focus:outline-none focus:border-accent-500 transition-colors resize-none"
-              placeholder="Add more details..."
+              placeholder={"Context the agent needs but the title can't hold — the why, links, edge cases.\ne.g. Users can't tell which board is active when two are open. Highlight the active tab in the board switcher; leave inactive ones as-is."}
             />
           </div>
 

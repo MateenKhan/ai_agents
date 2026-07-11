@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Tooltip } from './Tooltip';
 import { iconBtnDanger } from '../ui';
-import { Play, Pause, Square, RotateCcw, Edit2, Trash2, Link, FileText, User, ArrowRightLeft, Loader2, Clock, AlertCircle } from 'lucide-react';
+import { Play, Pause, Square, RotateCcw, Edit2, Trash2, Link, FileText, User, ArrowRightLeft, Loader2, Clock, AlertCircle, GripHorizontal } from 'lucide-react';
 import type { Task, Column, TaskControlAction } from '../types';
 import { COLUMNS } from '../types';
 
@@ -16,6 +16,9 @@ interface TaskCardProps {
   isTriggering: boolean;
   isControlling?: boolean;
   selected: boolean;
+  /** True when ANY card on the board is selected — keeps every card's checkbox revealed
+   *  during a multi-select, not just the ones already ticked. */
+  anySelected?: boolean;
   onToggleSelect: (id: string) => void;
   onOpenLogs?: (agent?: string) => void;
   isDragging?: boolean;
@@ -25,14 +28,18 @@ interface TaskCardProps {
   columns?: Column[];
 }
 
-export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove, onView, isTriggering, isControlling, selected, onToggleSelect, onOpenLogs, isDragging, onDragStart, onDragEnd, columns }: TaskCardProps) {
+export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove, onView, isTriggering, isControlling, selected, anySelected, onToggleSelect, onOpenLogs, isDragging, onDragStart, onDragEnd, columns }: TaskCardProps) {
   const moveOptions = columns ?? COLUMNS;
+  // Priority reads as a heat ramp — P0 hottest (rose), cooling through amber and sky to a
+  // calm slate P3 — so severity is legible at a glance, not just by reading the number.
   const pBadge = (p: number) => {
+    // `desc` is the redundant, non-colour cue for the heat ramp (WCAG 1.4.1): a colour-blind
+    // reader gets the severity in words on hover, and AT reads it as the chip's name.
     switch (p) {
-      case 0: return { label: 'P0', class: 'bg-rose-50 text-rose-600 border-rose-300' };
-      case 1: return { label: 'P1', class: 'bg-amber-50 text-amber-700 border-amber-300' };
-      case 2: return { label: 'P2', class: 'bg-accent-50 text-accent-600 border-accent-300' };
-      default: return { label: 'P3', class: 'bg-slate-50 text-slate-600 border-slate-300' };
+      case 0: return { label: 'P0', desc: 'Priority 0 — highest, most urgent', class: 'bg-rose-100 text-rose-700 border-rose-400 font-bold' };
+      case 1: return { label: 'P1', desc: 'Priority 1 — high', class: 'bg-amber-50 text-amber-700 border-amber-300' };
+      case 2: return { label: 'P2', desc: 'Priority 2 — medium', class: 'bg-sky-50 text-sky-700 border-sky-300' };
+      default: return { label: 'P3', desc: 'Priority 3 — low', class: 'bg-slate-50 text-slate-500 border-slate-300' };
     }
   };
 
@@ -82,18 +89,32 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
       // paints its own drag image for the one following the cursor. So it must recede,
       // not lift: a tilt/scale/ring here reads as "lifted" on the one thing that isn't.
       // Fading it (plus the lane's own drop indicator) already says "this is moving".
-      className={`group relative bg-white border rounded-xl p-4 shadow-sm cursor-pointer transition-[transform,box-shadow,opacity,border-color] duration-200 sm:hover:shadow-md sm:hover:-translate-y-0.5 active:bg-slate-50 ${
+      className={`group relative bg-white border rounded-xl p-4 shadow-sm cursor-grab transition-[transform,box-shadow,opacity,border-color] duration-200 sm:hover:shadow-md sm:hover:-translate-y-0.5 active:bg-slate-50 ${
         isDragging
           ? 'cursor-grabbing opacity-40 border-dashed border-slate-300 shadow-none sm:hover:shadow-none sm:hover:translate-y-0'
           : selected
             ? 'border-accent-500 ring-1 ring-accent-400/60'
             : 'border-slate-300 sm:hover:border-accent-400'
       }`}>
+      {/* Drag affordance — dotted grip fades in on hover so the card reads as draggable
+          before you grab it. Decorative + pointer-events-none: the whole card is the handle. */}
+      {!isDragging && (
+        <div className="hidden sm:flex absolute top-1 left-1/2 -translate-x-1/2 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" aria-hidden>
+          <GripHorizontal size={14} />
+        </div>
+      )}
       <div className="space-y-3">
         {/* Title row — checkbox has a 44px hit area via padding */}
         <div className="flex items-start gap-1">
           <label
-            className="flex items-center justify-center -m-2 p-2 min-w-control-lg min-h-control-lg cursor-pointer shrink-0"
+            // Idle, the checkbox competes with the title for attention, so hide it until you
+            // hover the card, focus it, or a multi-select is already underway. Always shown on
+            // touch (no hover) via the un-prefixed opacity-100.
+            className={`flex items-center justify-center -m-2 p-2 min-w-control-lg min-h-control-lg cursor-pointer shrink-0 transition-opacity ${
+              selected || anySelected
+                ? 'opacity-100'
+                : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             <input
@@ -113,7 +134,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
         </div>
 
         {task.description && (
-          <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+          <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed break-words">
             {task.description}
           </p>
         )}
@@ -130,9 +151,9 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
             {task.id.slice(-6)}
           </span>
 
-          <span className={`text-micro font-semibold px-1.5 py-0.5 rounded border ${pb.class}`}>
+          <Tooltip label={pb.desc}><span className={`text-micro font-semibold px-1.5 py-0.5 rounded border ${pb.class}`}>
             {pb.label}
-          </span>
+          </span></Tooltip>
 
           {/* Intake quality gate parked this task as under-specified — amber "attention" tier. */}
           {task.reviewNote?.startsWith('NEEDS REFINEMENT') && (
@@ -189,12 +210,15 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           )}
 
           {agentAlive && etc && (
-            <span
-              title="Estimated time to complete — counts down; caps at 30 min"
-              className={`flex items-center gap-1 text-micro font-bold px-1.5 py-0.5 rounded border ${etc.overdue ? 'text-rose-700 bg-rose-50 border-rose-300 animate-pulse' : 'text-ai-700 bg-ai-50 border-ai-300'}`}
-            >
-              <Clock size={9} /> {etc.overdue ? `+${etc.text}` : etc.text}
-            </span>
+            <Tooltip label={etc.overdue
+              ? `Overtime — ${etc.text} past the estimated finish for the ${stageLabel} stage`
+              : `Time left in the ${stageLabel} stage — counts down, caps at 30 min`}>
+              <span
+                className={`flex items-center gap-1 text-micro font-bold px-1.5 py-0.5 rounded border ${etc.overdue ? 'text-rose-700 bg-rose-50 border-rose-300 animate-pulse' : 'text-ai-700 bg-ai-50 border-ai-300'}`}
+              >
+                <Clock size={9} /> {etc.overdue ? `+${etc.text}` : etc.text}
+              </span>
+            </Tooltip>
           )}
         </div>
 
@@ -204,6 +228,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
             <Tooltip label="Launch"><button
               onClick={() => onTrigger(task.id)}
               disabled={isTriggering}
+              aria-label="Launch task"
               data-feature-id="task-card-trigger"
               className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-cyan-50 text-cyan-700 border border-cyan-300 active:bg-cyan-600 active:text-white sm:hover:bg-cyan-600 sm:hover:text-white transition-all ${isTriggering ? 'animate-pulse' : ''}`}
             >
@@ -216,6 +241,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
             <Tooltip label="Re-run — re-queue this task"><button
               onClick={() => onControl(task.id, 'start')}
               disabled={isControlling}
+              aria-label="Re-run task"
               data-feature-id="task-card-rerun"
               className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-accent-50 text-accent-700 border border-accent-300 active:bg-slate-900 active:text-white sm:hover:bg-slate-900 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
             >
@@ -226,6 +252,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
             <Tooltip label="Resume task"><button
               onClick={() => onControl(task.id, 'resume')}
               disabled={isControlling}
+              aria-label="Resume task"
               data-feature-id="task-card-resume"
               className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-300 active:bg-emerald-600 active:text-white sm:hover:bg-emerald-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
             >
@@ -236,6 +263,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
             <Tooltip label="Pause task"><button
               onClick={() => onControl(task.id, 'pause')}
               disabled={isControlling}
+              aria-label="Pause task"
               data-feature-id="task-card-pause"
               className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-amber-50 text-amber-700 border border-amber-300 active:bg-amber-600 active:text-white sm:hover:bg-amber-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
             >
@@ -246,8 +274,9 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
             <Tooltip label="Stop — kill the running agent"><button
               onClick={() => onControl(task.id, 'stop')}
               disabled={isControlling}
+              aria-label="Stop task"
               data-feature-id="task-card-stop"
-              className={`flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-rose-50 text-rose-600 border border-rose-300 active:bg-rose-600 active:text-white sm:hover:bg-rose-600 sm:hover:text-white transition-colors ${isControlling ? 'animate-pulse opacity-70' : ''}`}
+              className={`${iconBtnDanger} ring-1 ring-rose-300 ${isControlling ? 'animate-pulse opacity-70' : ''}`}
             >
               <Square size={15} fill="currentColor" />
             </button></Tooltip>
@@ -255,6 +284,7 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
 
           <Tooltip label="Edit"><button
             onClick={() => onEdit(task)}
+            aria-label="Edit task"
             data-feature-id="task-card-edit"
             className="flex items-center justify-center min-w-control-lg min-h-control-lg rounded-lg bg-slate-50 text-slate-600 border border-slate-300 active:bg-slate-200 sm:hover:bg-slate-100 sm:hover:text-slate-900 transition-colors"
           >
@@ -262,8 +292,9 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
           </button></Tooltip>
           <Tooltip label="Delete"><button
             onClick={() => onDelete(task.id)}
+            aria-label="Delete task"
             data-feature-id="task-card-delete"
-            className={iconBtnDanger}
+            className={`${iconBtnDanger} ring-1 ring-rose-300`}
           >
             <Trash2 size={15} />
           </button></Tooltip>

@@ -36,17 +36,18 @@ export function useOverflowEdges<T extends HTMLElement>() {
     el.addEventListener('scroll', update, { passive: true });
 
     // The cluster expanding is a resize of THIS element, not a window resize — observe the
-    // element itself, not `window`.
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
+    // element itself, not `window`. Both observers are absent in jsdom (tests) — guard so the
+    // hook degrades to scroll-only instead of throwing on mount.
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    ro?.observe(el);
 
-    const mo = new MutationObserver(update);
-    mo.observe(el, { childList: true });
+    const mo = typeof MutationObserver !== 'undefined' ? new MutationObserver(update) : null;
+    mo?.observe(el, { childList: true });
 
     return () => {
       el.removeEventListener('scroll', update);
-      ro.disconnect();
-      mo.disconnect();
+      ro?.disconnect();
+      mo?.disconnect();
     };
   }, []);
 

@@ -26,6 +26,22 @@ export const iconBtnDanger = 'icon-btn-danger';
 export const btnPrimarySm = 'btn-primary-sm';
 /** Compact secondary button for toolbars/dense rows. */
 export const btnSm = 'btn-sm';
+// ── LABEL CASING — which button class for which label? ──────────────────────
+// Two casings, and the class decides which one you get. Pick by CLASS, then write
+// the label in plain Title Case either way — never hand-type an UPPERCASE label.
+//
+//   DEFAULT (btnPrimary / btnGhost / btnSm / …)  → Title Case, rendered as authored.
+//       "New Task", "Save", "Apply", "Detect installation".
+//       The everyday choice: dialogs, forms, hero CTAs, most toolbars.
+//
+//   -caps (btnPrimaryCaps / btnGhostCaps)  → the "stamped" look. The CSS applies
+//       `uppercase` + letter-spacing, so you still author "Edit" / "Clear" and the
+//       class shouts it as "EDIT" / "CLEAR". RESERVED to the board & task-detail
+//       action rows, where the stamped tracking is the identity. Do NOT type the
+//       label already-uppercased — that double-applies and breaks screen-reader casing.
+//
+// Casing is the ONLY axis here: the caps pair carries the same tier-2 ink / neutral
+// roles as its non-caps sibling. It is not a new danger level.
 /** Tier 2 — routine primary in the UPPERCASE "stamped" look (board/detail action rows). Ink, no shadow. */
 export const btnPrimaryCaps = 'btn-primary-caps';
 /** Neutral secondary in the UPPERCASE look — the caps sibling of btnGhost. */

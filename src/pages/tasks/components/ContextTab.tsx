@@ -37,6 +37,7 @@ function ContextMemory({ activeId, switcher }: { activeId: string; switcher: Rea
   const [stats, setStats] = useState<Stats | null>(null);
   const [ops, setOps] = useState<Op[]>([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false); // surfaced fetch failure instead of a silent swallow (item 89)
   const [opsOpen, setOpsOpen] = useState(true);
   const [cap, setCap] = useState<number>(() => Number(localStorage.getItem(capKey(activeId))) || 200_000);
 
@@ -49,7 +50,11 @@ function ContextMemory({ activeId, switcher }: { activeId: string; switcher: Rea
         fetch(withProject(`${API}/context/ops?limit=80`)).then(r => r.json()),
       ]);
       setFiles(c.files ?? []); setStats(c.stats ?? null); setOps(o.ops ?? []);
-    } catch { /* offline */ }
+      setError(false);
+    } catch {
+      // Don't swallow: the db-server is probably down. Surface it with a Retry (item 89).
+      setError(true);
+    }
   }, [activeId, cap]);
 
   const refresh = useCallback(async () => { setBusy(true); await loadContext(); setBusy(false); }, [loadContext]);
@@ -92,6 +97,20 @@ function ContextMemory({ activeId, switcher }: { activeId: string; switcher: Rea
         </div>
       )}
 
+      {/* Fetch error — the memory/ops load failed (db-server offline?). Say so, offer a Retry
+          instead of the old silent catch (item 89). */}
+      {error && (
+        <div className="flex items-center gap-2 mb-3 px-3 py-2 text-2xs font-semibold text-rose-700 bg-rose-50 border border-rose-300 rounded-lg" data-feature-id="context-load-error" role="alert">
+          <AlertTriangle size={13} className="shrink-0" />
+          <span className="flex-1">Couldn't load memory — the db-server may be offline.</span>
+          <Tooltip label="Retry loading context">
+            <button onClick={refresh} disabled={busy} className="flex items-center gap-1 px-2 min-h-control text-2xs font-bold text-rose-700 bg-white border border-rose-300 rounded-lg hover:bg-rose-100 disabled:opacity-50">
+              <RefreshCw size={12} className={busy ? 'animate-spin' : ''} /> Retry
+            </button>
+          </Tooltip>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-3">
         {/* ── Left: the shared file browser (browse · view · edit · CRUD · AI chat). The same
              <FileBrowser> the Git modal uses. "Add to context" is wired via onAddToContext, and
@@ -116,7 +135,12 @@ function ContextMemory({ activeId, switcher }: { activeId: string; switcher: Rea
               </label>
               {stats && (
                 <div className="flex items-center gap-2 w-40">
-                  <div className="flex-1 h-2 rounded-full bg-slate-200 overflow-hidden">
+                  <div
+                    role="progressbar" aria-valuenow={gaugePct} aria-valuemin={0} aria-valuemax={100}
+                    aria-label="Context budget used"
+                    aria-valuetext={`${stats.totalTokens.toLocaleString()} of ${cap.toLocaleString()} tokens (${gaugePct}%)${over ? ' — over budget' : ''}`}
+                    className="flex-1 h-2 rounded-full bg-slate-200 overflow-hidden"
+                  >
                     <div className={`h-full rounded-full transition-all ${over ? 'bg-rose-500' : gaugePct > 80 ? 'bg-amber-500' : 'bg-accent-500'}`} style={{ width: `${gaugePct}%` }} />
                   </div>
                   <span className={`text-2xs font-bold tabular-nums ${over ? 'text-rose-600' : 'text-slate-600'}`}>{fmt(stats.totalTokens)}/{fmt(cap)}</span>
@@ -139,14 +163,22 @@ function ContextMemory({ activeId, switcher }: { activeId: string; switcher: Rea
                   <FileCode size={12} className="text-slate-400 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-2xs font-semibold text-slate-800 truncate" title={f.path}>{f.path}</div>
-                    <div className="text-[9px] text-slate-500">{fmt(f.tokens)} tok · used {f.useCount}× · {f.addedBy || 'agent'}</div>
+                    <div className="text-[9px] text-slate-500">{fmt(f.tokens)} tok · <Tooltip label={`Read into an agent's context ${f.useCount} time${f.useCount === 1 ? '' : 's'} — higher counts survive auto-eviction longest`}><span className="underline decoration-dotted underline-offset-2 cursor-help">used {f.useCount}×</span></Tooltip> · {f.addedBy || 'agent'}</div>
                   </div>
                   <Tooltip label={f.pinned ? 'Unpin (allow auto-evict)' : 'Pin (never auto-evict)'}><button onClick={() => togglePin(f)} className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md ${f.pinned ? 'text-accent-600' : 'text-slate-500 hover:text-accent-600'}`}>
                     {f.pinned ? <Pin size={12} /> : <PinOff size={12} />}
                   </button></Tooltip>
                   <Tooltip label="Remove from context"><button onClick={() => remove(f.path)} className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-600"><X size={12} /></button></Tooltip>
                 </div>
-              )) : <p className="p-4 text-center text-2xs text-slate-500">Nothing in context. Add files from the explorer, or agents will populate it as they search.</p>}
+              )) : (
+                // Calm, centred empty state in the board's voice — one icon, an eyebrow, a
+                // plain-language next step (item 91 · item 100), not a lone grey sentence.
+                <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                  <BrainCircuit size={22} className="text-slate-300" />
+                  <p className="eyebrow text-slate-400">Nothing in memory yet</p>
+                  <p className="text-2xs text-slate-500 max-w-[200px]">Add a file from the explorer, or let the agents fill this as they search the code.</p>
+                </div>
+              )}
             </div>
             {/* Model tier for this budget */}
             <div className="flex items-center gap-2 px-3 py-2 border-t border-slate-200">

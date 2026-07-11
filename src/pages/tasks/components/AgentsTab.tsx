@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Tooltip } from './Tooltip';
-import { Bot, Save, Plus, Trash2, RotateCcw, Power, Cpu, GitBranch, X, ArrowRight, UserCheck, FileText, ShieldCheck, Activity, Zap, Stethoscope, Workflow as WorkflowIcon, ChevronDown, Sparkles } from 'lucide-react';
+import { Bot, Save, Plus, Trash2, RotateCcw, Power, Cpu, GitBranch, X, ArrowRight, UserCheck, FileText, ShieldCheck, Activity, Zap, Stethoscope, Workflow as WorkflowIcon, ChevronDown, ChevronUp, Sparkles, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Modal } from './Modal';
 import { useConfirm } from './ConfirmProvider';
@@ -9,7 +9,7 @@ import { API_BASE as API } from '../../../apiBase';
 // Same skill map the orchestrator injects into prompts (dependency-free module) — so
 // the UI shows exactly which superpowers each role runs, with no drift.
 import { skillsForRole, SKILL_DESCRIPTIONS } from '../../../../agentic/methodology/superpowers';
-import { btnPrimary, btnPrimarySm, btnSm, btnDangerSm, btnGhost, inputCls, selectCls, textareaCls, selectSm, iconBtnDanger } from '../ui';
+import { btnPrimary, btnPrimarySm, btnSm, btnDangerSm, btnGhost, inputCls, inputSm, selectCls, textareaCls, selectSm, iconBtnDanger } from '../ui';
 
 /**
  * Agents tab — edit the pipeline's role config (prompt + model + worktree + enabled),
@@ -24,6 +24,14 @@ const MODELS: { v: string; label: string }[] = [
   { v: 'sonnet', label: 'Sonnet — balanced (default)' },
   { v: 'haiku', label: 'Haiku — fastest / cheapest' },
 ];
+
+// One-line cost/speed characteristic per tier, shown inline beside the model select so the
+// trade-off is legible without opening the editor or knowing the tiers by heart.
+const MODEL_HINT: Record<string, string> = {
+  opus: 'deepest · slowest · priciest',
+  sonnet: 'balanced speed & cost',
+  haiku: 'fastest · cheapest',
+};
 
 // Small skill chip — one superpowers skill the role leads with.
 function SkillChip({ name }: { name: string }) {
@@ -53,6 +61,13 @@ interface Agent {
 export default function AgentsTab() {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [editing, setEditing] = useState<Agent | null>(null);
+  // Snapshot of the agent as it was when the editor opened — lets us show a dirty indicator
+  // (item 54) by comparing against the live `editing` draft.
+  const [editingOrig, setEditingOrig] = useState<Agent | null>(null);
+  // Roles whose prompt preview is expanded in place (item 53).
+  const [expandedPrompts, setExpandedPrompts] = useState<Set<string>>(new Set());
+  // Free-text filter across the card grid (item 58).
+  const [query, setQuery] = useState('');
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [openGuard, setOpenGuard] = useState<string | null>(null);
   const [openStep, setOpenStep] = useState<string | null>(null);
@@ -68,7 +83,7 @@ export default function AgentsTab() {
     setBusy(true);
     try {
       await fetch(`${API}/agents`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) });
-      setEditing(null); load();
+      setEditing(null); setEditingOrig(null); load();
     } finally { setBusy(false); }
   };
 
@@ -100,10 +115,17 @@ export default function AgentsTab() {
   };
 
   const reset = async () => {
+    const builtIn = (agents ?? []).filter(a => a.isSystem).length;
+    const custom = (agents ?? []).filter(a => !a.isSystem).length;
     const ok = await confirm({
-      title: 'Reset to shipped defaults?',
-      message: 'Every built-in role\'s prompt, model and workspace is overwritten with the shipped defaults. Your edits to them are gone for good. Custom agents are kept.',
-      confirmLabel: 'Reset defaults',
+      title: 'Reset built-in agents to shipped defaults?',
+      message:
+        `This overwrites all ${builtIn} built-in role${builtIn === 1 ? '' : 's'} — their prompt, model, workspace and enabled state — with the versions Piranha shipped with. ` +
+        `Your edits to those roles are gone for good. ` +
+        (custom
+          ? `Your ${custom} custom agent${custom === 1 ? ' is' : 's are'} NOT touched, and nothing about your tasks or board changes.`
+          : `Nothing about your tasks or board changes.`),
+      confirmLabel: `Reset ${builtIn} built-in agent${builtIn === 1 ? '' : 's'}`,
       tone: 'danger',
       requireType: 'reset',
     });
@@ -112,7 +134,19 @@ export default function AgentsTab() {
     catch (e: any) { toast.error('Reset failed', e?.message); }
   };
 
-  const addCustom = () => setEditing({ role: '', label: '', enabled: 1, model: 'sonnet', worktreeMode: 'create', ord: 99, isSystem: 0, promptTemplate: 'Task: {{title}} ({{id}})\nDoD:\n{{dod}}\n\nWhen done: curl -X PUT http://127.0.0.1:6952/tasks/{{id}} -H "Content-Type: application/json" -d \'{"status":"TESTING"}\'' });
+  // Open the editor and snapshot the agent so the modal can flag unsaved edits (item 54).
+  const openEditor = (a: Agent) => { setEditing(a); setEditingOrig(a); };
+  const closeEditor = () => { setEditing(null); setEditingOrig(null); };
+  // Dirty = the draft differs from the snapshot taken when the editor opened.
+  const editorDirty = !!editing && JSON.stringify(editing) !== JSON.stringify(editingOrig);
+
+  const togglePrompt = (role: string) => setExpandedPrompts(prev => {
+    const next = new Set(prev);
+    next.has(role) ? next.delete(role) : next.add(role);
+    return next;
+  });
+
+  const addCustom = () => { const a: Agent = { role: '', label: '', enabled: 1, model: 'sonnet', worktreeMode: 'create', ord: 99, isSystem: 0, promptTemplate: 'Task: {{title}} ({{id}})\nDoD:\n{{dod}}\n\nWhen done: curl -X PUT http://127.0.0.1:6952/tasks/{{id}} -H "Content-Type: application/json" -d \'{"status":"TESTING"}\'' }; setEditing(a); setEditingOrig(a); };
 
   // Workflow = enabled agents in `ord` order. The pipeline threads a task through them.
   const flow = (agents ?? []).filter(a => a.enabled).sort((a, b) => a.ord - b.ord);
@@ -204,7 +238,7 @@ export default function AgentsTab() {
             <React.Fragment key={a.role}>
               <ArrowRight size={16} className="text-slate-400 shrink-0" />
               <Tooltip label={`${a.label} · ${a.model} · click to edit`}><button
-                onClick={() => setEditing(a)}
+                onClick={() => openEditor(a)}
                 data-feature-id="agents-workflow-node"
                 className="flex items-center gap-1.5 px-3 py-2 bg-accent-50 border-2 border-accent-200 rounded-lg text-xs font-bold text-accent-800 hover:bg-accent-100 hover:border-accent-400 transition-colors"
               >
@@ -219,7 +253,7 @@ export default function AgentsTab() {
           {(agents ?? []).find(a => a.role === 'architect') && (
             <>
               <ArrowRight size={16} className="text-slate-400 shrink-0" />
-              <Tooltip label="The same Architect merges the approved branch — click to edit its merge prompt"><button onClick={() => setEditing((agents ?? []).find(a => a.role === 'architect')!)}
+              <Tooltip label="The same Architect merges the approved branch — click to edit its merge prompt"><button onClick={() => openEditor((agents ?? []).find(a => a.role === 'architect')!)}
                 data-feature-id="agents-workflow-merge"
                 className="flex items-center gap-1.5 px-3 py-2 bg-accent-50 border-2 border-dashed border-accent-300 rounded-lg text-xs font-bold text-accent-800 hover:bg-accent-100 transition-colors">
                 <GitBranch size={13} className="text-accent-600" /> Architect merges
@@ -370,9 +404,35 @@ export default function AgentsTab() {
 
       {agents === null ? (
         <p className="text-sm text-slate-500">Loading…</p>
-      ) : (
+      ) : (() => {
+        // Filter across role id, label and model so a big roster stays navigable (item 58).
+        const q = query.trim().toLowerCase();
+        const filtered = q
+          ? agents.filter(a => `${a.label} ${a.role} ${a.model}`.toLowerCase().includes(q))
+          : agents;
+        return (
+        <>
+          {/* Search only earns its space once the grid is long enough to get lost in. */}
+          {agents.length > 6 && (
+            <div className="relative max-w-xs">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder={`Filter ${agents.length} agents…`}
+                data-feature-id="agents-filter"
+                className={`${inputSm} pl-8 ${query ? 'pr-8' : ''} w-full`}
+              />
+              {query && (
+                <Tooltip label="Clear filter"><button onClick={() => setQuery('')} className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"><X size={13} /></button></Tooltip>
+              )}
+            </div>
+          )}
+          {filtered.length === 0 ? (
+            <p className="text-sm text-slate-500 py-6 text-center">No agents match "{query}".</p>
+          ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {agents.map(a => (
+          {filtered.map(a => (
             <div key={a.role} className={`bg-white border-2 rounded-xl p-4 space-y-3 shadow-sm ${a.enabled ? 'border-slate-200' : 'border-slate-200 opacity-60'}`}>
               {/* The card is TWO rows now: identity + configuration, then the prompt.
                   It was four — name, role id, config, superpowers — each a full-width band
@@ -403,40 +463,72 @@ export default function AgentsTab() {
                         {MODELS.map(m => <option key={m.v} value={m.v}>{m.v}</option>)}
                       </select>
                     </label>
+                    {/* Cost/speed hint for the selected tier — the trade-off, without the editor (item 55). */}
+                    {MODEL_HINT[a.model] && (
+                      <Tooltip label="Model cost / speed trade-off"><span className="text-micro text-slate-400 italic">{MODEL_HINT[a.model]}</span></Tooltip>
+                    )}
                     <span className="flex items-center gap-1 text-slate-700"><GitBranch size={12} className="text-emerald-500" /> {a.worktreeMode}</span>
                     <span className="w-px h-4 bg-slate-200 shrink-0" aria-hidden="true" />
                     {/* The chips lost their "SUPERPOWERS" eyebrow when that row went; the group
-                        keeps the name, so it is not lost on anyone who cannot see the divider. */}
-                    <span role="group" aria-label="Superpowers skills" className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        keeps the name, so it is not lost on anyone who cannot see the divider.
+                        A tooltip flags that these are role-assigned by the methodology, not free-text
+                        chips you edit here (item 56). */}
+                    <Tooltip label="Skills are assigned by role in the superpowers methodology — read-only here"><span role="group" aria-label="Superpowers skills (assigned by role, read-only)" className="flex items-center gap-1.5 flex-wrap min-w-0">
                       {skillsForRole(a.role).map(s => <SkillChip key={s} name={s} />)}
-                    </span>
+                    </span></Tooltip>
                   </div>
                 </div>
                 <div className="shrink-0 flex items-center gap-1.5">
                   <Tooltip label={a.enabled ? 'Enabled' : 'Disabled'}><button onClick={() => toggle(a)} className={`p-2 rounded-lg border transition-colors ${a.enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}><Power size={14} /></button></Tooltip>
-                  <Tooltip label="Edit"><button onClick={() => setEditing(a)} className="p-2 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"><Save size={14} /></button></Tooltip>
+                  <Tooltip label="Edit"><button onClick={() => openEditor(a)} className="p-2 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"><Save size={14} /></button></Tooltip>
                   {!a.isSystem && <Tooltip label="Delete"><button onClick={() => del(a.role)} className={iconBtnDanger}><Trash2 size={14} /></button></Tooltip>}
                 </div>
               </div>
-              <p className="text-2xs text-slate-500 font-mono bg-slate-50 border border-slate-200 rounded-lg p-2 line-clamp-[10] whitespace-pre-wrap">{a.promptTemplate}</p>
+              {/* Prompt preview — clamped by default, expandable in place (item 53). The toggle
+                  only appears when the prompt is long enough to actually be truncated. */}
+              {(() => {
+                const open = expandedPrompts.has(a.role);
+                const longPrompt = a.promptTemplate.split('\n').length > 10 || a.promptTemplate.length > 600;
+                return (
+                  <div className="space-y-1">
+                    <p className={`text-2xs text-slate-500 font-mono bg-slate-50 border border-slate-200 rounded-lg p-2 whitespace-pre-wrap ${open ? '' : 'line-clamp-[10]'}`}>{a.promptTemplate}</p>
+                    {longPrompt && (
+                      <button onClick={() => togglePrompt(a.role)} data-feature-id={`agent-prompt-toggle-${a.role}`} className="inline-flex items-center gap-1 text-micro font-semibold text-accent-600 hover:text-accent-700">
+                        {open ? <><ChevronUp size={12} /> Show less</> : <><ChevronDown size={12} /> Show full prompt</>}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ))}
         </div>
-      )}
+          )}
+        </>
+        );
+      })()}
 
       {/* Editor modal */}
       {editing && (
         <Modal
           isOpen
-          onClose={() => setEditing(null)}
+          onClose={closeEditor}
           title={editing.isSystem ? `Edit ${editing.label}` : editing.role ? `Edit ${editing.role}` : 'New custom agent'}
           icon={<Bot size={18} className="text-accent-600" />}
           maxW="sm:max-w-2xl"
           featureId="agent-editor"
           footer={
-            <div className="flex justify-end gap-2 w-full">
-              <button onClick={() => setEditing(null)} className={btnGhost}>Cancel</button>
-              <button onClick={save} disabled={busy || !editing.role} className={btnPrimary}><Save size={14} /> Save</button>
+            <div className="flex items-center gap-2 w-full">
+              {/* Dirty indicator — model/prompt/toggle/etc. changed since the editor opened (item 54). */}
+              {editorDirty && (
+                <span className="flex items-center gap-1.5 text-2xs font-semibold text-amber-600" data-feature-id="agent-editor-dirty">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" aria-hidden="true" /> Unsaved changes
+                </span>
+              )}
+              <div className="ml-auto flex gap-2">
+                <button onClick={closeEditor} className={btnGhost}>Cancel</button>
+                <button onClick={save} disabled={busy || !editing.role || !editorDirty} className={btnPrimary}><Save size={14} /> Save</button>
+              </div>
             </div>
           }
         >

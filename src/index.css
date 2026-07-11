@@ -25,7 +25,13 @@
      In a tool where the wrong keystroke deletes a repo, "where am I?" must never be
      ambiguous. Every interactive element gets one consistent, high-contrast focus ring
      on keyboard focus only (never on mouse click). This is the single rule that replaces
-     the app's 24 bare `focus:outline-none` declarations. */
+     the app's 24 bare `focus:outline-none` declarations.
+
+     THIS is the app-wide focus style. The selector below reaches every NATIVE interactive
+     element automatically, so components add nothing. For a custom focusable widget the
+     selector can't see — a `div[role="button"]`, a styled label wrapping a hidden input —
+     opt in with the `.focus-ring` utility (defined in @layer utilities) instead of
+     hand-rolling a `focus:ring-*`; it is the same ring from the same definition. */
   :where(a, button, [role='button'], input, select, textarea, summary, [tabindex]):focus-visible {
     outline: 2px solid theme('colors.slate.900');
     outline-offset: 2px;
@@ -80,6 +86,23 @@
    │ colour-vision-deficient users still see the difference (WCAG 1.4.1).          │
    └──────────────────────────────────────────────────────────────────────────────┘ */
 @layer components {
+  /* ── RADIUS SCALE ───────────────────────────────────────────────────────────
+     Corner rounding is a THREE-STEP scale, not a free choice — matching radius to the
+     element's size is what stops the UI looking hand-assembled:
+       rounded-2xl  modal / dialog SHELLS only (the big floating surfaces).
+       rounded-xl   large controls — full-height buttons + inputs (.btn-*, .input).
+       rounded-lg   everything else — content cards, chips, panels, compact controls
+                    (.btn-*-sm, .icon-btn*, .input-sm), and the focus ring (0.5rem).
+     No .btn is "content": the xl tier is deliberate on the large controls so they read a
+     touch softer than the dense -sm row beneath them. If you reach for rounded-md /
+     rounded-full / rounded-3xl on a box, it's off the scale — pick one of these three.
+
+     ── MUTED-TEXT CONTRAST FLOOR (WCAG 1.4.3) ─────────────────────────────────
+     On white, text-slate-500 (#64748b, ~4.8:1) is the DARKEST-lightest a muted caption may
+     go and still pass AA for small text; text-slate-400 (~3.4:1) FAILS and must not carry
+     body/caption copy — that's why .eyebrow and small labels are slate-500, not 400. The one
+     sanctioned slate-400 is INPUT PLACEHOLDER text (below): placeholders are exempt from the
+     contrast requirement, and darkening them makes an empty field read as a filled one. */
   /* Tier 2 — routine primary. Neutral ink: confident, never alarming. */
   .btn-primary {
     @apply min-h-control-lg px-5 text-sm font-bold text-white bg-slate-900 rounded-xl
@@ -201,6 +224,19 @@
 /* ── Utilities ── shared scrollbar skin used across ~20 scroll surfaces (previously a
    <style> block inside TasksPage, which coupled every surface to that one component). */
 @layer utilities {
+  /* Opt-in copy of the app-wide focus ring (see the @layer base rule). Reach for this
+     ONLY on a custom focusable widget the base `:focus-visible` selector can't reach —
+     never to re-skin a native control. One ring, one definition, in two places on purpose:
+     the base rule is automatic, this is the manual escape hatch. */
+  .focus-ring:focus-visible {
+    outline: 2px solid theme('colors.slate.900');
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+  .bg-surface-terminal .focus-ring:focus-visible,
+  .bg-surface-console .focus-ring:focus-visible,
+  .bg-surface-panel .focus-ring:focus-visible { outline-color: theme('colors.white'); }
+
   .custom-scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
   .custom-scrollbar::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 10px; }
   .custom-scrollbar::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; border: 2px solid #e2e8f0; }

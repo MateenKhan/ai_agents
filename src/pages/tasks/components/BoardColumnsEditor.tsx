@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Tooltip } from './Tooltip';
-import { Plus, Trash2, ArrowUp, ArrowDown, EyeOff } from 'lucide-react';
+import { Plus, Trash2, ArrowUp, ArrowDown, EyeOff, Check } from 'lucide-react';
 import type { Column } from '../types';
 import { BUILTIN_COLUMNS, makeColumnId } from '../boardConfig';
 
@@ -14,6 +14,9 @@ interface BoardColumnsEditorProps {
 const SWATCHES = ['#d946ef', '#06b6d4', '#6366f1', '#f43f5e', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#64748b', '#0ea5e9'];
 
 export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProps) {
+  // Which lane's colour palette is open (only one at a time).
+  const [openColor, setOpenColor] = useState<string | null>(null);
+
   const patch = (id: string, changes: Partial<Column>) =>
     onChange(columns.map(c => (c.id === id ? { ...c, ...changes } : c)));
 
@@ -55,17 +58,53 @@ export function BoardColumnsEditor({ columns, onChange }: BoardColumnsEditorProp
           {columns.map((lane, i) => (
             <div key={lane.id} className="flex items-center gap-2 p-2 rounded-lg border bg-slate-50 border-slate-200">
               <div className="flex flex-col shrink-0">
-                <Tooltip label="Move up"><button onClick={() => move(lane.id, -1)} disabled={i === 0} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowUp size={13} /></button></Tooltip>
-                <Tooltip label="Move down"><button onClick={() => move(lane.id, 1)} disabled={i === columns.length - 1} className="text-slate-400 hover:text-slate-700 disabled:opacity-20"><ArrowDown size={13} /></button></Tooltip>
+                <Tooltip label="Move up"><button onClick={() => move(lane.id, -1)} disabled={i === 0} className="text-slate-500 hover:text-slate-800 disabled:text-slate-300 disabled:hover:text-slate-300 disabled:cursor-not-allowed transition-colors"><ArrowUp size={13} /></button></Tooltip>
+                <Tooltip label="Move down"><button onClick={() => move(lane.id, 1)} disabled={i === columns.length - 1} className="text-slate-500 hover:text-slate-800 disabled:text-slate-300 disabled:hover:text-slate-300 disabled:cursor-not-allowed transition-colors"><ArrowDown size={13} /></button></Tooltip>
               </div>
 
-              <input
-                type="color"
-                value={lane.color}
-                onChange={e => patch(lane.id, { color: e.target.value })}
-                className="w-7 h-7 rounded-md border border-slate-300 bg-white cursor-pointer shrink-0 p-0.5"
-                aria-label="Lane color"
-              />
+              {/* Swatch palette instead of the OS-ugly native picker. The trigger shows the
+                  current colour; the popover offers the shared SWATCHES plus a native input
+                  as a custom-colour escape hatch. */}
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setOpenColor(openColor === lane.id ? null : lane.id)}
+                  aria-label="Lane color"
+                  className="w-7 h-7 rounded-md border border-slate-300 cursor-pointer shrink-0 hover:ring-2 hover:ring-slate-300 transition-shadow"
+                  style={{ backgroundColor: lane.color }}
+                />
+                {openColor === lane.id && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setOpenColor(null)} />
+                    <div className="absolute z-20 top-9 left-0 w-40 p-2 bg-white border border-slate-200 rounded-lg shadow-xl shadow-slate-500/20">
+                      <div className="flex flex-wrap gap-1">
+                        {SWATCHES.map(sw => (
+                          <button
+                            key={sw}
+                            type="button"
+                            onClick={() => { patch(lane.id, { color: sw }); setOpenColor(null); }}
+                            aria-label={`Set color ${sw}`}
+                            className="w-6 h-6 rounded-md border border-slate-200 flex items-center justify-center hover:scale-110 transition-transform"
+                            style={{ backgroundColor: sw }}
+                          >
+                            {lane.color.toLowerCase() === sw && <Check size={13} className="text-white drop-shadow" />}
+                          </button>
+                        ))}
+                      </div>
+                      <label className="mt-2 flex items-center justify-between gap-2 text-micro font-semibold text-slate-500">
+                        Custom
+                        <input
+                          type="color"
+                          value={lane.color}
+                          onChange={e => patch(lane.id, { color: e.target.value })}
+                          className="w-7 h-6 rounded border border-slate-300 bg-white cursor-pointer p-0.5"
+                          aria-label="Custom lane color"
+                        />
+                      </label>
+                    </div>
+                  </>
+                )}
+              </div>
 
               <input
                 type="text"

@@ -6,6 +6,7 @@ import { DEFAULT_COLUMNS } from '../boardConfig';
 import { TAB_META, type TabId } from '../tabsConfig';
 import { BoardColumnsEditor } from './BoardColumnsEditor';
 import { Modal } from './Modal';
+import { useConfirm } from './ConfirmProvider';
 import { API_BASE } from '../../../apiBase';
 
 interface SettingsModalProps {
@@ -20,6 +21,7 @@ interface SettingsModalProps {
 export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, onSetTabHidden }: SettingsModalProps) {
   const [cols, setCols] = useState<Column[]>(columns);
   const closeableTabs = TAB_META.filter(t => t.closeable);
+  const confirm = useConfirm();
 
   // Global agent defaults: max concurrent agents per project ('' = unset → 0/unlimited),
   // and whether agents may skip Claude's permission prompts.
@@ -34,6 +36,23 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
       })
       .catch(() => {});
   }, [isOpen]);
+
+  // Enabling this is the one irreversible-feeling toggle in the product: it lets agents
+  // write/delete/commit unattended. Gate the ENABLE direction behind a type-to-confirm;
+  // turning it OFF is always safe and immediate.
+  const toggleSkipPerms = async (next: boolean) => {
+    if (next && !skipPerms) {
+      const ok = await confirm({
+        title: 'Skip permission prompts?',
+        message: 'Agents will edit, delete and commit files without asking — including unattended overnight runs. Enable this only if you trust every agent you run.',
+        confirmLabel: 'Enable',
+        tone: 'danger',
+        requireType: 'SKIP',
+      });
+      if (!ok) return;
+    }
+    setSkipPerms(next);
+  };
 
   const handleSave = () => {
     fetch(`${API_BASE}/agent-defaults`, {
@@ -94,12 +113,12 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
                   <Icon size={15} className="text-slate-500" /> {t.label}
                 </span>
                 <span className="eyebrow flex items-center gap-2">
-                  {hidden ? <><EyeOff size={13} /> Hidden</> : <><Eye size={13} className="text-accent-500" /> Shown</>}
+                  {hidden ? <><EyeOff size={13} /> Hidden</> : <><Eye size={13} className="text-emerald-500" /> Shown</>}
                   <input
                     type="checkbox"
                     checked={!hidden}
                     onChange={e => onSetTabHidden(t.id, !e.target.checked)}
-                    className="w-5 h-5 accent-accent-600"
+                    className="w-5 h-5 accent-emerald-600"
                   />
                 </span>
               </label>
@@ -116,14 +135,20 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
           <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
             <Cpu size={15} className="text-slate-500" /> Max concurrent agents
           </span>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={agentMaxConc}
-            onChange={e => setAgentMaxConc(e.target.value.replace(/[^\d]/g, ''))}
-            data-feature-id="settings-agent-maxconc"
-            className="w-24 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500"
-          />
+          <span className="flex items-center gap-2">
+            {/* Inline hint so 0 = unlimited is readable at the field, not just in the caption below. */}
+            <span className={`text-2xs font-semibold ${(Number(agentMaxConc) || 0) === 0 ? 'text-emerald-600' : 'text-transparent select-none'}`}>
+              unlimited
+            </span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={agentMaxConc}
+              onChange={e => setAgentMaxConc(e.target.value.replace(/[^\d]/g, ''))}
+              data-feature-id="settings-agent-maxconc"
+              className="w-24 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500"
+            />
+          </span>
         </label>
         <p className="text-micro text-slate-500 mt-2">Default cap on how many agents run at once <span className="font-semibold">per project</span> — <span className="font-mono">0 = unlimited</span> (still bounded by CPU/RAM). A project can override this in its editor.</p>
       </div>
@@ -154,7 +179,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
           <input
             type="checkbox"
             checked={skipPerms}
-            onChange={e => setSkipPerms(e.target.checked)}
+            onChange={e => toggleSkipPerms(e.target.checked)}
             className="w-5 h-5 shrink-0 mt-0.5 accent-rose-600"
           />
         </label>

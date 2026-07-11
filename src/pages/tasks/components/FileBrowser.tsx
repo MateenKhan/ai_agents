@@ -39,6 +39,11 @@ function buildTree(paths: string[]): TreeNode[] {
   return root.children;
 }
 
+/** DOM id for a tree node, for aria-activedescendant on the roving-focus tree. */
+const nodeDomId = (path: string) => `fb-node-${path.replace(/[^\w]+/g, '-')}`;
+/** Count of file (non-dir) descendants under a node — shown subtly on folder hover. */
+const countFiles = (n: TreeNode): number => (n.dir ? n.children.reduce((s, c) => s + countFiles(c), 0) : 1);
+
 interface OpenFile { path: string; content: string; bytes: number; tokens: number; truncated: boolean; }
 
 export interface FileBrowserProps {
@@ -80,6 +85,7 @@ function FileBrowserInner({
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [isHost, setIsHost] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -112,7 +118,7 @@ function FileBrowserInner({
     } catch (e: any) { toast.error('Open failed', e?.message); }
   }, [dirty, open, confirm, toast]);
 
-  const save = async () => {
+  const save = useCallback(async () => {
     if (!open) return;
     setSaving(true);
     try {
@@ -123,7 +129,24 @@ function FileBrowserInner({
       toast.success('Saved', open.path);
     } catch (e: any) { toast.error('Save failed', e?.message); }
     finally { setSaving(false); }
-  };
+  }, [open, draft, toast]);
+
+  // Item 13 — Ctrl/Cmd+S saves, but only while actively editing an unsaved (dirty) file.
+  useEffect(() => {
+    if (!(editing && dirty)) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editing, dirty, save]);
+
+  // Item 12 — dirty-guard when leaving the editor for another pane (Files ↔ Chat).
+  const switchPane = useCallback(async (next: 'files' | 'chat') => {
+    if (next === pane) return;
+    if (dirty && !(await confirm({ title: 'Discard changes?', message: `You have unsaved edits to ${open?.path}. Switch to ${next === 'chat' ? 'Chat' : 'Files'} anyway?`, confirmLabel: 'Discard', tone: 'danger' }))) return;
+    setPane(next);
+  }, [pane, dirty, open, confirm]);
 
   const createFile = async () => {
     const path = newPath.trim();
@@ -166,19 +189,68 @@ function FileBrowserInner({
   }, [tree, q]);
   useEffect(() => { if (q.trim()) { const all = new Set<string>(); const walk = (ns: TreeNode[]) => ns.forEach(n => { if (n.dir) { all.add(n.path); walk(n.children); } }); walk(tree); setExpanded(all); } }, [q, tree]);
 
+  // Item 11 — the flattened list of currently-visible rows (respecting collapsed folders),
+  // in DOM order. Arrow-key navigation walks this; Enter opens a file or toggles a folder.
+  const visibleNodes = useMemo(() => {
+    const out: TreeNode[] = [];
+    const walk = (ns: TreeNode[]) => ns.forEach(n => { out.push(n); if (n.dir && expanded.has(n.path)) walk(n.children); });
+    walk(filteredTree);
+    return out;
+  }, [filteredTree, expanded]);
+
+  // Keep the roving focus valid as the tree changes; scroll the active row into view.
+  useEffect(() => {
+    if (focusedPath && !visibleNodes.some(n => n.path === focusedPath)) setFocusedPath(null);
+  }, [visibleNodes, focusedPath]);
+  useEffect(() => {
+    if (focusedPath) document.getElementById(nodeDomId(focusedPath))?.scrollIntoView?.({ block: 'nearest' });
+  }, [focusedPath]);
+
+  const onTreeKeyDown = (e: React.KeyboardEvent) => {
+    if (!visibleNodes.length) return;
+    const idx = Math.max(0, visibleNodes.findIndex(n => n.path === focusedPath));
+    const node = visibleNodes[idx];
+    const move = (i: number) => { e.preventDefault(); setFocusedPath(visibleNodes[Math.max(0, Math.min(visibleNodes.length - 1, i))].path); };
+    switch (e.key) {
+      case 'ArrowDown': return move(focusedPath == null ? 0 : idx + 1);
+      case 'ArrowUp': return move(idx - 1);
+      case 'Home': return move(0);
+      case 'End': return move(visibleNodes.length - 1);
+      case 'ArrowRight':
+        if (node.dir) { e.preventDefault(); if (!expanded.has(node.path)) setExpanded(p => new Set(p).add(node.path)); else move(idx + 1); }
+        return;
+      case 'ArrowLeft':
+        e.preventDefault();
+        if (node.dir && expanded.has(node.path)) { setExpanded(p => { const s = new Set(p); s.delete(node.path); return s; }); }
+        else { const parent = node.path.slice(0, node.path.lastIndexOf('/')); const pi = visibleNodes.findIndex(n => n.path === parent); if (pi >= 0) setFocusedPath(parent); }
+        return;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        if (node.dir) setExpanded(p => { const s = new Set(p); s.has(node.path) ? s.delete(node.path) : s.add(node.path); return s; });
+        else openFile(node.path);
+        return;
+    }
+  };
+
   const renderNode = (n: TreeNode, depth = 0): React.ReactNode => {
+    const focused = focusedPath === n.path;
+    const focusRing = focused ? 'ring-2 ring-accent-400 ring-inset' : '';
     if (n.dir) {
       const isOpen = expanded.has(n.path);
       return (
         <div key={n.path}>
           <button
-            onClick={() => setExpanded(prev => { const s = new Set(prev); s.has(n.path) ? s.delete(n.path) : s.add(n.path); return s; })}
-            className="flex items-center gap-1.5 w-full text-left px-2 py-1.5 rounded-md hover:bg-slate-100 text-xs font-semibold text-slate-700"
+            id={nodeDomId(n.path)} role="treeitem" aria-expanded={isOpen}
+            onClick={() => { setFocusedPath(n.path); setExpanded(prev => { const s = new Set(prev); s.has(n.path) ? s.delete(n.path) : s.add(n.path); return s; }); }}
+            className={`group flex items-center gap-1.5 w-full text-left px-2 py-1.5 rounded-md hover:bg-slate-100 text-xs font-semibold text-slate-700 ${focusRing}`}
             style={{ paddingLeft: 8 + depth * 12 }}
           >
             <ChevronRight size={12} className={`shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
             {isOpen ? <FolderOpen size={13} className="text-amber-500 shrink-0" /> : <Folder size={13} className="text-amber-500 shrink-0" />}
-            <span className="truncate">{n.name}</span>
+            <span className="min-w-0 truncate">{n.name}</span>
+            {/* Item 21 — subtle descendant file count, revealed on hover. */}
+            <span className="ml-auto shrink-0 text-micro font-semibold text-slate-400 tabular-nums sm:opacity-0 sm:group-hover:opacity-100" aria-hidden>{countFiles(n)}</span>
           </button>
           {isOpen && n.children.map(c => renderNode(c, depth + 1))}
         </div>
@@ -189,14 +261,15 @@ function FileBrowserInner({
     return (
       <div
         key={n.path}
+        id={nodeDomId(n.path)} role="treeitem" aria-selected={active}
         draggable={enableChat}
         onDragStart={e => { e.dataTransfer.setData('text/plain', n.path); e.dataTransfer.effectAllowed = 'copy'; }}
-        className={`group flex items-center gap-1.5 px-2 py-1 rounded-md ${active ? 'bg-accent-50' : 'hover:bg-slate-100'}`}
+        className={`group flex items-center gap-1.5 px-2 py-1 rounded-md ${active ? 'bg-accent-50' : 'hover:bg-slate-100'} ${focusRing}`}
         style={{ paddingLeft: 8 + depth * 12 }}
       >
         {enableChat && <GripVertical size={11} className="text-slate-300 shrink-0 cursor-grab sm:opacity-0 sm:group-hover:opacity-100" />}
         <FileCode size={13} className={`shrink-0 ${active ? 'text-accent-600' : 'text-slate-400'}`} />
-        <Tooltip label={n.path}><button onClick={() => openFile(n.path)} className={`flex-1 min-w-0 text-left text-xs truncate ${active ? 'text-accent-700 font-semibold' : 'text-slate-700 hover:text-accent-700'}`}>{n.name}</button></Tooltip>
+        <Tooltip label={n.path}><button onClick={() => { setFocusedPath(n.path); openFile(n.path); }} className={`flex-1 min-w-0 text-left text-xs truncate ${active ? 'text-accent-700 font-semibold' : 'text-slate-700 hover:text-accent-700'}`}>{n.name}</button></Tooltip>
         {onAddToContext && (
           <Tooltip label={added ? 'In context' : 'Add to context'}><button onClick={() => onAddToContext(n.path)} disabled={added} className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-md ${added ? 'text-emerald-500' : 'text-slate-500 hover:text-accent-600 sm:opacity-0 sm:group-hover:opacity-100'}`}><Plus size={13} /></button></Tooltip>
         )}
@@ -216,16 +289,16 @@ function FileBrowserInner({
       <div className="flex items-center gap-2 mb-2 flex-wrap">
       {toolbarLeading}
       <div role="tablist" aria-label="File browser view" className="inline-flex p-0.5 gap-0.5 rounded-lg bg-slate-100 border border-slate-200">
-        <button role="tab" aria-selected={pane === 'files'} onClick={() => setPane('files')} className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-md transition-colors ${pane === 'files' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
+        <button role="tab" aria-selected={pane === 'files'} onClick={() => switchPane('files')} className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-md transition-colors ${pane === 'files' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
           <FolderTree size={14} className={pane === 'files' ? 'text-accent-600' : ''} /> Files
         </button>
         {enableChat && (
           <button
             role="tab" aria-selected={pane === 'chat'} data-feature-id="fb-tab-chat"
-            onClick={() => setPane('chat')}
+            onClick={() => switchPane('chat')}
             onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setChatDrop(true); }}
             onDragLeave={() => setChatDrop(false)}
-            onDrop={e => { e.preventDefault(); setChatDrop(false); const p = e.dataTransfer.getData('text/plain'); if (p) { tag(p); setPane('chat'); } }}
+            onDrop={e => { e.preventDefault(); setChatDrop(false); const p = e.dataTransfer.getData('text/plain'); if (p) { tag(p); switchPane('chat'); } }}
             className={`flex items-center gap-1.5 px-3 min-h-control text-xs font-bold rounded-md transition-colors ${pane === 'chat' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'} ${chatDrop ? 'ring-2 ring-ai-400' : ''}`}
           >
             <Sparkles size={14} className={pane === 'chat' ? 'text-ai-600' : ''} /> Chat
@@ -266,7 +339,11 @@ function FileBrowserInner({
                 <Search size={13} className="text-slate-400" />
                 <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find file…" className="flex-1 min-w-0 text-xs bg-transparent focus:outline-none text-slate-800 placeholder:text-slate-400" />
               </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-1">
+              <div
+                role="tree" aria-label="Repo files" aria-activedescendant={focusedPath ? nodeDomId(focusedPath) : undefined}
+                tabIndex={0} onKeyDown={onTreeKeyDown}
+                className="flex-1 overflow-y-auto custom-scrollbar p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-inset rounded-b-xl"
+              >
                 {isHost ? (
                   <p className="p-4 text-center text-2xs text-slate-500 leading-relaxed">This is Piranha's own repo — open a project (top-left switcher) to browse its files.</p>
                 ) : filteredTree.length ? filteredTree.map(n => renderNode(n)) : (

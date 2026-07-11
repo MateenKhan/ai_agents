@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, cleanup } from '@testing-library/react';
 import { SettingsModal } from '../SettingsModal';
+import { ConfirmProvider } from '../ConfirmProvider';
 import { DEFAULT_COLUMNS } from '../../boardConfig';
 import type { TabId } from '../../tabsConfig';
 import type { Column } from '../../types';
 
 afterEach(cleanup);
+
+// SettingsModal calls useConfirm() (skip-permissions type-to-confirm gate), so every render
+// needs a ConfirmProvider in the tree.
+const render = (ui: React.ReactElement) => rtlRender(<ConfirmProvider>{ui}</ConfirmProvider>);
 
 const custom = (label: string): Column => ({ id: `CUSTOM_${label.toUpperCase()}`, label, color: '#123456' });
 // Tab-visibility props are orthogonal to these board-config tests; supply inert defaults.

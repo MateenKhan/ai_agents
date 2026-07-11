@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { HeartPulse, X, Plus, ClipboardCheck, ChevronLeft, ChevronRight } from 'lucide-react';
+import { HeartPulse, X, Plus, ClipboardCheck, ChevronLeft, ChevronRight, ChevronDown, WifiOff, Keyboard } from 'lucide-react';
 import { TAB_META, loadHiddenTabs, saveHiddenTabs, type TabId } from './tasks/tabsConfig';
 
 // Modular Components
@@ -152,6 +152,31 @@ const TasksPage: React.FC = () => {
   };
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
 
+  // ── Item 90: global offline banner ──
+  // The db-server (:6952) is the whole backend; when it is down every panel fails silently.
+  // A dedicated lightweight health poll (GET /health returns {ok:true}) gives one honest,
+  // page-wide signal instead of letting each tab guess. It is separate from the tasks poll's
+  // `error` (which also fires on ordinary 4xx/5xx) so the banner means exactly "server
+  // unreachable", never "one request failed".
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const ping = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/health`);
+        if (!cancelled) setOffline(!res.ok);
+      } catch {
+        if (!cancelled) setOffline(true);
+      }
+    };
+    ping();
+    const iv = setInterval(ping, 8000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, []);
+
+  // ── Item 104: minimal global keyboard-shortcut layer ──
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
   // Human review queue — agent-finished tasks awaiting verification
   const reviewQueue = tasks.filter(t => t.status === 'TESTING');
 
@@ -205,6 +230,25 @@ const TasksPage: React.FC = () => {
     setEditingTask(null);
     setIsTaskModalOpen(true);
   };
+
+  // Global shortcuts: n = new task, / = search context, ? = toggle this help.
+  // Guarded so they never fire while the user is typing (input/textarea/select/
+  // contentEditable) and never hijack a browser/OS chord (meta/ctrl/alt held).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) return;
+      if (e.key === '?') { e.preventDefault(); setShortcutsOpen(s => !s); }
+      else if (e.key === 'Escape') { if (shortcutsOpen) setShortcutsOpen(false); }
+      else if (e.key === 'n') { e.preventDefault(); handleAddTask(); }
+      else if (e.key === '/') { e.preventDefault(); setContextView('search'); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortcutsOpen]);
 
   const handleEditTask = (task: Task) => {
     setEditingTask(task);
@@ -283,10 +327,35 @@ const TasksPage: React.FC = () => {
     );
   }
 
+  // Your Review — the page's one notification affordance. It opens the review panel
+  // (a dialog, hence aria-haspopup + the small down-caret hint — item 78) and carries the
+  // count of tasks awaiting verification. Extracted so item 72 can render it in TWO places
+  // without duplicating markup: inside the collapsible cluster when there is nothing to
+  // review, and promoted to the always-visible row the moment the count is non-zero — a
+  // badge folded behind the chevron is a badge nobody sees.
+  const reviewLabel = `Your Review${reviewQueue.length ? ` — ${reviewQueue.length} awaiting` : ''}`;
+  const reviewButton = (
+    <Tooltip label={reviewLabel}>
+      <button
+        onClick={() => setTodosOpen(true)}
+        data-feature-id="tasks-open-todos"
+        aria-haspopup="dialog"
+        aria-label={reviewLabel}
+        className={`${iconBtn} relative gap-0.5 ${reviewQueue.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-300 sm:hover:bg-amber-100' : ''}`}
+      >
+        <ClipboardCheck size={14} />
+        <ChevronDown size={10} strokeWidth={2.5} className="opacity-50" aria-hidden="true" />
+        {reviewQueue.length > 0 && (
+          <span aria-hidden="true" className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-micro font-bold bg-amber-500 text-white rounded-full">{reviewQueue.length > 9 ? '9+' : reviewQueue.length}</span>
+        )}
+      </button>
+    </Tooltip>
+  );
+
   // The tab switcher. It lives in the header (see ProjectBar) so the tank can span both
   // header rows instead of leaving dead space beside the brand.
   const tabStrip = (
-        <div className="flex items-end gap-2" data-feature-id="tasks-tab-switcher">
+        <div className="flex items-end gap-2 pt-1.5" data-feature-id="tasks-tab-switcher">
           <div ref={tabStripRef} className="flex items-stretch gap-1 scroll-x-bar min-w-0 shrink">
             {visibleTabs.map((t) => {
               const Icon = t.icon;
@@ -357,26 +426,18 @@ const TasksPage: React.FC = () => {
               that means expanding grows the row leftwards into empty space while the chevron
               itself never moves — it is the one control you press twice in a row, so it must
               not slide out from under the cursor between presses. */}
-          <div className="ml-auto shrink-0 flex items-center gap-1 pb-1.5 pl-1" data-feature-id="tasks-actions">
+          {/* A hairline divider fences the action cluster off from the tab strip, so the
+              chevron reads as "disclose these actions" and never as tab navigation (item 77):
+              the tabs already scroll on their own real scrollbar — this chevron does not move
+              between tabs. `ml-auto` still pins the whole group to the right edge. */}
+          <div className="ml-auto shrink-0 flex items-center gap-1 pb-1.5 pl-2 ml-2 border-l border-slate-200" data-feature-id="tasks-actions">
             {actionsOpen && (
               <div className="flex items-center gap-1">
                 <OrchestratorToggle />
                 <RecordButton />
-                {/* Stays a first-class icon: it carries an unread count, and a badge inside a
-                    collapsed menu is a badge nobody sees — the only job it has. */}
-                <Tooltip label={`Your Review${reviewQueue.length ? ` — ${reviewQueue.length} awaiting` : ''}`}>
-                  <button
-                    onClick={() => setTodosOpen(true)}
-                    data-feature-id="tasks-open-todos"
-                    aria-label={`Your Review${reviewQueue.length ? ` — ${reviewQueue.length} awaiting` : ''}`}
-                    className={`${iconBtn} relative ${reviewQueue.length > 0 ? 'bg-amber-50 text-amber-700 border-amber-300 sm:hover:bg-amber-100' : ''}`}
-                  >
-                    <ClipboardCheck size={14} />
-                    {reviewQueue.length > 0 && (
-                      <span aria-hidden="true" className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-micro font-bold bg-amber-500 text-white rounded-full">{reviewQueue.length}</span>
-                    )}
-                  </button>
-                </Tooltip>
+                {/* When nothing is awaiting review the badge lives here with its low-frequency
+                    peers; the moment the count climbs it is promoted below (item 72). */}
+                {reviewQueue.length === 0 && reviewButton}
                 <BoardMenu
                   onChat={() => setChatOpen(true)}
                   onRefresh={fetchTasks}
@@ -387,11 +448,19 @@ const TasksPage: React.FC = () => {
                 />
               </div>
             )}
+            {/* Item 72: with a pending review count, surface the badge OUTSIDE the collapsible
+                group so it stays visible even when the chevron folds the rest away. */}
+            {reviewQueue.length > 0 && reviewButton}
             {/* The one action you take most. Never behind a menu — so it lives OUTSIDE the
                 collapsible group and stays visible even when the chevron folds the rest away. */}
-            <Tooltip label="New task">
+            <Tooltip label="New task (n)">
               <button onClick={() => handleAddTask()} aria-label="New task" className={iconBtn}>
                 <Plus size={14} strokeWidth={3} />
+              </button>
+            </Tooltip>
+            <Tooltip label="Keyboard shortcuts (?)">
+              <button onClick={() => setShortcutsOpen(true)} aria-label="Keyboard shortcuts" aria-haspopup="dialog" className={iconBtn}>
+                <Keyboard size={14} />
               </button>
             </Tooltip>
             {/* Chevron points AT the icons: left when they are hidden (they will appear to the
@@ -420,6 +489,26 @@ const TasksPage: React.FC = () => {
        that forgot to guess (Agents) simply grew the page — which is the scrollbar you saw. A
        flex column measures the header instead of estimating it. */
     <div className="h-dvh flex flex-col overflow-hidden bg-slate-100 text-slate-800 selection:bg-accent-200 selection:text-accent-900">
+      {/* Item 90: slim page-wide banner when the db-server (the whole backend) is unreachable.
+          Health is polled independently of the tasks fetch, so this reads exactly "offline",
+          not "one request 500'd". `role=status` + polite live region announces it once. */}
+      {offline && (
+        <div
+          role="status"
+          aria-live="polite"
+          data-feature-id="offline-banner"
+          className="shrink-0 flex items-center justify-center gap-2 px-3 py-1.5 bg-rose-600 text-white text-2xs font-bold"
+        >
+          <WifiOff size={13} aria-hidden="true" />
+          <span>db-server unreachable — changes won't save. Retrying…</span>
+          <button
+            onClick={() => { fetchTasks(); }}
+            className="ml-1 underline underline-offset-2 uppercase tracking-wide sm:hover:text-rose-100"
+          >
+            Retry now
+          </button>
+        </div>
+      )}
       {/* The header is two columns: brand + tabs on the left, the tank on the right, sharing
           a top edge. The tabs live up here so the tank can span both rows without leaving
           dead space beside them. */}
@@ -570,6 +659,35 @@ const TasksPage: React.FC = () => {
             </Modal>
           )}
 
+
+          {shortcutsOpen && (
+            <Modal
+              isOpen
+              onClose={() => setShortcutsOpen(false)}
+              title="Keyboard shortcuts"
+              icon={<Keyboard size={20} className="text-accent-600" />}
+              maxW="sm:max-w-xs"
+              featureId="shortcuts-help"
+            >
+              <div className="space-y-1.5">
+                {[
+                  { keys: ['n'], label: 'New task' },
+                  { keys: ['/'], label: 'Search the context index' },
+                  { keys: ['?'], label: 'Toggle this help' },
+                ].map(({ keys, label }) => (
+                  <div key={label} className="flex items-center justify-between gap-4 px-1 py-1.5">
+                    <span className="text-xs text-slate-700">{label}</span>
+                    <span className="flex items-center gap-1">
+                      {keys.map(k => (
+                        <kbd key={k} className="min-w-[22px] px-1.5 py-0.5 flex items-center justify-center rounded-md border border-slate-300 bg-slate-50 text-2xs font-bold text-slate-700 shadow-sm">{k}</kbd>
+                      ))}
+                    </span>
+                  </div>
+                ))}
+                <p className="text-micro text-slate-500 pt-1">Shortcuts pause while you're typing in a field.</p>
+              </div>
+            </Modal>
+          )}
 
           {isTaskModalOpen && (
             <TaskModal

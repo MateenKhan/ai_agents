@@ -44,11 +44,21 @@ describe('BoardColumnsEditor', () => {
     expect(labels()).toBe('Backlog|Available|In Progress|Done');
   });
 
-  it('changing a color swatch updates the lane color', () => {
+  it('picking a swatch from the palette updates the lane color', () => {
     render(<Harness initial={DEFAULT_COLUMNS} />);
-    const colorInput = screen.getAllByLabelText('Lane color')[0] as HTMLInputElement;
-    fireEvent.change(colorInput, { target: { value: '#000000' } });
-    expect(colorInput.value).toBe('#000000');
+    // The trigger opens the palette popover; picking a swatch sets the colour and closes it.
+    fireEvent.click(screen.getAllByLabelText('Lane color')[0]);
+    fireEvent.click(screen.getByLabelText('Set color #06b6d4'));
+    const trigger = screen.getAllByLabelText('Lane color')[0] as HTMLButtonElement;
+    expect(trigger.style.backgroundColor).toBe('rgb(6, 182, 212)');
+  });
+
+  it('the custom color input inside the palette updates the lane color', () => {
+    render(<Harness initial={DEFAULT_COLUMNS} />);
+    fireEvent.click(screen.getAllByLabelText('Lane color')[0]);
+    const custom = screen.getByLabelText('Custom lane color') as HTMLInputElement;
+    fireEvent.change(custom, { target: { value: '#000000' } });
+    expect(custom.value).toBe('#000000');
   });
 
   it('Move up reorders a lane before its predecessor', () => {

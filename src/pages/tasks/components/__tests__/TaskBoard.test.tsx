@@ -73,14 +73,20 @@ describe('TaskBoard', () => {
     expect(props.onAddTask).toHaveBeenCalledWith('TODO');
   });
 
-  it('shows a quiet drop hint (not the empty-board CTA) in a lane that is empty while others have tasks', () => {
+  it('shows the drop hint in an empty lane only while a drag is in flight, never the empty-board CTA', () => {
     const cols: Column[] = [
       { id: 'TODO', label: 'Todo', color: '#000' },
       { id: 'DONE', label: 'Done', color: '#000' },
     ];
     const { container } = render(<TaskBoard {...baseProps()} columns={cols} tasks={[task('A', 'TODO')]} />);
-    expect(screen.getByText('Drop here')).toBeTruthy();
+    const doneLane = () => container.querySelector('[data-feature-id="tasks-lane-done"]') as HTMLElement;
+    // At rest the empty DONE lane is calm — no "Drop here" sign, and never the empty-board CTA.
+    expect(doneLane().textContent).not.toContain('Drop here');
     expect(container.querySelector('[data-feature-id="tasks-empty-new"]')).toBeNull();
+    // Start dragging the TODO card — now the empty DONE lane invites a drop.
+    const card = container.querySelector('[data-feature-id="task-card"]') as HTMLElement;
+    fireEvent.dragStart(card, { dataTransfer: { setData: vi.fn(), effectAllowed: '' } });
+    expect(doneLane().textContent).toContain('Drop here');
   });
 
   it('the lane add button calls onAddTask with the lane id', () => {

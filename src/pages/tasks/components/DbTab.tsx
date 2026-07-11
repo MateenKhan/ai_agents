@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Tooltip } from './Tooltip';
-import { Database, Search, Trash2, Edit2, Plus, ChevronLeft, ChevronRight, X, Save, AlertTriangle, ArrowUp, ArrowDown, PencilLine, Server, Table2, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { Database, Search, Trash2, Edit2, Plus, ChevronLeft, ChevronRight, ChevronDown, X, Save, AlertTriangle, ArrowUp, ArrowDown, PencilLine, Server, Table2, RotateCcw, CheckCircle2, Loader2 } from 'lucide-react';
 import { API_BASE as API } from '../../../apiBase';
 import { Modal } from './Modal';
 import DbBackendTab from './DbBackendTab';
@@ -42,9 +42,12 @@ export default function DbTab() {
   const [cols, setCols] = useState<Col[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true); // first-load / re-fetch guard for the skeleton (item 88)
   const [offset, setOffset] = useState(0);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState('');          // debounced query that actually drives the fetch
+  const [qInput, setQInput] = useState(''); // live text-field value (debounced into `q`)
   const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' } | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set()); // `${rowid}:${col}` cells shown in full
   const [editing, setEditing] = useState<any | null>(null); // row being edited ({} = new)
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState<number | null>(null);
@@ -64,11 +67,13 @@ export default function DbTab() {
     fetch(`${API}/db/tables`).then(r => r.json()).then(d => setTables(d.tables ?? [])).catch(() => setTables([]));
 
   const loadRows = useCallback((table = active, off = offset, query = q) => {
+    setLoading(true);
     const s = sort ? `&sort=${encodeURIComponent(sort.col)}&dir=${sort.dir}` : '';
     fetch(`${API}/db/table/${table}?limit=${PAGE}&offset=${off}&q=${encodeURIComponent(query)}${s}`)
       .then(r => r.json())
       .then(d => { setCols(d.columns ?? []); setRows(d.rows ?? []); setTotal(d.total ?? 0); })
-      .catch(() => { setRows([]); setTotal(0); });
+      .catch(() => { setRows([]); setTotal(0); })
+      .finally(() => setLoading(false));
   }, [active, offset, q, sort]);
 
   const toggleSort = (col: string) => {
@@ -78,6 +83,14 @@ export default function DbTab() {
       : { col, dir: 'desc' });
   };
 
+  // Debounce the search box so we fetch once the user pauses, not per keystroke.
+  useEffect(() => {
+    if (qInput === q) return;
+    const id = setTimeout(() => { setQ(qInput); setOffset(0); }, 300);
+    return () => clearTimeout(id);
+  }, [qInput, q]);
+  const searching = qInput !== q; // a fetch is pending behind the current keystrokes
+
   useEffect(() => { loadTables(); }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setEditing(null); setBulkEdit(null); } };
@@ -86,7 +99,36 @@ export default function DbTab() {
   }, []);
   useEffect(() => { loadRows(); }, [loadRows]);
 
-  const switchTable = (t: string) => { setActive(t); setOffset(0); setQ(''); setEditing(null); setSelected(new Set()); setBulkEdit(null); setConfirmBulkDel(false); };
+  const switchTable = (t: string) => { setActive(t); setOffset(0); setQ(''); setQInput(''); setEditing(null); setSelected(new Set()); setExpanded(new Set()); setBulkEdit(null); setConfirmBulkDel(false); };
+
+  // Cell expand/collapse for wide values (JSON blobs like `scenarios`, long text).
+  const isExpandable = (v: any) => {
+    if (v === null || v === undefined) return false;
+    const s = String(v);
+    return /^\s*[[{]/.test(s) || s.length > 80;
+  };
+  const pretty = (v: any) => {
+    const s = String(v);
+    try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
+  };
+  const toggleExpand = (key: string) => setExpanded(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+
+  // Per-column hint for the raw insert form — derived from name + declared type only.
+  const schemaHint = (c: Col): string => {
+    if (c.pk) return 'primary key — leave blank to auto-assign';
+    const t = (c.type || '').toUpperCase();
+    const n = c.name.toLowerCase();
+    if (/scenario|json|meta|payload|config|settings|\bdata\b/.test(n)) return 'JSON — e.g. {"key": "value"}';
+    if (t.includes('INT')) return 'integer — e.g. 42';
+    if (t.includes('REAL') || t.includes('FLOA') || t.includes('DOUB') || t.includes('NUM')) return 'number — e.g. 3.14';
+    if (t.includes('BOOL')) return '0 or 1';
+    if (/_at$|date|time/.test(n)) return 'ISO 8601 — e.g. 2026-07-11T09:30:00Z';
+    return 'text — leave blank for null';
+  };
 
   const toggleRow = (rowid: number) => setSelected(prev => {
     const next = new Set(prev);
@@ -236,6 +278,9 @@ export default function DbTab() {
       ) : (<>
       {/* Table chips + search */}
       <div className="shrink-0 flex items-center gap-2 flex-wrap">
+        {tables === null && Array.from({ length: 4 }).map((_, i) => (
+          <div key={`sk-chip-${i}`} className="min-h-control w-24 rounded-lg bg-slate-100 border border-slate-200 animate-pulse" aria-hidden="true" />
+        ))}
         {(tables ?? []).map(t => (
           <button
             key={t.name}
@@ -252,12 +297,27 @@ export default function DbTab() {
           <div className="relative">
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
-              value={q}
-              onChange={e => { setQ(e.target.value); setOffset(0); }}
+              value={qInput}
+              onChange={e => setQInput(e.target.value)}
               placeholder="Search all text columns…"
               data-feature-id="db-search"
-              className="pl-8 pr-3 min-h-control text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500 placeholder:text-slate-400 w-52"
+              className="pl-8 pr-14 min-h-control text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500 placeholder:text-slate-400 w-52"
             />
+            {searching && (
+              <Loader2 size={13} className="absolute right-8 top-1/2 -translate-y-1/2 text-slate-400 animate-spin" aria-label="Searching" />
+            )}
+            {qInput && (
+              <Tooltip label="Clear search">
+                <button
+                  onClick={() => setQInput('')}
+                  data-feature-id="db-search-clear"
+                  aria-label="Clear search"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                >
+                  <X size={13} />
+                </button>
+              </Tooltip>
+            )}
           </div>
           <button
             onClick={() => setEditing({})}
@@ -348,7 +408,19 @@ export default function DbTab() {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {loading && rows.length === 0 ? (
+              // Skeleton while the first page fetches — holds the grid's shape instead of a
+              // blank flash then a pop-in (item 88). Column count is a guess until cols land.
+              Array.from({ length: 8 }).map((_, ri) => (
+                <tr key={`sk-${ri}`} className="border-b border-slate-100">
+                  <td className="px-3 py-3 border-r border-slate-100"><div className="h-4 w-4 rounded bg-slate-200 animate-pulse" /></td>
+                  {Array.from({ length: cols.length || 5 }).map((_, ci) => (
+                    <td key={ci} className="px-3 py-3 border-r border-slate-100"><div className="h-3 rounded bg-slate-200 animate-pulse" style={{ width: `${55 + ((ri + ci) % 4) * 10}%` }} /></td>
+                  ))}
+                  <td className="px-3 py-3"><div className="h-3 w-10 rounded bg-slate-200 animate-pulse ml-auto" /></td>
+                </tr>
+              ))
+            ) : rows.length === 0 ? (
               <tr><td colSpan={cols.length + 2} className="px-4 py-10 text-center text-sm text-slate-500">No rows{q ? ' match the search' : ''}.</td></tr>
             ) : rows.map((r, ri) => (
               <tr key={r._rowid}
@@ -357,11 +429,36 @@ export default function DbTab() {
                   <input type="checkbox" checked={selected.has(r._rowid)} onChange={() => toggleRow(r._rowid)}
                     className="w-4 h-4 accent-accent-600" data-feature-id="db-select-row" />
                 </td>
-                {cols.map(c => (
-                  <td key={c.name} className="px-3 py-2 text-xs text-slate-800 font-mono max-w-[260px] truncate align-top border-r border-slate-100" title={String(r[c.name] ?? '')}>
-                    {cell(c.name, r[c.name])}
-                  </td>
-                ))}
+                {cols.map(c => {
+                  const raw = r[c.name];
+                  const key = `${r._rowid}:${c.name}`;
+                  const canExpand = isExpandable(raw);
+                  const open = expanded.has(key);
+                  return (
+                    <td
+                      key={c.name}
+                      className={`px-3 py-2 text-xs text-slate-800 font-mono border-r border-slate-100 align-top ${open ? 'max-w-[460px]' : 'max-w-[260px]'} ${canExpand ? '' : 'truncate'}`}
+                      title={open ? undefined : String(raw ?? '')}
+                    >
+                      {canExpand ? (
+                        <div className="flex flex-col items-start gap-1">
+                          {open ? (
+                            <pre className="whitespace-pre-wrap break-words text-2xs leading-relaxed max-h-64 overflow-auto custom-scrollbar bg-slate-50 border border-slate-200 rounded-md p-2 w-full">{pretty(raw)}</pre>
+                          ) : (
+                            <span className="block max-w-full truncate">{cell(c.name, raw)}</span>
+                          )}
+                          <button
+                            onClick={() => toggleExpand(key)}
+                            data-feature-id="db-cell-expand"
+                            className="inline-flex items-center gap-0.5 text-micro font-bold text-accent-600 hover:text-accent-700"
+                          >
+                            <ChevronDown size={11} className={open ? 'rotate-180' : ''} /> {open ? 'Collapse' : 'Expand'}
+                          </button>
+                        </div>
+                      ) : cell(c.name, raw)}
+                    </td>
+                  );
+                })}
                 <td className="px-3 py-2 text-right whitespace-nowrap align-top">
                   <Tooltip label="Edit"><button onClick={() => setEditing({ ...r })} className="p-1.5 text-slate-500 hover:text-accent-600 transition-colors"><Edit2 size={14} /></button></Tooltip>
                   {confirmDel === r._rowid ? (
@@ -417,17 +514,27 @@ export default function DbTab() {
           }
         >
           <div className="space-y-3">
-            {cols.map(c => (
-              <div key={c.name}>
-                <label className="eyebrow">{c.name} <span className="text-slate-500">({c.type || 'TEXT'})</span></label>
-                <textarea
-                  rows={String(editing[c.name] ?? '').length > 60 ? 3 : 1}
-                  value={editing[c.name] ?? ''}
-                  onChange={e => setEditing({ ...editing, [c.name]: e.target.value === '' ? null : e.target.value })}
-                  className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-accent-500 resize-y"
-                />
-              </div>
-            ))}
+            {cols.map(c => {
+              const hint = schemaHint(c);
+              const isNewRow = editing._rowid === undefined;
+              return (
+                <div key={c.name}>
+                  <label className="flex items-center gap-1.5 eyebrow">
+                    {c.name}
+                    <span className="text-slate-400 normal-case tracking-normal font-mono font-semibold">{c.type || 'TEXT'}</span>
+                    {c.pk ? <span className="px-1 rounded bg-amber-100 text-amber-700 normal-case tracking-normal">PK</span> : null}
+                  </label>
+                  <textarea
+                    rows={String(editing[c.name] ?? '').length > 60 ? 3 : 1}
+                    value={editing[c.name] ?? ''}
+                    onChange={e => setEditing({ ...editing, [c.name]: e.target.value === '' ? null : e.target.value })}
+                    placeholder={hint}
+                    className="w-full mt-1 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-accent-500 resize-y"
+                  />
+                  {isNewRow && <p className="mt-1 text-micro text-slate-500">{hint}</p>}
+                </div>
+              );
+            })}
           </div>
         </Modal>
       )}
