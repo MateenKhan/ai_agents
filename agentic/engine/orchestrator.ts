@@ -78,6 +78,7 @@ import {
 } from './runner';
 import { reconcileContext } from '../db/context';
 import { listRepoFiles } from './repo-files';
+import { redactSecrets } from '../redact';
 
 const POLL_MS = 3000;
 // Deep-cleaner cadence: sweep orphan worktrees/branches across EVERY project repo (not just
@@ -476,16 +477,10 @@ async function projectCap(pid: string): Promise<number> {
  *  of the run's output. `lastError` stays a short one-liner (for the board/triage); this is the
  *  fuller evidence the retrying agent needs so it does not repeat the same mistake blind. */
 /** Scrub the obvious secrets out of captured agent output before it is stored in the task,
- *  injected into the next prompt, or shown to a human. Targeted, not exhaustive — GitHub tokens,
- *  `Bearer`/`token=`/`password=` pairs, and `user:pass@` embedded in URLs. */
-export function redactSecrets(s: string): string {
-  return (s || '')
-    // URL credentials FIRST — otherwise the `token:` pattern below greedily eats the rest of the
-    // URL (still safe, but it mangles the host). Redacting `user:pass@` here keeps the host visible.
-    .replace(/(https?:\/\/)[^@/\s]+@/g, '$1***@')
-    .replace(/gh[posur]_[A-Za-z0-9_]{20,}/g, 'gh?_***')
-    .replace(/\b(Bearer|token|password|secret|api[_-]?key)\b(\s*[:=]\s*|\s+)\S+/gi, '$1$2***');
-}
+ *  injected into the next prompt, or shown to a human. The implementation now lives in the shared
+ *  `../redact` module (also used by the db-server); re-exported here so existing importers of
+ *  `redactSecrets` from this file keep working unchanged. */
+export { redactSecrets };
 
 export function failureDetailFrom(label: string, outputTail: string): string {
   const tail = redactSecrets((outputTail || '').split('\n').slice(-40).join('\n').trim());
