@@ -39,8 +39,23 @@ const VERSION_INFO = (() => {
   };
 })();
 
+// Hard cap on request bodies — reject once accumulated bytes exceed this instead of buffering
+// unbounded memory (DoS guard). The rejection carries a 413 so handlers can surface it clearly.
+const MAX_BODY_BYTES = 10_000_000; // 10 MB
 function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise(res => { let d = ''; req.on('data', c => d += c); req.on('end', () => res(d)); });
+  return new Promise((res, rej) => {
+    let d = ''; let size = 0;
+    req.on('data', c => {
+      size += (c as Buffer).length;
+      if (size > MAX_BODY_BYTES) {
+        const err: any = new Error('request body too large'); err.statusCode = 413;
+        req.destroy(); rej(err); return;
+      }
+      d += c;
+    });
+    req.on('end', () => res(d));
+    req.on('error', rej);
+  });
 }
 
 function keywordSearch(query: string, topK: number, projectId: string = 'default') {
@@ -345,7 +360,7 @@ async function purgeProjectData(id: string): Promise<void> {
     await ls.run(`DELETE FROM agent_logs WHERE projectId = ?`, [id]);
     await ls.run(`DELETE FROM context_files WHERE projectId = ?`, [id]);
     await ls.run(`DELETE FROM context_ops WHERE projectId = ?`, [id]);
-    for (const t of taskIds) await ls.run(`DELETE FROM agent_db_usage WHERE taskId = ?`, [t]);
+    if (taskIds.length) await ls.run(`DELETE FROM agent_db_usage WHERE taskId IN (${taskIds.map(() => '?').join(',')})`, taskIds);
   } catch (e: any) { console.warn(`[db-server] purge project logs [${id}]: ${e?.message}`); }
   // Embeddings index DB files.
   for (const suf of ['', '-wal', '-shm']) {
@@ -1389,7 +1404,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
       const answer = (String(parsed.answer || '') + (skipped.length ? `\n\n(skipped: ${skipped.join('; ')})` : '')).trim();
       res.end(JSON.stringify({ answer, sessionId, proposals, metrics }));
-    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    } catch (e: any) { res.statusCode = e?.statusCode || 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
 
@@ -1709,7 +1724,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         }
       }
     } catch (e: any) {
-      res.statusCode = 500;
+      res.statusCode = e?.statusCode || 500;
       res.end(JSON.stringify({ error: e.message }));
       return;
     }
@@ -1764,7 +1779,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       });
       res.end(JSON.stringify({ results, remembered, evicted }));
     } catch (e: any) {
-      res.statusCode = 500;
+      res.statusCode = e?.statusCode || 500;
       res.end(JSON.stringify({ error: e.message }));
     }
     return;
@@ -1902,7 +1917,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       console.log(`[db-server] Intake: created ${created.length} task(s) from chat${gatedCount ? ` (${gatedCount} held for refinement)` : ''}`);
       res.end(JSON.stringify({ ok: true, created, gated: gatedCount }));
     } catch (e: any) {
-      res.statusCode = 500;
+      res.statusCode = e?.statusCode || 500;
       res.end(JSON.stringify({ error: e.message }));
     }
     return;

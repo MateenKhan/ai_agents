@@ -7,7 +7,7 @@
 
 import os from 'node:os';
 import type { DatabaseSync } from 'node:sqlite';
-import type { Task, Scenario } from '../types';
+import type { Task, Scenario, QaVerdict } from '../types';
 import { getConfig } from '../runtime-context';
 import { openDb } from './connection';
 import type { Store } from './store';
@@ -179,7 +179,62 @@ function parseMaybeJson(v: any): any {
   try { return JSON.parse(v); } catch { return v; }
 }
 
-function rowToTask(r: any): Task {
+/**
+ * The raw shape of a `tasks` table row as it comes back from the Store, BEFORE any
+ * decoding. Every column in `COLS` appears here as the primitive it is stored as:
+ * plain text columns are `string | null`, numeric columns `number | null`, and the
+ * eight JSON-encoded columns (`dependsOn`, `files`, `docs`, `scenarios`, `stageTimings`,
+ * `consultLog`, `pendingConsult`, `journal`) are `string | null` because they hold a
+ * serialised blob that `rowToTask` parses. `qaVerdict` is stored as text but its value
+ * domain is exactly `QaVerdict`, so it is typed as such — that lets the `...r` spread flow
+ * straight into `Task.qaVerdict` (a narrow union) without a cast.
+ */
+interface TaskRow {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string | null;
+  priority: number | null;
+  claimedBy: string | null;
+  started: string | null;
+  completed: string | null;
+  dependsOn: string | null;
+  files: string | null;
+  parentId: string | null;
+  scenarios: string | null;
+  stage: string | null;
+  qaVerdict: QaVerdict;
+  docs: string | null;
+  reviewNote: string | null;
+  leaseExpiresAt: string | null;
+  attempts: number | null;
+  nextRetryAt: string | null;
+  lastError: string | null;
+  model: string | null;
+  summary: string | null;
+  etcMinutes: number | null;
+  etcSetAt: string | null;
+  stageTimings: string | null;
+  projectId: string | null;
+  control: string | null;
+  mergeBounces: number | null;
+  rescueCount: number | null;
+  logPath: string | null;
+  intent: string | null;
+  ownerNote: string | null;
+  ownerBounces: number | null;
+  lastOutcome: string | null;
+  handoffFrom: string | null;
+  hops: number | null;
+  consultLog: string | null;
+  pendingConsult: string | null;
+  consultAnswer: string | null;
+  failureDetail: string | null;
+  plan: string | null;
+  journal: string | null;
+}
+
+function rowToTask(r: TaskRow): Task {
   return {
     ...r,
     dependsOn: parseArr(r.dependsOn),
