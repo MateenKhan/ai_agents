@@ -41,6 +41,7 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
     : (typeof rawScenarios === 'string' ? (() => { try { return JSON.parse(rawScenarios); } catch { return []; } })() : []);
 
   const [showPlan, setShowPlan] = useState(false);
+  const [showArchPlan, setShowArchPlan] = useState(false);
   const [showDesc, setShowDesc] = useState(false);
   const [showChanges, setShowChanges] = useState(false);
   // A branch only exists once the task has been picked up for work. Showing "Changes" on a
@@ -152,6 +153,19 @@ export default function TaskDetail({ task, onClose, onEdit, onDelete, onTrigger,
                   : `Now: ${STAGES[stageIdx].who} is on ${STAGES[stageIdx].label}. Next: ${STAGES[stageIdx + 1].who} · ${STAGES[stageIdx + 1].label}.`}
             </p>
           </div>
+
+          {/* The architect's plan — distinct from the dev's summary below (ai tint vs accent). */}
+          {task.plan && (
+            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+              <button onClick={() => setShowArchPlan(v => !v)} className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 transition-colors" data-feature-id="task-detail-toggle-plan">
+                <span className="eyebrow">Plan (from the architect)</span>
+                <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 shrink-0 ${showArchPlan ? 'rotate-180' : ''}`} />
+              </button>
+              {showArchPlan
+                ? <div className="px-4 py-4 border-t border-slate-200 min-h-[120px] max-h-[45vh] overflow-y-auto custom-scrollbar text-[13px] text-slate-800 leading-relaxed whitespace-pre-wrap bg-ai-50/40">{task.plan}</div>
+                : <div className="px-4 py-2.5 border-t border-slate-100 text-xs text-slate-500 italic truncate">{task.plan.split('\n').find(Boolean)?.slice(0, 90)}…</div>}
+            </div>
+          )}
 
           {task.summary && (
             <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">

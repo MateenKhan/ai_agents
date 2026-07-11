@@ -15,6 +15,16 @@ describe('specIssues (intake quality gate)', () => {
     expect(issues.some(i => /scenarios/.test(i))).toBe(true);
   });
 
+  it('flags scenarios that are present but contain no THEN (not verifiable)', () => {
+    const issues = specIssues('Add slugify', ['GIVEN text WHEN slugified'], goodDod);
+    expect(issues.some(i => /no THEN/.test(i))).toBe(true);
+  });
+
+  it('does not flag no-THEN when at least one scenario has a THEN', () => {
+    const issues = specIssues('Add slugify', ['GIVEN text WHEN slugified', 'GIVEN blank WHEN slugified THEN empty'], goodDod);
+    expect(issues.some(i => /no THEN/.test(i))).toBe(false);
+  });
+
   it('flags a definition of done that is just the title echoed back', () => {
     const issues = specIssues('Add slugify', ['GIVEN … THEN …'], 'Add slugify');
     expect(issues.some(i => /definition of done/.test(i))).toBe(true);

@@ -25,6 +25,11 @@ const CHANGES = {
   truncated: false,
   qaVerdict: 'pass' as const,
   summary: 'Accepted. Commit 823bf16 adds a pure slugify().',
+  journal: [
+    { ts: '2026-07-10T10:00:00Z', stage: 'plan', agent: 'architect', outcome: 'handoff', note: 'implemented slugify' },
+    { ts: '2026-07-10T10:05:00Z', stage: 'qa', agent: 'qa', outcome: 'reject', note: 'test missing' },
+    { ts: '2026-07-10T10:10:00Z', stage: 'qa', agent: 'qa', outcome: 'pass', note: 'tests added' },
+  ],
 };
 
 function mockFetch(body: unknown, ok = true, status = 200) {
@@ -96,6 +101,29 @@ describe('ChangesPanel', () => {
 
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('renders the stage-history timeline with an outcome-coloured chip per journal entry', async () => {
+    render(<ChangesPanel taskId="T1" />);
+    await screen.findByText('Stage history');
+    // one row per journal entry, notes shown
+    expect(screen.getByText('implemented slugify')).toBeTruthy();
+    expect(screen.getByText('test missing')).toBeTruthy();
+    // a rejection is rose; a pass is emerald — the outcome chips carry the app's colour hierarchy
+    const reject = screen.getByText('reject');
+    const pass = screen.getByText('pass');
+    expect(reject.className).toContain('rose');
+    expect(pass.className).toContain('emerald');
+    // a neutral outcome ('handoff') is neither
+    const neutral = screen.getByText('handoff');
+    expect(neutral.className).toContain('slate');
+  });
+
+  it('renders no stage-history section when the journal is empty', async () => {
+    vi.stubGlobal('fetch', mockFetch({ ...CHANGES, journal: [] }));
+    render(<ChangesPanel taskId="T1" />);
+    await screen.findByText('src/utils/slugify.ts');
+    expect(screen.queryByText('Stage history')).toBeNull();
   });
 
   it('shows an inline error with a Retry that re-fetches on a failed response', async () => {

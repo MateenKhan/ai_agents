@@ -134,6 +134,13 @@ export function TaskCard({ task, onEdit, onDelete, onTrigger, onControl, onMove,
             {pb.label}
           </span>
 
+          {/* Intake quality gate parked this task as under-specified — amber "attention" tier. */}
+          {task.reviewNote?.startsWith('NEEDS REFINEMENT') && (
+            <span className="flex items-center gap-1 text-micro font-semibold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-300" title={task.reviewNote}>
+              <AlertCircle size={9} /> Needs refinement
+            </span>
+          )}
+
           {isPaused && (
             <span className="flex items-center gap-1 text-micro font-semibold text-amber-700 px-1.5 py-0.5 bg-amber-50 rounded border border-amber-300" title="Task paused by you">
               <Pause size={9} fill="currentColor" /> Paused

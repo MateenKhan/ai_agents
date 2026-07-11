@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { RefreshCw, GitBranch, FileCode2, AlertTriangle, CheckCircle2, XCircle, CircleDashed, Loader2, Maximize2, X } from 'lucide-react';
+import { RefreshCw, GitBranch, FileCode2, AlertTriangle, CheckCircle2, XCircle, CircleDashed, Loader2, Maximize2, X, History } from 'lucide-react';
 import { API_BASE, getActiveProject } from '../../../apiBase';
 import { DiffView } from './DiffView';
 
@@ -17,6 +17,8 @@ import { DiffView } from './DiffView';
 
 interface FileChange { path: string; status: string; additions: number | null; deletions: number | null }
 interface Commit { sha: string; subject: string }
+/** One append-only stage-trail entry, most-recent-last. */
+interface JournalEntry { ts: string; stage: string; agent: string; outcome: string; note?: string }
 interface Changes {
   ok: boolean;
   exists: boolean;
@@ -28,6 +30,16 @@ interface Changes {
   truncated: boolean;
   qaVerdict: 'pass' | 'fail' | null;
   summary: string | null;
+  journal?: JournalEntry[];
+}
+
+// Outcome → chip colour. Green for a clean result, rose for a rejection/failure, slate for
+// anything neutral (in-progress, handoff, etc.). Matches the app's pass/fail hierarchy.
+function outcomeCls(outcome: string): string {
+  const o = (outcome || '').toLowerCase();
+  if (['pass', 'done', 'accepted'].includes(o)) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
+  if (o.startsWith('fail') || o.startsWith('reject')) return 'text-rose-700 bg-rose-50 border-rose-200';
+  return 'text-slate-600 bg-slate-50 border-slate-200';
 }
 
 // Git status letter → colour + label. Matches the app's status hierarchy (added=emerald,
@@ -169,6 +181,23 @@ export function ChangesPanel({ taskId }: { taskId: string }) {
           {data.truncated && (
             <div className="px-3 py-2 text-micro text-slate-500 border-t border-surface-border">diff truncated — open the branch to see the rest.</div>
           )}
+        </div>
+      )}
+
+      {/* Stage history — the append-only trail of who did what, most-recent last. Empty ⇒ nothing. */}
+      {data.journal && data.journal.length > 0 && (
+        <div className="rounded-lg border border-slate-200 divide-y divide-slate-100" data-feature-id="changes-journal">
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-micro font-bold uppercase tracking-widest text-slate-400">
+            <History size={12} /> Stage history
+          </div>
+          {data.journal.map((e, i) => (
+            <div key={i} className="flex items-center gap-2 px-2.5 py-1.5">
+              <span className="font-mono text-micro font-bold text-slate-600 shrink-0">{e.stage}</span>
+              <span className="text-2xs text-slate-500 shrink-0">{e.agent}</span>
+              <span className={`text-micro font-bold rounded-full border px-1.5 py-0.5 shrink-0 ${outcomeCls(e.outcome)}`}>{e.outcome}</span>
+              {e.note && <span className="text-2xs text-slate-400 truncate min-w-0 flex-1" title={e.note}>{e.note}</span>}
+            </div>
+          ))}
         </div>
       )}
 

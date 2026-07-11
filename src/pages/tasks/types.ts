@@ -34,6 +34,8 @@ export interface Task {
   model?: string | null;
   /** Agent-written reviewer summary: what changed + how to verify */
   summary?: string | null;
+  /** The architect's plan, frozen at the end of the plan stage (kept separate from the dev's summary) */
+  plan?: string | null;
   /** Pipeline stage: plan | build | qa | review | merge | merged */
   stage?: string | null;
   /** QA verdict for the current attempt: 'pass' | 'fail' */

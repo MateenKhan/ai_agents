@@ -9,6 +9,8 @@
 export function specIssues(title: string, scenarios: string[], dod: string): string[] {
   const issues: string[] = [];
   if (!scenarios.length) issues.push('no acceptance scenarios (GIVEN/WHEN/THEN)');
+  // Scenarios that never say THEN state no expected outcome — present, but nothing to verify against.
+  if (scenarios.length && !scenarios.some(s => /\bthen\b/i.test(s))) issues.push('scenarios have no THEN — not verifiable');
   const d = (dod || '').trim();
   if (!d || d.toLowerCase() === (title || '').trim().toLowerCase() || d.length < 12) {
     issues.push('no verifiable definition of done');

@@ -124,6 +124,13 @@ import { getAllTasks, getTask, createTask, updateTask, deleteTask, bulkUpdatePri
 import { getBackendConfig, setBackendConfig, getMaskedBackendConfig } from './backendConfig.ts';
 import { specIssues } from './intakeGate.ts';
 import { authenticateGitUrl } from './gitAuth.ts';
+// Belt-and-suspenders redaction of git/curl output. The known token is already stripped by the
+// callers; this also catches user:pass@ embedded in URLs and any GitHub token git happens to echo.
+function redactGitOutput(s: string): string {
+  return (s || '')
+    .replace(/(https?:\/\/)[^@/\s]+@/g, '$1***@')      // user:pass@ in URLs
+    .replace(/gh[posur]_[A-Za-z0-9_]{20,}/g, 'gh?_***'); // GitHub tokens
+}
 // The datastore seam: push the chosen backend (SQLite default / Postgres opt-in) into the
 // async Store layer at boot, BEFORE any schema init or request handling.
 import { configureBackend, isPostgres, getStore, ensureMigrated } from '../agentic/db/getStore.ts';
@@ -1298,6 +1305,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         repoFiles.push({ path: rel, content: readFileSync(abs, 'utf-8') });
       }
 
+      // Cap total reference-upload bytes — the whole lot is inlined into the prompt, so an
+      // oversized batch bloats the model call (and cost) before it ever runs. Reject early.
+      const uploadBytes = uploads.reduce((n, u) => n + Buffer.byteLength(String(u?.content ?? ''), 'utf8'), 0);
+      if (uploadBytes > 2_000_000) { res.statusCode = 413; res.end(JSON.stringify({ error: 'uploads too large — keep total reference files under 2 MB' })); return; }
+
       const prompt = [
         'You are a code-editing assistant. Apply the INSTRUCTION to the REPO FILES below.',
         'Return ONLY minified JSON — no markdown fences, no prose outside the JSON:',
@@ -1328,6 +1340,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         ['-p', prompt, '--model', model, ...sessionFlags, ...effortFlags, '--output-format', 'json', '--dangerously-skip-permissions'],
         { encoding: 'utf8', timeout: 150000, maxBuffer: 16 * 1024 * 1024 });
       const wallMs = Date.now() - t0;
+      // spawnSync killed on timeout → surface a clear 504, not the generic "could not parse" 502
+      // (a timed-out run has no output to parse, so it would otherwise fall through as garbage).
+      if ((proc as any).error?.code === 'ETIMEDOUT' || proc.signal === 'SIGTERM') {
+        res.statusCode = 504; res.end(JSON.stringify({ error: 'the model timed out (took over 150s) — try a smaller instruction or fewer files' })); return;
+      }
       const out = (proc.stdout || '') + (proc.stderr || '');
 
       // Parse the CLI JSON envelope, then the model's own JSON inside `.result`.
@@ -2268,6 +2285,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const r = spawnSync('git', ['push', '-u', authUrl, `HEAD:${branch}`], { cwd: repo, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
       let output = ((r.stdout || '') + (r.stderr || '')).trim();
       if (cfg.token) { output = output.split(cfg.token).join('***').split(encodeURIComponent(cfg.token)).join('***'); }
+      output = redactGitOutput(output);
       res.end(JSON.stringify({ ok: r.status === 0, branch, output }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2290,6 +2308,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const r = spawnSync('git', ['-c', 'credential.helper=', 'pull', '--no-edit', authUrl, cur], { cwd: repo, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
       let output = ((r.stdout || '') + (r.stderr || '')).trim();
       if (cfg.token) { output = output.split(cfg.token).join('***').split(encodeURIComponent(cfg.token)).join('***'); }
+      output = redactGitOutput(output);
       res.end(JSON.stringify({ ok: r.status === 0, branch: cur, output }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
@@ -2308,7 +2327,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       let authUrl = url;
       authUrl = authenticateGitUrl(url, cfg.token, cfg.username);
       const r = spawnSync('git', ['-c', 'credential.helper=', 'ls-remote', '--heads', '--symref', authUrl], { encoding: 'utf8', timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
-      if (r.status !== 0) { let out = ((r.stdout || '') + (r.stderr || '')).trim(); if (cfg.token) out = out.split(cfg.token).join('***'); res.statusCode = 400; res.end(JSON.stringify({ error: 'could not list branches', output: out.slice(-400) })); return; }
+      if (r.status !== 0) { let out = ((r.stdout || '') + (r.stderr || '')).trim(); if (cfg.token) out = out.split(cfg.token).join('***'); out = redactGitOutput(out); res.statusCode = 400; res.end(JSON.stringify({ error: 'could not list branches', output: out.slice(-400) })); return; }
       const lines = (r.stdout || '').split('\n');
       let def = ''; const branches: string[] = [];
       for (const ln of lines) {
