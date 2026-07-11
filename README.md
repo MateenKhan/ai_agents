@@ -195,6 +195,17 @@ Before exposing it on a LAN/VPS (`HOST=0.0.0.0`), or reporting a vulnerability, 
 
 See the full plan in **[ROADMAP.md](./ROADMAP.md)**.
 
+## Run it headless (no UI)
+
+The browser app is only a client of the API — the orchestrator and the db-server are fully
+headless. Prefer the command line? Start the two backend services and drive everything over
+HTTP: create a task, launch it, watch it move through the pipeline, review its diff, approve it.
+
+Import the **[Postman collection](./docs/piranha.postman_collection.json)** — it has the whole
+run loop wired up (create → trigger → watch → review the diff → approve), plus the workflow,
+search, agents and git endpoints. Set the `baseUrl` and `project` collection variables, then
+walk the folders top to bottom.
+
 ## Contributing
 
 Contributions welcome — start with **[CONTRIBUTING.md](./CONTRIBUTING.md)** and the

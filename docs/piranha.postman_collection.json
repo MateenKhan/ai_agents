@@ -1,0 +1,183 @@
+{
+  "info": {
+    "name": "Piranha — headless API",
+    "description": "Run the whole Piranha orchestrator from the command line, no UI. The browser app is only a client of this API; every endpoint below is what it calls. Start the backend with `pnpm run db:server:stable` + `pnpm run db:orchestrator:stable` (or `pnpm run agents` and just ignore the browser).\n\nSet the `baseUrl` and `project` collection variables, then walk the folders top to bottom: create a task, trigger it, watch it move through the workflow, review its diff, approve it.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:6952", "type": "string" },
+    { "key": "project", "value": "default", "type": "string" },
+    { "key": "taskId", "value": "TASK-1", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "0 · Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }, "description": "200 { ok: true } when the db-server is up." }
+        },
+        {
+          "name": "Version",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/version", "host": ["{{baseUrl}}"], "path": ["version"] } }
+        },
+        {
+          "name": "System status (watch the board)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/system-status?project={{project}}", "host": ["{{baseUrl}}"], "path": ["system-status"], "query": [{ "key": "project", "value": "{{project}}" }] }, "description": "Live snapshot: orchestrator activity, active agents, circuit state, and the recent event feed for this project." }
+        }
+      ]
+    },
+    {
+      "name": "1 · Projects",
+      "item": [
+        {
+          "name": "List projects",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/projects", "host": ["{{baseUrl}}"], "path": ["projects"] }, "description": "Every project. `default` maps to whatever repo you cloned into it." }
+        },
+        {
+          "name": "Project readiness",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/project/readiness?project={{project}}", "host": ["{{baseUrl}}"], "path": ["project", "readiness"], "query": [{ "key": "project", "value": "{{project}}" }] }, "description": "A project only dispatches tasks once it is ready: a cloned git repo, a confirmed run-config, and a verified preview." }
+        }
+      ]
+    },
+    {
+      "name": "2 · Tasks — the run loop",
+      "item": [
+        {
+          "name": "List tasks (poll this to watch progress)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/tasks?project={{project}}", "host": ["{{baseUrl}}"], "path": ["tasks"], "query": [{ "key": "project", "value": "{{project}}" }] }, "description": "Every task in the project. Watch `status`, `stage`, `lastOutcome`, `qaVerdict` change as agents run." }
+        },
+        {
+          "name": "Get one task",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/tasks/{{taskId}}", "host": ["{{baseUrl}}"], "path": ["tasks", "{{taskId}}"] } }
+        },
+        {
+          "name": "Create task",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/tasks?project={{project}}", "host": ["{{baseUrl}}"], "path": ["tasks"], "query": [{ "key": "project", "value": "{{project}}" }] },
+            "body": { "mode": "raw", "raw": "{\n  \"id\": \"{{taskId}}\",\n  \"title\": \"Add a slugify(text) utility with a unit test\",\n  \"description\": \"Add a pure function slugify(text) to src/utils that lowercases, trims, replaces runs of non-alphanumeric characters with a single hyphen, and strips leading/trailing hyphens. Export it from src/utils/index.ts. Add a unit test. Touch no other file.\",\n  \"status\": \"TODO\",\n  \"priority\": 0\n}" },
+            "description": "Create a task. `description` becomes the immutable `intent` the owner writes scenarios against. It starts in TODO — trigger it next to launch."
+          }
+        },
+        {
+          "name": "Trigger (launch) task",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/tasks/{{taskId}}/trigger", "host": ["{{baseUrl}}"], "path": ["tasks", "{{taskId}}", "trigger"] },
+            "body": { "mode": "raw", "raw": "{}" },
+            "description": "Moves the task to WORKING and wakes the orchestrator. It then walks the workflow (intake → plan → build → qa → accept → review) on its own."
+          }
+        },
+        {
+          "name": "Changes (the diff — review a non-visual task)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/tasks/{{taskId}}/changes?project={{project}}", "host": ["{{baseUrl}}"], "path": ["tasks", "{{taskId}}", "changes"], "query": [{ "key": "project", "value": "{{project}}" }] }, "description": "The diff of the task's branch vs the base: changed files with +/- counts, the commits, the full unified diff, and the QA verdict. This is how you verify a backend/library task that has nothing to preview." }
+        },
+        {
+          "name": "Approve (human review → merge)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/tasks/{{taskId}}/approve", "host": ["{{baseUrl}}"], "path": ["tasks", "{{taskId}}", "approve"] },
+            "body": { "mode": "raw", "raw": "{}" },
+            "description": "Approve a task parked at the human-review gate. Reports the gate's `approved` outcome; the graph routes it onward (to merge in the default pipeline)."
+          }
+        },
+        {
+          "name": "Reject (send back with a reason)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/tasks/{{taskId}}/reject", "host": ["{{baseUrl}}"], "path": ["tasks", "{{taskId}}", "reject"] },
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"the tagline text is wrong — it should say 'Design. Simulate. Ship.'\"\n}" },
+            "description": "Reject at the review gate. Reports the gate's `rejected` outcome; the graph routes it back (to build in the default pipeline)."
+          }
+        },
+        {
+          "name": "Update task (fields) / report outcome",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/tasks/{{taskId}}", "host": ["{{baseUrl}}"], "path": ["tasks", "{{taskId}}"] },
+            "body": { "mode": "raw", "raw": "{\n  \"priority\": 1\n}" },
+            "description": "Update task fields. This is also the verb AGENTS use — `{\"outcome\":\"pass\"}` to advance, `{\"reject\":\"why\"}` to bounce, `{\"consult\":{\"to\":\"plan\",\"question\":\"...\"}}` to ask a peer. Control-plane fields (handoffFrom, hops) are stripped from any caller."
+          }
+        },
+        {
+          "name": "Delete task",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/tasks/{{taskId}}", "host": ["{{baseUrl}}"], "path": ["tasks", "{{taskId}}"] } }
+        }
+      ]
+    },
+    {
+      "name": "3 · Workflow (define the pipeline)",
+      "item": [
+        {
+          "name": "Get workflow",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/workflow?project={{project}}", "host": ["{{baseUrl}}"], "path": ["workflow"], "query": [{ "key": "project", "value": "{{project}}" }] }, "description": "The project's workflow document (or the built-in default when none is saved), plus whether it validates and which stages are occupied by live tasks." }
+        },
+        {
+          "name": "Save workflow",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/workflow?project={{project}}", "host": ["{{baseUrl}}"], "path": ["workflow"], "query": [{ "key": "project", "value": "{{project}}" }] },
+            "body": { "mode": "raw", "raw": "{\n  \"expectedRev\": 0,\n  \"doc\": { \"v\": 1, \"rev\": 0, \"hopCap\": 10, \"entry\": \"intake\", \"stages\": [] }\n}" },
+            "description": "Replace the workflow. `expectedRev` must match the current rev or the save is rejected (409) so two editors can't clobber each other. An invalid graph returns 422 naming the problems; a graph that would strand a live task returns 409. GET it first, edit the `doc`, PUT it back with its `rev` as `expectedRev`."
+          }
+        },
+        {
+          "name": "Reset workflow to the built-in pipeline",
+          "request": { "method": "DELETE", "header": [], "url": { "raw": "{{baseUrl}}/workflow?project={{project}}", "host": ["{{baseUrl}}"], "path": ["workflow"], "query": [{ "key": "project", "value": "{{project}}" }] } }
+        }
+      ]
+    },
+    {
+      "name": "4 · Code index & context",
+      "item": [
+        {
+          "name": "Search the code index",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/search", "host": ["{{baseUrl}}"], "path": ["search"] },
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"clamp a value between min and max\",\n  \"projectId\": \"{{project}}\",\n  \"topK\": 8,\n  \"agentName\": \"cli\",\n  \"taskId\": \"{{taskId}}\"\n}" },
+            "description": "Semantic search over the project's code index. Also feeds the shared context: the matching files are recorded so the next agent is told to read them first. Returns { results, remembered, evicted }."
+          }
+        },
+        {
+          "name": "Shared context (which files matter here)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/context?project={{project}}", "host": ["{{baseUrl}}"], "path": ["context"], "query": [{ "key": "project", "value": "{{project}}" }] } }
+        }
+      ]
+    },
+    {
+      "name": "5 · Agents",
+      "item": [
+        {
+          "name": "List agent roles",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/agents", "host": ["{{baseUrl}}"], "path": ["agents"] }, "description": "The agent roster (owner, architect, dev, qa, + any custom) with their models, prompt templates and worktree modes." }
+        },
+        {
+          "name": "Reset agents to shipped defaults",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": { "raw": "{{baseUrl}}/agents/reset", "host": ["{{baseUrl}}"], "path": ["agents", "reset"] }, "body": { "mode": "raw", "raw": "{}" } }
+        }
+      ]
+    },
+    {
+      "name": "6 · Git",
+      "item": [
+        {
+          "name": "Worktrees (per-task isolated checkouts)",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/git/worktrees?project={{project}}", "host": ["{{baseUrl}}"], "path": ["git", "worktrees"], "query": [{ "key": "project", "value": "{{project}}" }] }, "description": "The git worktree each task built in, its branch, last commit, and whether it merged." }
+        },
+        {
+          "name": "Repo status",
+          "request": { "method": "GET", "header": [], "url": { "raw": "{{baseUrl}}/git/status?project={{project}}", "host": ["{{baseUrl}}"], "path": ["git", "status"], "query": [{ "key": "project", "value": "{{project}}" }] } }
+        }
+      ]
+    }
+  ]
+}
