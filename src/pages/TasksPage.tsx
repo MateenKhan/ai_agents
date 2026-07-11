@@ -17,6 +17,7 @@ import { Modal } from './tasks/components/Modal';
 import { useToast } from './tasks/components/Toast';
 import { useConfirm } from './tasks/components/ConfirmProvider';
 import { ProjectBar } from './tasks/components/ProjectBar';
+import { StartScreen, SETUP_DONE_KEY } from './tasks/components/StartScreen';
 import { AgentTank } from '../components/piranha/AgentTank';
 import { PiranhaLoader } from '../components/piranha/PiranhaLoader';
 import { useProjects } from './tasks/projectContext';
@@ -35,7 +36,6 @@ const TaskDetail = lazy(() => import('./tasks/components/TaskDetail'));
 const PromptModal = lazy(() => import('./tasks/components/PromptModal').then(m => ({ default: m.PromptModal })));
 const SettingsModal = lazy(() => import('./tasks/components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const TerminalMonitor = lazy(() => import('./tasks/components/TerminalMonitor').then(m => ({ default: m.TerminalMonitor })));
-const ChatIntake = lazy(() => import('./tasks/components/ChatIntake'));
 const LogsTab = lazy(() => import('./tasks/components/LogsTab'));
 const DbTab = lazy(() => import('./tasks/components/DbTab'));
 const AgentsTab = lazy(() => import('./tasks/components/AgentsTab'));
@@ -43,7 +43,7 @@ const GitPanel = lazy(() => import('./tasks/components/GitPanel').then(m => ({ d
 
 const TasksPage: React.FC = () => {
   const navigate = useNavigate();
-  const { activeId, projects } = useProjects();
+  const { activeId, projects, loading: projectsLoading } = useProjects();
   const activeProject = projects.find(p => p.id === activeId);
   const {
     tasks,
@@ -126,7 +126,8 @@ const TasksPage: React.FC = () => {
   useEffect(() => {
     if (!actionsTouched.current && actionsOpen && tabEdges.right) setActionsOpen(false);
   }, [actionsOpen, tabEdges.right]);
-  const [chatOpen, setChatOpen] = useState(false);
+  // Which tab the New-task modal opens on: 'manual' (the form) or 'ai' (chat intake).
+  const [taskModalMode, setTaskModalMode] = useState<'manual' | 'ai'>('manual');
   const [logsAgent, setLogsAgent] = useState<string | null>(null);
   const [healReport, setHealReport] = useState<{ healed: number; steps: any[] } | null>(null);
   const [healing, setHealing] = useState(false);
@@ -151,6 +152,13 @@ const TasksPage: React.FC = () => {
     }
   };
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
+
+  // ── First-run setup gate ──
+  const [setupDone, setSetupDone] = useState<boolean>(() => {
+    try { return localStorage.getItem(SETUP_DONE_KEY) === '1'; } catch { return true; }
+  });
+  const needsSetup = !setupDone && !projectsLoading && !loading
+    && !projects.some(p => p.id !== 'default') && tasks.length === 0;
 
   // ── Item 90: global offline banner ──
   // The db-server (:6952) is the whole backend; when it is down every panel fails silently.
@@ -226,8 +234,9 @@ const TasksPage: React.FC = () => {
   const terminalBodyRef = useRef<HTMLDivElement>(null);
 
   // Handlers
-  const handleAddTask = () => {
+  const handleAddTask = (mode: 'manual' | 'ai' = 'manual') => {
     setEditingTask(null);
+    setTaskModalMode(mode);
     setIsTaskModalOpen(true);
   };
 
@@ -325,6 +334,13 @@ const TasksPage: React.FC = () => {
         <PiranhaLoader size={64} label="Waking the swarm…" />
       </div>
     );
+  }
+
+  // First-run setup: the project source is the root decision every task depends on, so a
+  // brand-new install (only the seeded default project, zero tasks, setup never completed)
+  // gets the starting screen before the board. Completing or skipping it never nags again.
+  if (needsSetup) {
+    return <StartScreen onDone={() => setSetupDone(true)} />;
   }
 
   // Your Review — the page's one notification affordance. It opens the review panel
@@ -439,7 +455,7 @@ const TasksPage: React.FC = () => {
                     peers; the moment the count climbs it is promoted below (item 72). */}
                 {reviewQueue.length === 0 && reviewButton}
                 <BoardMenu
-                  onChat={() => setChatOpen(true)}
+                  onChat={() => handleAddTask('ai')}
                   onRefresh={fetchTasks}
                   onHeal={handleHeal}
                   onSettings={() => setIsSettingsOpen(true)}
@@ -566,7 +582,9 @@ const TasksPage: React.FC = () => {
           }}
           onTrigger={handleTrigger}
           onControl={controlTask}
-          onAddTask={handleAddTask}
+          // TaskBoard passes the lane id here; the modal doesn't take a lane, so drop it
+          // rather than let it be misread as a creation mode.
+          onAddTask={() => handleAddTask('manual')}
           onMove={(id, status) => {
             const label = columns.find(c => c.id === status)?.label ?? status;
             updateTask(id, { status })
@@ -622,10 +640,6 @@ const TasksPage: React.FC = () => {
               onApprove={handleApprove}
               onReject={handleReject}
             />
-          )}
-
-          {chatOpen && (
-            <ChatIntake isOpen={chatOpen} onClose={() => setChatOpen(false)} onCreated={fetchTasks} />
           )}
 
           {healReport && (
@@ -695,6 +709,8 @@ const TasksPage: React.FC = () => {
               onClose={() => setIsTaskModalOpen(false)}
               onSave={handleSaveTask}
               editingTask={editingTask}
+              initialMode={taskModalMode}
+              onCreated={fetchTasks}
             />
           )}
 

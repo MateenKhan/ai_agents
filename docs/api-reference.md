@@ -291,6 +291,7 @@ installation token. Tokens are always stripped from returned output.
 | `POST` | `/git/delete-repo` | `{ dir }` | `{ ok, folderDeleted, deleted, folderKept, removedProject }` |
 | `POST` | `/git/clone-import` | `{ url, tokenId?, emoji? }` | `{ ok, project, cloned, dir, output }` |
 | `POST` | `/git/create-repo` | `{ name, private?, tokenId? }` | `{ ok, repo: { full_name, clone_url, html_url } }` |
+| `POST` | `/git/init-repo` | `{ dir, name, emoji? }` | `{ ok, dir, project }` — mkdir + `git init` + register project (first-run "new folder") |
 | `POST` | `/git/commit` | `{ repo?, message, addAll? }` | `{ ok, hash, output }` |
 | `POST` | `/git/push` | `{ repo?, branch?, remote?, tokenId? }` | `{ ok, branch, output }` |
 | `POST` | `/git/pull` | `{ repo?, tokenId? }` | `{ ok, branch, output }` |

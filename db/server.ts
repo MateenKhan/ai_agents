@@ -1215,7 +1215,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
-  // ── File Browser: write + AI-edit (the chat) — see docs/plans/file-browser-backend.md ──
+  // ── File Browser: write + AI-edit (the chat) — see docs/api-reference.md ──
   // These four blocks key on method + exact path, so they never collide with the GET /file(s)
   // reads above. AI-edit only PROPOSES; the human approves and the frontend calls PUT /file.
 
@@ -2229,6 +2229,36 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         ok: true,
         repo: { full_name: data.full_name, clone_url: data.clone_url, html_url: data.html_url },
       }));
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  // ── git init-repo ── first-run "start in a new folder": create the folder, git-init it,
+  // and register it as a project. Local-only counterpart to /git/clone (which needs a URL).
+  if (req.method === 'POST' && req.url === '/git/init-repo') {
+    try {
+      const b = JSON.parse((await readBody(req)) || '{}');
+      const name = String(b.name || '').trim();
+      const rawDir = String(b.dir || '').trim();
+      if (!name) { res.statusCode = 400; res.end(JSON.stringify({ error: 'name is required' })); return; }
+      if (!rawDir) { res.statusCode = 400; res.end(JSON.stringify({ error: 'dir is required' })); return; }
+      const dir = isAbsolute(rawDir) ? rawDir : resolve(process.cwd(), rawDir);
+      mkdirSync(dir, { recursive: true });
+      const inside = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: dir, encoding: 'utf-8', timeout: 5000 });
+      if (inside.status !== 0) {
+        const init = spawnSync('git', ['init'], { cwd: dir, encoding: 'utf-8', timeout: 10000 });
+        if (init.status !== 0) { res.statusCode = 500; res.end(JSON.stringify({ error: `git init failed: ${(init.stderr || '').trim()}` })); return; }
+      }
+      // Worktree isolation needs a HEAD to branch from; give an empty repo one. Best-effort —
+      // a repo with commits skips this, and a missing git identity falls back to an inline one.
+      const hasHead = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf-8', timeout: 5000 }).status === 0;
+      if (!hasHead) {
+        spawnSync('git', ['-c', 'user.name=Piranha', '-c', 'user.email=piranha@localhost', 'commit', '--allow-empty', '-m', 'init'], { cwd: dir, encoding: 'utf-8', timeout: 10000 });
+      }
+      const project = await createProject({ name, repoPath: dir, emoji: b.emoji ? String(b.emoji) : undefined });
+      res.end(JSON.stringify({ ok: true, dir, project }));
     } catch (e: any) {
       res.statusCode = 500; res.end(JSON.stringify({ error: e.message }));
     }

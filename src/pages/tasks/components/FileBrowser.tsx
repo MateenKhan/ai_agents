@@ -18,7 +18,7 @@ import { ChatStoreProvider, FileChat, useChatStore } from './FileChat';
  * Two tabs: FILES (tree + viewer/editor + CRUD) and CHAT (the AI threads — <FileChat>). They
  * share one chat store (<ChatStoreProvider>) so dragging a file from the tree onto the Chat tab
  * tags it in the active thread. Read routes (`GET /files`, `GET /file`) exist; write + AI routes
- * (`PUT/POST/DELETE /file`, `POST /file/ai-edit`) are specced in docs/plans/file-browser-backend.md.
+ * (`PUT/POST/DELETE /file`, `POST /file/ai-edit`) are documented in docs/api-reference.md.
  */
 
 interface TreeNode { name: string; path: string; dir: boolean; children: TreeNode[]; }

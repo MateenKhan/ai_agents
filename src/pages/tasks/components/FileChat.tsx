@@ -17,7 +17,7 @@ import { iconBtn, btnSm, selectSm } from '../ui';
  * Design goals the UI must honour:
  *  - Each chat is its OWN thread with its OWN context — switching threads never bleeds. A
  *    thread carries its tagged repo files, its uploads, and a backend `sessionId` for model
- *    continuity (see docs/plans/file-browser-backend.md).
+ *    continuity (see docs/api-reference.md).
  *  - Tag a repo file by dragging it from the tree, by the file picker, OR upload an external
  *    file. Uploads are read-only reference; the model only proposes edits to repo files.
  *  - Long user messages collapse behind a "show more" accordion so the transcript stays scannable.

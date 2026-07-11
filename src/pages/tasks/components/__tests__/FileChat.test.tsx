@@ -7,7 +7,7 @@ import { ToastProvider } from '../Toast';
 import { ConfirmProvider } from '../ConfirmProvider';
 
 /**
- * Pins the per-reply telemetry caption (docs/plans/ai-chat-metrics-ui.md). The chat reads the
+ * Pins the per-reply telemetry caption (docs/api-reference.md, /file/ai-edit metrics). The chat reads the
  * new `metrics` object off the `/file/ai-edit` response and shows a small, muted line under the
  * assistant bubble. The endpoint is mocked — no live db-server / model call. The caption must:
  *   - show tps + responseSec + output size when metrics are present,
