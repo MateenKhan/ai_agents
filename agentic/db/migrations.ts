@@ -428,6 +428,10 @@ const INDEXES: Array<[string, string]> = [
   ['tasks', 'CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)'],
   ['tasks', 'CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage)'],
   ['tasks', 'CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(projectId)'],
+  // Board/dispatch reads filter tasks by project + status together; the orchestrator
+  // scans by status + stage. Composite covering indexes for those two hot paths.
+  ['tasks', 'CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(projectId, status)'],
+  ['tasks', 'CREATE INDEX IF NOT EXISTS idx_tasks_status_stage ON tasks(status, stage)'],
   ['agent_logs', 'CREATE INDEX IF NOT EXISTS idx_agent_logs_task ON agent_logs(taskId)'],
   ['agent_logs', 'CREATE INDEX IF NOT EXISTS idx_agent_logs_project ON agent_logs(projectId)'],
   ['agent_db_usage', 'CREATE INDEX IF NOT EXISTS idx_db_usage_agent ON agent_db_usage(agentName)'],
