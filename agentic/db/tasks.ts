@@ -232,6 +232,7 @@ interface TaskRow {
   failureDetail: string | null;
   plan: string | null;
   journal: string | null;
+  costUsd: number | null;
 }
 
 function rowToTask(r: TaskRow): Task {
@@ -251,10 +252,12 @@ function rowToTask(r: TaskRow): Task {
     consultLog: (() => { const v = parseMaybeJson(r.consultLog); return Array.isArray(v) ? v : []; })(),
     pendingConsult: (() => { const v = parseMaybeJson(r.pendingConsult); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; })(),
     journal: (() => { const v = parseMaybeJson(r.journal); return Array.isArray(v) ? v : []; })(),
+    // REAL column; NULL (pre-migration rows) reads back as "no spend yet".
+    costUsd: r.costUsd != null ? Number(r.costUsd) : undefined,
   };
 }
 
-const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath,intent,ownerNote,ownerBounces,lastOutcome,handoffFrom,hops,consultLog,pendingConsult,consultAnswer,failureDetail,plan,journal';
+const COLS = 'id,title,description,status,priority,claimedBy,started,completed,dependsOn,files,parentId,scenarios,stage,qaVerdict,docs,reviewNote,leaseExpiresAt,attempts,nextRetryAt,lastError,model,summary,etcMinutes,etcSetAt,stageTimings,projectId,control,mergeBounces,rescueCount,logPath,intent,ownerNote,ownerBounces,lastOutcome,handoffFrom,hops,consultLog,pendingConsult,consultAnswer,failureDetail,plan,journal,costUsd';
 
 function toRow(t: Partial<Task>): any[] {
   return [
@@ -271,6 +274,7 @@ function toRow(t: Partial<Task>): any[] {
     JSON.stringify(t.consultLog ?? []), t.pendingConsult ? JSON.stringify(t.pendingConsult) : null,
     t.consultAnswer ?? null, t.failureDetail ?? null, t.plan ?? null,
     JSON.stringify(t.journal ?? []),
+    t.costUsd ?? null,
   ];
 }
 
@@ -447,6 +451,46 @@ export async function setSystemState(key: string, value: string | null): Promise
   const s = await store();
   if (value === null) { await s.run(`DELETE FROM system_state WHERE key = ?`, [key]); return; }
   await upsert(s, 'system_state', { key, value }, ['key']);
+}
+
+// ── cost accumulation (SPEC P0.4) ───────────────────────────────────────────────
+// A task's `costUsd` REAL column is its lifetime spend across every stage and retry.
+// The daily ledger lives in board_settings under `spend_<projectId>_<YYYY-MM-DD>` —
+// one row per project per UTC day — so "today's spend" is a direct read, resets by
+// itself when the date rolls, and yesterday's runs never count against today's cap.
+
+/** Today's UTC date (YYYY-MM-DD) — the daily-ledger bucket key. */
+export function todayUtc(): string { return new Date().toISOString().split('T')[0]; }
+
+const spendLedgerId = (projectId: string, day: string): string => `spend_${projectId}_${day}`;
+
+/** Add a completed run's cost to the task's lifetime total. Returns the new total.
+ *  A targeted single-column UPDATE (not the full-row updateTask rewrite) so two agents
+ *  finishing at once cannot clobber each other's unrelated fields. */
+export async function addTaskCost(id: string, amount: number): Promise<number> {
+  const s = await store();
+  const cur = await s.get<{ costUsd: number | null }>(`SELECT costUsd FROM tasks WHERE id = ?`, [id]);
+  if (!cur) throw new Error(`Task not found: ${id}`);
+  const total = (Number(cur.costUsd) || 0) + amount;
+  await s.run(`UPDATE tasks SET costUsd = ? WHERE id = ?`, [total, id]);
+  return total;
+}
+
+/** Add a run's cost to the project's ledger for `day` (default: today). Returns the day's total. */
+export async function addDailySpend(projectId: string, amount: number, day: string = todayUtc()): Promise<number> {
+  const s = await store();
+  const id = spendLedgerId(projectId, day);
+  const r = await s.get<{ data: string }>(`SELECT data FROM board_settings WHERE id = ?`, [id]);
+  const total = (r ? Number(r.data) || 0 : 0) + amount;
+  await upsert(s, 'board_settings', { id, data: String(total) }, ['id']);
+  return total;
+}
+
+/** The project's accumulated spend for `day` (default: today). Absent ledger row = 0. */
+export async function getDailySpend(projectId: string, day: string = todayUtc()): Promise<number> {
+  const s = await store();
+  const r = await s.get<{ data: string }>(`SELECT data FROM board_settings WHERE id = ?`, [spendLedgerId(projectId, day)]);
+  return r ? Number(r.data) || 0 : 0;
 }
 
 // ── board settings + heartbeat (orchestrator liveness) ─────────────────────────

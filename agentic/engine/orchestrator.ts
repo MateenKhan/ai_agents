@@ -58,10 +58,9 @@ import { setConfig, getConfig } from '../runtime-context';
 import {
   getAllTasks, getTask, updateTask, getBoardSettings, updateBoardSettings, beatHeartbeat, getTasksDb, getProject, listProjects, getAgentDefaults,
   WORKER_ID, registerWorker, heartbeatWorker, listStaleWorkers, claimTask, acquireLock, releaseLock,
-  getSystemState, setSystemState, store,
+  getSystemState, setSystemState, addTaskCost, addDailySpend, getDailySpend,
 } from '../db/tasks';
 import { isPostgres } from '../db/getStore';
-import { upsert } from '../db/store';
 import { addAgentLog, getLogsDb } from '../db/logs';
 import { getAgents } from '../db/agents';
 import { renderPrompt } from './prompts';
@@ -315,6 +314,64 @@ async function limitPauseActive(): Promise<boolean> {
   limitPauseAnnounced = false;
   log('__system__', '▶ limit window over — resuming dispatch', 'success');
   return false;
+}
+
+// ── budget gates (SPEC P0.4) ─────────────────────────────────────────────────────
+// Spend is bounded in two places, both enforced AT DISPATCH so a cap can never kill a
+// run mid-flight: a per-task cap (the task parks BLOCKED — visible, revivable, NOT a
+// dead-letter and NOT an attempt) and a per-project daily cap (dispatch just skips,
+// like the plan-limit pause, with the reason durable in system_state so the UI can
+// show a banner and a restart stays paused). Caps live in agent_defaults
+// (taskCapUsd / dailyCapUsd — editable via GET/PUT /agent-defaults; $2 / $25 default).
+export const BUDGET_PAUSE_KEY = 'budgetPausedReason';
+
+/** What the budget caps say about dispatching one task. Pure, so the policy is testable
+ *  without a live board. A cap of 0 (or less) disables that cap. Order matters: a task
+ *  over its own cap parks even when the daily gate is also shut — the park is durable
+ *  information, the skip is not. */
+export function budgetDecision(a: {
+  /** The task's accumulated lifetime spend. */
+  taskCostUsd: number;
+  taskCapUsd: number;
+  /** The project's spend accumulated TODAY (UTC). */
+  dailySpendUsd: number;
+  dailyCapUsd: number;
+}): { kind: 'dispatch' } | { kind: 'park-task'; reason: string } | { kind: 'daily-pause'; reason: string } {
+  if (a.taskCapUsd > 0 && a.taskCostUsd >= a.taskCapUsd) {
+    return { kind: 'park-task', reason: `budget exceeded: $${a.taskCostUsd.toFixed(2)} of $${a.taskCapUsd} cap` };
+  }
+  if (a.dailyCapUsd > 0 && a.dailySpendUsd >= a.dailyCapUsd) {
+    return { kind: 'daily-pause', reason: `daily budget exceeded: $${a.dailySpendUsd.toFixed(2)} of $${a.dailyCapUsd} cap` };
+  }
+  return { kind: 'dispatch' };
+}
+
+/** Park a task whose lifetime spend met the per-task cap: BLOCKED with the reason on
+ *  `lastError`, claim cleared. Deliberately NOT deadLetter() — no DEAD_LETTER_AT retry
+ *  sentinel — and the attempt budget is untouched: running out of money is not a failed
+ *  run. Raising the cap (or splitting the task) and re-triggering revives it. */
+export async function parkOverBudget(task: Task, reason: string): Promise<void> {
+  await updateTask(task.id, {
+    status: 'BLOCKED', started: null, claimedBy: null, leaseExpiresAt: null, nextRetryAt: null,
+    lastError: reason,
+  });
+  log(task.id, `💸 ${reason} — parked BLOCKED (raise the task cap in Settings, or split the task)`, 'warning');
+}
+
+/** Persist WHY dispatch is budget-paused (or clear it). Written only on change, so the
+ *  steady state costs one read per tick. Re-derived from live spend + caps every tick,
+ *  which is what clears it when the UTC day rolls or the caps are edited. */
+export async function reconcileBudgetPause(reasons: string[]): Promise<void> {
+  const next = reasons.length ? reasons.join('; ') : null;
+  const cur = await getSystemState(BUDGET_PAUSE_KEY);
+  if (cur === next) return;
+  await setSystemState(BUDGET_PAUSE_KEY, next);
+  if (next) {
+    log('__system__', `⏸ ${next} — dispatch paused until the day rolls or the caps change`, 'warning');
+    setStatus(`⏸ ${next}`, true);
+  } else if (cur) {
+    log('__system__', '▶ daily budget gate cleared — resuming dispatch', 'success');
+  }
 }
 
 // How many times a task may be escalated to the architect for a re-plan before it
@@ -804,24 +861,23 @@ async function dispatchPending(): Promise<void> {
       && !triaging.has(x.id) // frozen while an architect triage pass is reviewing it
       && (!x.nextRetryAt || Date.parse(x.nextRetryAt) <= now)
   );
-  if (!pending.length || !breakerAllows() || !dbBreakerAllows()) return;
-
+  // Budget caps (SPEC P0.4). The daily gate is evaluated for EVERY project each tick —
+  // idle ones included — so `budgetPausedReason` clears by itself the moment the UTC day
+  // rolls or a cap is raised, instead of lingering until that project next has work.
   const defaults = await getAgentDefaults();
-  const taskCap = defaults.taskCapUsd || 2;
-  const dailyCap = defaults.dailyCapUsd || 25;
-  const today = new Date().toISOString().split('T')[0];
-  const s = await store();
-  
-  // Pre-calculate daily project spends
-  const projectSpends = new Map<string, number>();
-  for (const t of pending) {
-    const pid = projectOf(t);
-    if (!projectSpends.has(pid)) {
-      const spendKey = `spend_${pid}_${today}`;
-      const curSpendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, [spendKey]) as any;
-      projectSpends.set(pid, curSpendRow ? Number(curSpendRow.data) : 0);
-    }
+  const taskCapUsd = defaults.taskCapUsd ?? 2;
+  const dailyCapUsd = defaults.dailyCapUsd ?? 25;
+  const dailySpends = new Map<string, number>(); // projectId → today's spend
+  const overCapReasons: string[] = [];
+  for (const p of await listProjects()) {
+    const spend = await getDailySpend(p.id);
+    dailySpends.set(p.id, spend);
+    const d = budgetDecision({ taskCostUsd: 0, taskCapUsd: 0, dailySpendUsd: spend, dailyCapUsd });
+    if (d.kind === 'daily-pause') overCapReasons.push(`project "${p.id}": ${d.reason}`);
   }
+  await reconcileBudgetPause(overCapReasons);
+
+  if (!pending.length || !breakerAllows() || !dbBreakerAllows()) return;
 
   const agents = await agentMap();
   for (const task of pending) {
@@ -838,21 +894,6 @@ async function dispatchPending(): Promise<void> {
     }
 
     const pid = projectOf(task);
-
-    // Enforce budgets
-    if (task.costUsd && task.costUsd >= taskCap) {
-      await updateTask(task.id, {
-        status: 'AVAILABLE',
-        control: 'paused',
-        lastError: `budget exceeded (task cap: $${taskCap})`,
-      });
-      continue;
-    }
-
-    const dailySpend = projectSpends.get(pid) || 0;
-    if (dailySpend >= dailyCap) {
-      continue; // project over daily cap -> stop dispatching
-    }
 
     // A terminal reached by routing rather than by the merge stage's own exit.
     if (place.kind === 'terminal') {
@@ -876,6 +917,18 @@ async function dispatchPending(): Promise<void> {
       }
       continue;
     }
+
+    // BUDGET GATES (SPEC P0.4) — after the terminal/human-gate branches (those transitions
+    // cost nothing and must never be blocked by money), before anything spawns. A task over
+    // its own cap parks BLOCKED — visibly, without consuming an attempt and without the
+    // dead-letter sentinel. A project over its daily cap is skipped like the pause gates;
+    // the reason was already recorded in system_state above.
+    const budget = budgetDecision({
+      taskCostUsd: task.costUsd || 0, taskCapUsd,
+      dailySpendUsd: dailySpends.get(pid) ?? 0, dailyCapUsd,
+    });
+    if (budget.kind === 'park-task') { await parkOverBudget(task, budget.reason); continue; }
+    if (budget.kind === 'daily-pause') continue;
 
     const stage = place.stage;
     if (!canSpawn(agentTaskMap.size)) break;
@@ -1152,20 +1205,15 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
     fresh.stageTimings = timings;
   }
 
-  // Accumulate cost
+  // Accumulate cost (SPEC P0.4): every completed run's spend joins the task's lifetime
+  // total AND the project's daily ledger — both are what the dispatch-time budget gates
+  // read back. Best-effort: a bookkeeping hiccup must never derail routing the exit.
   if (r.costUsd) {
-    const costUsd = (fresh.costUsd || 0) + r.costUsd;
-    await updateTask(taskId, { costUsd });
-    fresh.costUsd = costUsd;
-
-    // Accumulate daily project spend
-    const today = new Date().toISOString().split('T')[0];
-    const pid = projectOf(fresh);
-    const spendKey = `spend_${pid}_${today}`;
-    const s = await store();
-    const curSpendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, [spendKey]) as any;
-    const curSpend = curSpendRow ? Number(curSpendRow.data) : 0;
-    await upsert(s, 'board_settings', { id: spendKey, data: String(curSpend + r.costUsd) }, ['id']);
+    try {
+      fresh.costUsd = await addTaskCost(taskId, r.costUsd);
+      await addDailySpend(projectOf(fresh), r.costUsd);
+      log(taskId, `💲 run cost $${r.costUsd.toFixed(4)} — task total $${fresh.costUsd.toFixed(4)}`, 'info');
+    } catch (e: any) { log(taskId, `cost accumulation failed: ${e?.message || e}`, 'warning'); }
   }
 
   // Only a `verify` stage may CHANGE the QA verdict. Checking mere presence destroyed a

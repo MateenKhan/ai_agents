@@ -216,8 +216,9 @@ export interface RunResult {
    *  parsed from the CLI's message. Null when the message carried no epoch — the orchestrator
    *  then falls back to a default pause. */
   resetAt?: string | null;
-  /** US dollar cost accumulated during this run. */
-  costUsd?: number;
+  /** US dollar cost accumulated during this run. Null/absent when the run produced no
+   *  usable usage data (e.g. it crashed before the first API round-trip). */
+  costUsd?: number | null;
 }
 
 /** One structured action parsed from an agent's stream-json output (for the Logs UI). */

@@ -149,6 +149,7 @@ import { authenticateGitUrl } from './gitAuth.ts';
 // callers; the shared redactSecrets also catches user:pass@ embedded in URLs and any GitHub token
 // git happens to echo (plus Bearer/token=/password= pairs — a strict superset of the old local one).
 import { redactSecrets } from '../agentic/redact.ts';
+import { sandboxSpawnFlags } from '../agentic/engine/sandbox.ts';
 // The datastore seam: push the chosen backend (SQLite default / Postgres opt-in) into the
 // async Store layer at boot, BEFORE any schema init or request handling.
 import { configureBackend, isPostgres, getStore, ensureMigrated } from '../agentic/db/getStore.ts';
@@ -1925,7 +1926,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         message,
       ].join('\n');
 
-      const proc = spawnSync(CLAUDE_BIN, ['-p', decompPrompt, '--dangerously-skip-permissions'], {
+      const proc = spawnSync(CLAUDE_BIN, ['-p', decompPrompt, ...sandboxSpawnFlags('architect', 'standard')], {
         encoding: 'utf8', timeout: 150000, maxBuffer: 16 * 1024 * 1024,
       });
       const out = (proc.stdout || '') + (proc.stderr || '');

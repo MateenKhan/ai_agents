@@ -36,9 +36,12 @@ type Dialect = 'sqlite' | 'postgres';
 export type DbGroup = 'tasks' | 'logs';
 
 // Semantic column types → concrete per-dialect SQL types.
-const TYPE: Record<'text' | 'int' | 'bool' | 'ts', Record<Dialect, string>> = {
+const TYPE: Record<'text' | 'int' | 'bool' | 'ts' | 'real', Record<Dialect, string>> = {
   text: { sqlite: 'TEXT', postgres: 'TEXT' },
   int: { sqlite: 'INTEGER', postgres: 'BIGINT' },
+  // Fractional numbers (US dollar costs). SQLite REAL ↔ pg DOUBLE PRECISION; both hand
+  // back a JS number, so callers need no coercion layer.
+  real: { sqlite: 'REAL', postgres: 'DOUBLE PRECISION' },
   // Booleans: the entire codebase writes 0/1 (`enabled ? 1 : 0`) and reads truthiness.
   // A native pg BOOLEAN would reject an integer param ("column is of type boolean but
   // expression is of type integer"), so pg stores SMALLINT and behaves exactly like
@@ -61,7 +64,7 @@ function serialPk(d: Dialect): string {
 
 interface Col {
   name: string;
-  type: 'text' | 'int' | 'bool' | 'ts' | 'serial';
+  type: 'text' | 'int' | 'bool' | 'ts' | 'real' | 'serial';
   pk?: boolean;
   notNull?: boolean;
   /** Literal default. For `bool`, pass a JS boolean (rendered 0/1 vs true/false). */
@@ -168,6 +171,9 @@ const TASKS: Col[] = [
   // Append-only stage journal (JSON array of {ts,stage,agent,outcome,note}). The trail every
   // agent inherits and the reviewer reads — not just the latest summary.
   { name: 'journal', type: 'text' },
+  // Accumulated US dollar cost across every run on this task (all stages + retries).
+  // Read by the dispatch-time per-task budget gate (SPEC P0.4).
+  { name: 'costUsd', type: 'real' },
 ];
 
 const BOARD_SETTINGS: Col[] = [
@@ -392,6 +398,8 @@ const ADDITIVE: Array<[string, Col]> = [
   ['tasks', { name: 'plan', type: 'text' }],
   // Append-only stage journal — the trail agents and reviewers read.
   ['tasks', { name: 'journal', type: 'text' }],
+  // Cost capture + budgets (SPEC P0.4): accumulated USD spend per task.
+  ['tasks', { name: 'costUsd', type: 'real' }],
 ];
 
 /**

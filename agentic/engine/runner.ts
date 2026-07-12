@@ -15,6 +15,7 @@ import type { RunResult, FailureKind, WorktreeMode, AgentRole } from '../types';
 import { getConfig } from '../runtime-context';
 import Anthropic from '@anthropic-ai/sdk';
 import { resolveAgentToken, gitAuthEnv, getTask, getProject, updateTask } from '../db/tasks';
+import { writeWorktreeSettings } from './sandbox';
 import { taskLogPath } from './task-log-file';
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
@@ -33,6 +34,11 @@ function claudeFlags(profile: 'strict' | 'standard' | 'dangerous', role: AgentRo
   return flags;
 }
 const AGENT_TIMEOUT_MS = parseInt(process.env.AGENT_TIMEOUT_MS || String(30 * 60 * 1000));
+
+/** Hard per-run turn bound (SPEC P0.4). Every spawn is capped at this many agent turns —
+ *  the per-run analogue of `--max-turns 80` on the CLI — so a looping agent cannot spend
+ *  unboundedly inside a single run. Named (not inline) so the cap is one obvious knob. */
+export const MAX_TURNS_PER_RUN = 80;
 
 export interface SpawnOptions {
   agentName: string;
@@ -189,6 +195,54 @@ function parseEvent(line: string): string | null {
   return null;
 }
 
+// ── cost capture (SPEC P0.4) ───────────────────────────────────────────────────
+
+/**
+ * Extract `total_cost_usd` from one stream-json line, or null when the line is not a
+ * `result` event (or carries no usable number). The CLI's final `result` event is the
+ * authoritative per-run cost when an engine emits one; this parser is pure and engine-
+ * agnostic so budgets stay comparable across runners (SPEC §4 `extractResult`).
+ */
+export function extractCostUsd(line: string): number | null {
+  let ev: any;
+  try { ev = JSON.parse(line); } catch { return null; }
+  if (ev?.type !== 'result') return null;
+  const cost = ev.total_cost_usd;
+  return typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? cost : null;
+}
+
+// USD per **million** tokens, matched against the model string (tier names like 'opus'
+// and full IDs like 'claude-opus-4-8' both hit). Cache reads bill at 0.1× the input
+// rate and cache writes at 1.25× — the standard 5-minute-TTL premium.
+const MODEL_PRICES: Array<{ match: RegExp; inPerMTok: number; outPerMTok: number }> = [
+  { match: /fable|mythos/i, inPerMTok: 10, outPerMTok: 50 },
+  { match: /opus/i, inPerMTok: 5, outPerMTok: 25 },
+  { match: /haiku/i, inPerMTok: 1, outPerMTok: 5 },
+  { match: /sonnet/i, inPerMTok: 3, outPerMTok: 15 },
+];
+
+/** USD cost of one API turn, from its usage block. Unknown models price as sonnet —
+ *  a mid-tier estimate beats silently free. Pure — exported for tests. */
+export function estimateTurnCostUsd(model: string, usage: {
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+} | null | undefined): number {
+  if (!usage) return 0;
+  const price = MODEL_PRICES.find(p => p.match.test(model || '')) ?? MODEL_PRICES[3];
+  const inTok = usage.input_tokens || 0;
+  const outTok = usage.output_tokens || 0;
+  const cacheWrite = usage.cache_creation_input_tokens || 0;
+  const cacheRead = usage.cache_read_input_tokens || 0;
+  return (
+    inTok * price.inPerMTok
+    + cacheWrite * price.inPerMTok * 1.25
+    + cacheRead * price.inPerMTok * 0.1
+    + outTok * price.outPerMTok
+  ) / 1_000_000;
+}
+
 // ── spawn / kill ───────────────────────────────────────────────────────────────
 
 /** Extract the reset epoch from the CLI's plan-limit message (e.g.
@@ -236,6 +290,7 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   }
 
   const cwd = await resolveCwd(taskId, worktree);
+  writeWorktreeSettings(cwd, opts.role, opts.permissionProfile || 'standard');
 
   const log = (line: string) => {
     const stamped = `[${new Date().toISOString()}] ${line}\n`;
@@ -256,7 +311,8 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const ac = new AbortController();
   const startedAt = Date.now();
-  let totalCost = 0;
+  let totalCost = 0;     // USD, summed per turn from usage (see estimateTurnCostUsd)
+  let sawUsage = false;  // false ⇒ the run died before any API round-trip → costUsd: null
   let tail = '';
 
   const recordOutput = (chunk: string) => {
@@ -295,9 +351,8 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   (async () => {
     let messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
     let turns = 0;
-    const maxTurns = 80;
-    
-    while (turns < maxTurns) {
+
+    while (turns < MAX_TURNS_PER_RUN) {
       if (ac.signal.aborted) break;
       turns++;
 
@@ -312,6 +367,13 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
 
         const r = running.get(agentName);
         if (r) r.lastOutputAt = Date.now();
+
+        // Cost capture (SPEC P0.4): price THIS turn's usage and accumulate. This is the
+        // SDK-loop equivalent of the CLI's final `total_cost_usd` result event — the CLI
+        // path parsed that event and threw the number away; here nothing carries a total,
+        // so the run total is the sum of its turns.
+        totalCost += estimateTurnCostUsd(model, msg.usage);
+        sawUsage = true;
 
         messages.push({ role: 'assistant', content: msg.content });
         let nextMessage: Anthropic.MessageParam = { role: 'user', content: [] };
@@ -387,7 +449,7 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
     const failure: FailureKind = tail.includes('API Error:') ? classify(tail) : 'none';
     const code = failure === 'none' ? 0 : 1;
     log(`── EXIT code=${code} (${Math.round(durationMs / 1000)}s, ${failure}) ──`);
-    onExit({ code, durationMs, failure, outputTail: tail, resetAt: failure === 'limit' ? parseLimitReset(tail) : null, costUsd: totalCost });
+    onExit({ code, durationMs, failure, outputTail: tail, resetAt: failure === 'limit' ? parseLimitReset(tail) : null, costUsd: sawUsage ? totalCost : null });
   })();
 
   return true;
