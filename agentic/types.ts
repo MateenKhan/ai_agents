@@ -129,6 +129,8 @@ export interface Task {
    *  by the orchestrator: null/absent = run normally; 'paused' = hold from dispatch;
    *  'stop' = kill any live agent now and stay out of dispatch until resumed. */
   control?: string | null;
+  /** Accumulated US dollar cost for all runs on this task. */
+  costUsd?: number;
 
   // ── consult (agent-to-agent question, mid-task) ──────────────────────────────
   /** Audit trail of every completed consult on this task. Written by the control plane
@@ -214,6 +216,8 @@ export interface RunResult {
    *  parsed from the CLI's message. Null when the message carried no epoch — the orchestrator
    *  then falls back to a default pause. */
   resetAt?: string | null;
+  /** US dollar cost accumulated during this run. */
+  costUsd?: number;
 }
 
 /** One structured action parsed from an agent's stream-json output (for the Logs UI). */

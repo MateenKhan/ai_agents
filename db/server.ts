@@ -665,6 +665,20 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       res.end(JSON.stringify({ error: 'Code index rebuilding — retry shortly', retryAfter: 5 }));
       return;
     }
+    if (req.method === 'GET' && req.url.match(/^\/projects\/([^/]+)\/budget-status$/)) {
+      const pid = decodeURIComponent(req.url.match(/^\/projects\/([^/]+)\/budget-status$/)![1]);
+      const s = await store();
+      const r = await s.get(`SELECT data FROM board_settings WHERE id = 'agent_defaults'`) as any;
+      let dailyCap = 25;
+      if (r?.data) {
+        try { dailyCap = JSON.parse(r.data).dailyCapUsd ?? 25; } catch {}
+      }
+      const today = new Date().toISOString().split('T')[0];
+      const spendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, `spend_${pid}_${today}`) as any;
+      const spend = spendRow ? Number(spendRow.data) : 0;
+      res.end(JSON.stringify({ spend, cap: dailyCap, over: spend >= dailyCap }));
+      return;
+    }
   }
 
   if (req.method === 'GET' && req.url === '/health') {
@@ -1174,6 +1188,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       res.end(JSON.stringify(await setAgentDefaults({
         maxConcurrency: b.maxConcurrency != null ? Number(b.maxConcurrency) : undefined,
         permissionProfile: b.permissionProfile,
+        taskCapUsd: b.taskCapUsd != null ? Number(b.taskCapUsd) : undefined,
+        dailyCapUsd: b.dailyCapUsd != null ? Number(b.dailyCapUsd) : undefined,
       })));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;

@@ -58,9 +58,10 @@ import { setConfig, getConfig } from '../runtime-context';
 import {
   getAllTasks, getTask, updateTask, getBoardSettings, updateBoardSettings, beatHeartbeat, getTasksDb, getProject, listProjects, getAgentDefaults,
   WORKER_ID, registerWorker, heartbeatWorker, listStaleWorkers, claimTask, acquireLock, releaseLock,
-  getSystemState, setSystemState,
+  getSystemState, setSystemState, store,
 } from '../db/tasks';
 import { isPostgres } from '../db/getStore';
+import { upsert } from '../db/store';
 import { addAgentLog, getLogsDb } from '../db/logs';
 import { getAgents } from '../db/agents';
 import { renderPrompt } from './prompts';
@@ -805,6 +806,23 @@ async function dispatchPending(): Promise<void> {
   );
   if (!pending.length || !breakerAllows() || !dbBreakerAllows()) return;
 
+  const defaults = await getAgentDefaults();
+  const taskCap = defaults.taskCapUsd || 2;
+  const dailyCap = defaults.dailyCapUsd || 25;
+  const today = new Date().toISOString().split('T')[0];
+  const s = await store();
+  
+  // Pre-calculate daily project spends
+  const projectSpends = new Map<string, number>();
+  for (const t of pending) {
+    const pid = projectOf(t);
+    if (!projectSpends.has(pid)) {
+      const spendKey = `spend_${pid}_${today}`;
+      const curSpendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, spendKey) as any;
+      projectSpends.set(pid, curSpendRow ? Number(curSpendRow.data) : 0);
+    }
+  }
+
   const agents = await agentMap();
   for (const task of pending) {
     const doc = await workflowFor(projectOf(task));
@@ -817,6 +835,23 @@ async function dispatchPending(): Promise<void> {
     if (place.kind === 'unknown-stage') {
       await deadLetter(task.id, `stage "${place.stageId}" is not in this project's workflow — restore it, or move the task to a stage that exists`);
       continue;
+    }
+
+    const pid = projectOf(task);
+
+    // Enforce budgets
+    if (task.costUsd && task.costUsd >= taskCap) {
+      await updateTask(task.id, {
+        status: 'AVAILABLE',
+        control: 'paused',
+        lastError: `budget exceeded (task cap: $${taskCap})`,
+      });
+      continue;
+    }
+
+    const dailySpend = projectSpends.get(pid) || 0;
+    if (dailySpend >= dailyCap) {
+      continue; // project over daily cap -> stop dispatching
     }
 
     // A terminal reached by routing rather than by the merge stage's own exit.
@@ -844,7 +879,6 @@ async function dispatchPending(): Promise<void> {
 
     const stage = place.stage;
     if (!canSpawn(agentTaskMap.size)) break;
-    const pid = projectOf(task);
     // PROJECT READINESS GATE — a project may only dispatch tasks once it's set up: a cloned git
     // repo (NO implicit host-cwd fallback), a user-confirmed run-config, and a verified preview.
     // Bypassable ONLY when the user has confirmed BOTH "no existing project" and "not executable"
@@ -1116,6 +1150,22 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
     timings[role] = (timings[role] || 0) + r.durationMs;
     await updateTask(taskId, { stageTimings: timings });
     fresh.stageTimings = timings;
+  }
+
+  // Accumulate cost
+  if (r.costUsd) {
+    const costUsd = (fresh.costUsd || 0) + r.costUsd;
+    await updateTask(taskId, { costUsd });
+    fresh.costUsd = costUsd;
+
+    // Accumulate daily project spend
+    const today = new Date().toISOString().split('T')[0];
+    const pid = projectOf(fresh);
+    const spendKey = `spend_${pid}_${today}`;
+    const s = await store();
+    const curSpendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, spendKey) as any;
+    const curSpend = curSpendRow ? Number(curSpendRow.data) : 0;
+    await upsert(s, 'board_settings', { id: spendKey, data: String(curSpend + r.costUsd) }, ['id']);
   }
 
   // Only a `verify` stage may CHANGE the QA verdict. Checking mere presence destroyed a

@@ -31,11 +31,15 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
   // Workspace settings (global agent defaults — same contract as SettingsModal)
   const [maxConc, setMaxConc] = useState('0');
   const [profile, setProfile] = useState<'strict' | 'standard' | 'dangerous'>('standard');
+  const [taskCap, setTaskCap] = useState('2');
+  const [dailyCap, setDailyCap] = useState('25');
   useEffect(() => {
     fetch(`${API_BASE}/agent-defaults`).then(r => r.json())
       .then(d => {
         setMaxConc(d?.maxConcurrency ? String(d.maxConcurrency) : '0');
         setProfile(d?.permissionProfile || 'standard');
+        setTaskCap(d?.taskCapUsd != null ? String(d.taskCapUsd) : '2');
+        setDailyCap(d?.dailyCapUsd != null ? String(d.dailyCapUsd) : '25');
       })
       .catch(() => { /* offline — keep defaults */ });
   }, []);
@@ -51,6 +55,8 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
         body: JSON.stringify({
           maxConcurrency: Math.max(0, Math.floor(Number(maxConc) || 0)),
           permissionProfile: profile,
+          taskCapUsd: Number(taskCap) || 0,
+          dailyCapUsd: Number(dailyCap) || 0,
         }),
       });
     } catch { /* best-effort — Settings can fix it later */ }

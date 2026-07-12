@@ -27,12 +27,16 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
   // and whether agents may skip Claude's permission prompts.
   const [agentMaxConc, setAgentMaxConc] = useState<string>('');
   const [profile, setProfile] = useState<'strict' | 'standard' | 'dangerous'>('standard');
+  const [taskCap, setTaskCap] = useState<string>('2');
+  const [dailyCap, setDailyCap] = useState<string>('25');
   useEffect(() => {
     if (!isOpen) return;
     fetch(`${API_BASE}/agent-defaults`).then(r => r.json())
       .then(d => {
         setAgentMaxConc(d?.maxConcurrency ? String(d.maxConcurrency) : '0');
         setProfile(d?.permissionProfile || 'standard');
+        setTaskCap(d?.taskCapUsd != null ? String(d.taskCapUsd) : '2');
+        setDailyCap(d?.dailyCapUsd != null ? String(d.dailyCapUsd) : '25');
       })
       .catch(() => {});
   }, [isOpen]);
@@ -57,6 +61,8 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
       body: JSON.stringify({
         maxConcurrency: Math.max(0, Math.floor(Number(agentMaxConc) || 0)),
         permissionProfile: profile,
+        taskCapUsd: Number(taskCap) || 0,
+        dailyCapUsd: Number(dailyCap) || 0,
       }),
     }).catch(() => {});
     onSave(cols);
@@ -148,6 +154,39 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
           </span>
         </label>
         <p className="text-micro text-slate-500 mt-2">Default cap on how many agents run at once <span className="font-semibold">per project</span> — <span className="font-mono">0 = unlimited</span> (still bounded by CPU/RAM). A project can override this in its editor.</p>
+      </div>
+
+      <div className="mb-6">
+        <h3 className="eyebrow mb-2.5">Agent Budgets (USD)</h3>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50">
+            <span className="text-sm font-semibold text-slate-700">Per-task Cap</span>
+            <span className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">$</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={taskCap}
+                onChange={e => setTaskCap(e.target.value.replace(/[^\d.]/g, ''))}
+                className="w-24 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500"
+              />
+            </span>
+          </label>
+          <label className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50">
+            <span className="text-sm font-semibold text-slate-700">Daily Project Cap</span>
+            <span className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">$</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={dailyCap}
+                onChange={e => setDailyCap(e.target.value.replace(/[^\d.]/g, ''))}
+                className="w-24 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500"
+              />
+            </span>
+          </label>
+        </div>
+        <p className="text-micro text-slate-500 mt-2">Tasks exceeding their cap are paused. If a project hits the daily cap, all agents stop.</p>
       </div>
 
       <div className="mb-6">

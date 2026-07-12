@@ -39,6 +39,7 @@ const TerminalMonitor = lazy(() => import('./tasks/components/TerminalMonitor').
 const LogsTab = lazy(() => import('./tasks/components/LogsTab'));
 const EventsFeed = lazy(() => import('./tasks/components/EventsFeed'));
 const LimitBanner = lazy(() => import('./tasks/components/LimitBanner'));
+const BudgetBanner = lazy(() => import('./tasks/components/BudgetBanner'));
 const DbTab = lazy(() => import('./tasks/components/DbTab'));
 const AgentsTab = lazy(() => import('./tasks/components/AgentsTab'));
 const GitPanel = lazy(() => import('./tasks/components/GitPanel').then(m => ({ default: m.GitPanel })));
@@ -531,6 +532,7 @@ const TasksPage: React.FC = () => {
           it polls /agent-status itself and renders nothing unless the swarm is actually paused. */}
       <Suspense fallback={null}>
         <LimitBanner />
+        <BudgetBanner />
       </Suspense>
       {/* The header is two columns: brand + tabs on the left, the tank on the right, sharing
           a top edge. The tabs live up here so the tank can span both rows without leaving

@@ -19,7 +19,7 @@ import { encrypt, decrypt, isEncrypted } from './secretbox';
 
 /** The active tasks-group Store, with schema guaranteed. Every exported db fn goes
  *  through this so the same code runs over SQLite (default) or Postgres. */
-async function store(): Promise<Store> {
+export async function store(): Promise<Store> {
   await ensureMigrated('tasks');
   return getStore('tasks');
 }
@@ -690,7 +690,7 @@ export async function setProjectMaxConcurrency(id: string, n: number | null): Pr
 // unlimited (resource-gated only), which is the out-of-the-box default.
 /** Global agent defaults. `permissionProfile` sets the agent sandbox strictness. */
 export type PermissionProfile = 'strict' | 'standard' | 'dangerous';
-export interface AgentDefaults { maxConcurrency: number; permissionProfile: PermissionProfile }
+export interface AgentDefaults { maxConcurrency: number; permissionProfile: PermissionProfile; taskCapUsd?: number; dailyCapUsd?: number; }
 export async function getAgentDefaults(): Promise<AgentDefaults> {
   const s = await store();
   const r = await s.get(`SELECT data FROM board_settings WHERE id = 'agent_defaults'`) as any;
@@ -707,8 +707,10 @@ export async function getAgentDefaults(): Promise<AgentDefaults> {
     return {
       maxConcurrency: Math.max(0, Math.floor(Number(d.maxConcurrency) || 0)),
       permissionProfile: profile,
+      taskCapUsd: d.taskCapUsd != null ? Number(d.taskCapUsd) : 2,
+      dailyCapUsd: d.dailyCapUsd != null ? Number(d.dailyCapUsd) : 25,
     };
-  } catch { return { maxConcurrency: 0, permissionProfile: 'standard' }; }
+  } catch { return { maxConcurrency: 0, permissionProfile: 'standard', taskCapUsd: 2, dailyCapUsd: 25 }; }
 }
 export async function setAgentDefaults(d: Partial<AgentDefaults>): Promise<AgentDefaults> {
   const s = await store();
@@ -716,6 +718,8 @@ export async function setAgentDefaults(d: Partial<AgentDefaults>): Promise<Agent
   const next: AgentDefaults = {
     maxConcurrency: d.maxConcurrency != null ? Math.max(0, Math.floor(d.maxConcurrency)) : cur.maxConcurrency,
     permissionProfile: d.permissionProfile || cur.permissionProfile,
+    taskCapUsd: d.taskCapUsd != null ? Number(d.taskCapUsd) : cur.taskCapUsd,
+    dailyCapUsd: d.dailyCapUsd != null ? Number(d.dailyCapUsd) : cur.dailyCapUsd,
   };
   await upsert(s, 'board_settings', { id: 'agent_defaults', data: JSON.stringify(next) }, ['id']);
   return next;

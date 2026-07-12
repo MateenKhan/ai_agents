@@ -256,7 +256,7 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
 
   const modelArgs = model ? ['--model', model] : [];
   const profile = opts.permissionProfile || 'standard';
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...modelArgs, ...claudeFlags(profile, opts.role)];
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--max-turns', '80', ...modelArgs, ...claudeFlags(profile, opts.role)];
 
   if (profile !== 'dangerous') {
     const claudeDir = join(cwd, '.claude');
@@ -298,6 +298,8 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   let tail = '';
   let buf = '';
 
+  let totalCost = 0;
+
   const record = (chunk: string) => {
     const rec = running.get(agentName);
     if (rec) rec.lastOutputAt = Date.now();
@@ -309,6 +311,12 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
       if (!ln.trim()) continue;
       const action = parseEvent(ln);
       if (action) log(action);
+      try {
+        const ev = JSON.parse(ln);
+        if (ev?.type === 'result' && typeof ev.total_cost_usd === 'number') {
+          totalCost += ev.total_cost_usd;
+        }
+      } catch {}
     }
   };
 
@@ -325,7 +333,7 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
     log(`── EXIT code=${code} (${Math.round(durationMs / 1000)}s, ${failure}) ──`);
     // A 'limit' exit carries the reset time (null when the message had no epoch — the
     // orchestrator then falls back to its default pause window).
-    onExit({ code, durationMs, failure, outputTail: tail, resetAt: failure === 'limit' ? parseLimitReset(tail) : null });
+    onExit({ code, durationMs, failure, outputTail: tail, resetAt: failure === 'limit' ? parseLimitReset(tail) : null, costUsd: totalCost });
   });
 
   // Spawn-level failure (e.g. `claude` not found / not launchable) fires 'error',
