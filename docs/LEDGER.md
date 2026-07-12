@@ -66,3 +66,50 @@ to that node's catalog. Do not commit anything unless the user says push._
 3. When 5+6 land: apply #6's integration patches (runner spawn flags, /intake sandbox), then wire StudioNavbar into CanvasPage/VisualDesignerPage after #3/#8 land.
 4. Integration gate: pnpm run typecheck + full vitest + e2e attempt; then commit+push QA-approved work (authorized) in logical commits.
 5. Dispatch #9 (deps) once the tree is quiet. Update this ledger as statuses change.
+
+---
+
+# Research drill — "AI engineering team" competitor scan (2026-07-12)
+
+5 background research agents, one search area each. This section is the full detail; chat got one line per agent. Not part of the canvas wave above.
+
+## A. Vendor sites (official product pages/docs only)
+- **Devin (Cognition)** — devin.ai. Autonomous cloud agent + Devin Desktop command center. Shell/editor/browser in sandboxed cloud env; takes Linear/Jira tickets; migrations, CI-failure fixes, docs/diagrams; visual QA + unit/E2E tests; ships GitHub PRs and iterates on review+CI to merge; 40+ integrations. Only public pricing in category: Free $0 / Pro $20 / Max $200 / Teams $80+$40 per dev / Enterprise (SSO, VPC). "AI Productivity Guarantee" up to $10M for enterprise.
+- **Factory** — factory.ai. Specialized "Droids" per SDLC stage: Code (features/refactors/bugs), Knowledge (research/specs/docs), Reliability (on-call, RCA, incidents), Product (backlog, ticket→spec). HyperCode codebase understanding, ByteRank retrieval, model-independent; DroidShield pre-commit static analysis; SaaS/hybrid/on-prem/air-gapped; ISO 42001/SOC 2. Contact sales.
+- **Blitzy** — blitzy.com. Thousands of parallel agents, days-to-weeks inference; requirements→design→repo up to 3M LOC, compile+runtime validated; knowledge graph of existing codebases; QA agents cross-review each other; PRs to GitHub/GitLab/Azure DevOps. Enterprise sales.
+- **Tembo** — tembo.io. Governance layer running fleets of third-party agents (Claude Code, Codex, Cursor, Copilot) in cloud VMs (128GB/500GB); PR review, migrations, incident triage, Linear tickets, test coverage; centralized approval workflow + audit logs; 150+ integrations. Free tier + enterprise.
+- **Cosine** — cosine.sh. Own Lumen model family (Scout/Outpost/Sovereign); end-to-end ticket→PR without supervision; legacy focus (COBOL/Fortran/Verilog); CLI + Cloud; managed/single-tenant/air-gapped.
+
+## B. Community sentiment (HN + indexed Reddit)
+- Devin: hype→debunked→"useful for narrow chores" (merge conflicts, linters, pushing PRs over the line); "runs around in circles," expensive ACU model ($2.25/ACU ≈ 15 min), review burden is the killer complaint.
+- OpenHands: warmest sentiment; open source, model-agnostic, runs local; ~20% of own commits self-authored.
+- Claude Code swarms: the dominant *actually used* pattern — devs build the team themselves (tmux parallel instances, agents verifying each other); consensus: swarms only pay off on independent subtasks.
+- Codex liked for async batch model; Jules weakest (most PRs trashed); Copilot coding agent "safe but modest" (draft-PR guardrails praised).
+- MetaGPT/ChatDev seen as demos, not tools. Cross-cutting: autonomy is the liability, review is the bottleneck, ROI negative outside narrow chores; winning pattern = developer-as-governor over parallel constrained agents.
+
+## C. GitHub OSS
+- **MetaGPT** ~69k★ (PM/Architect/PM/Engineer SOPs, requirement→full project + design docs), **ChatDev** ~34k★ (CEO/CTO/Programmer/Designer/Reviewer/Tester phases; MacNet DAG topologies >1,000 agents), **GPT Pilot** ~34k★ (10 roles incl. Spec Writer/Tech Lead/Reviewer/Debugger; human checkpoints) — the true team simulators.
+- **OpenHands** ~80k★ (sandboxed Docker, issue→PR, Agent-Client Protocol for third-party agents), **GPT-Engineer** ~55k★ (archived 2026/04; precursor to Lovable), **CrewAI** ~45-54k★ (framework layer: roles/crews/flows).
+
+## D. Review platforms
+- Product Hunt is the category's home: Devin ~4.7 (65 reviews; "junior engineer teammate," MCP praised, setup friction), Factory 4.8/4, Cosine 4.7/6, AutonomyAI 5.0/7, Sweep 4.5/4, Agen (0 reviews).
+- G2: listings exist (Cognition 4.5/15 as seller) but review volume thin vs IDE assistants. Capterra: near-zero coverage (only Agen; Devin/Factory not listed).
+- Reviewer themes: ticket→PR core workflow, Slack+GitHub/Linear integrations, parallel delegation, "engineer becomes reviewer"; complaints: setup friction, trust/verification.
+
+## E. Tech press / funding
+- Cognition $1B raise at $25B pre (May 2026), ~$492M ARR post-Windsurf; Factory $1.5B valuation (Apr 2026; Nvidia, Adobe, EY, MongoDB logos); Blitzy $200M at $1.4B (May 2026; 66.5% SWE-Bench Pro claim); Reflection pivoted away to frontier lab.
+- Tier 2: Qodo $70M (verification of AI code), Tembo, All Hands AI, Cosine (YC), Codegen (acquired by ClickUp 12/2025), Sweep, Zencoder; ~50% of recent YC batches are agent companies.
+- Big-lab agents shaping narrative: OpenAI Codex, Google Jules, GitHub Copilot coding agent + Agent HQ (enterprise control plane for agent fleets).
+- 2026 press themes: "pair programmer"→"autonomous workforce"; differentiators now enterprise governance, spec-driven development, verification of AI-written code.
+
+## Consolidated feature set (what "a full AI engineering team" product ships in 2026)
+1. Ticket→PR loop: ingest Jira/Linear/GitHub issue, plan, code, test, open PR, iterate on review + CI until merge.
+2. Multi-agent role orchestration (PM/architect/dev/QA/reviewer) or fleet parallelism (dozens–thousands of agents).
+3. Sandboxed cloud execution (VMs/containers with shell, editor, browser) with pause/resume/share.
+4. Deep codebase understanding: indexing/retrieval/knowledge graphs across multi-repo orgs.
+5. Autonomous testing & QA: unit/E2E generation, visual browser QA, agent cross-review.
+6. SDLC breadth beyond coding: incident response/RCA, migrations, docs generation, backlog triage.
+7. Integrations: GitHub/GitLab/Bitbucket, Slack/Teams, Jira/Linear, Sentry/Datadog/PagerDuty.
+8. Enterprise governance: human approval gates, audit logs, RBAC/SSO, VPC/on-prem/air-gapped, security scanning, compliance certs.
+9. Pricing: seat+usage ladders (only Devin public); usage-credit models are the norm and a common complaint.
+10. Market gap per community: buyers don't trust full autonomy — the wanted product is governed parallel agents with strong review/verification tooling (exactly the Qodo/Tembo/Agent HQ angle).
