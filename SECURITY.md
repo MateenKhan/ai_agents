@@ -149,7 +149,5 @@ and ideally front it with an authenticating reverse proxy or a VPN/SSH tunnel. T
 
 ## Reporting a vulnerability
 
-Please **do not** open a public issue for security problems. Report privately via the
-repository's **GitHub Security Advisories** ("Report a vulnerability"), or by emailing the
-maintainer. Include reproduction steps and impact. We'll acknowledge and work on a fix
-before any public disclosure.
+Report security problems privately by emailing the maintainer. Include reproduction steps
+and impact. We'll acknowledge and work on a fix before any disclosure.

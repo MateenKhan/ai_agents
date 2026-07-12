@@ -15,16 +15,13 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/stars/airtajal/ai-agents?style=flat&color=FF3B1D" alt="Stars"/>
-  <img src="https://img.shields.io/badge/license-MIT-FF3B1D" alt="MIT"/>
+  <img src="https://img.shields.io/badge/license-Proprietary-FF3B1D" alt="Proprietary"/>
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2022-0A0E14" alt="Node ≥ 22"/>
-  <img src="https://img.shields.io/badge/PRs-welcome-14B8A6" alt="PRs welcome"/>
 </p>
 
 <p align="center">
   <a href="#-quick-start"><b>Quick start</b></a> ·
   <a href="./ROADMAP.md">Roadmap</a> ·
-  <a href="./CONTRIBUTING.md">Contributing</a> ·
   <a href="./SECURITY.md">Security</a>
 </p>
 
@@ -51,7 +48,7 @@ enters `main`.
 | Per-agent git worktree isolation | ✅ | — | — |
 | Local / private code embeddings | ✅ | partial | — |
 | Runs unattended (breaker, watchdog, resume) | ✅ | — | — |
-| Self-hosted · Open source (MIT) | ✅ | ✅ | ✅ |
+| Self-hosted | ✅ | ✅ | ✅ |
 
 ### The bite — four things nobody else pairs
 
@@ -191,7 +188,7 @@ Before exposing it on a LAN/VPS (`HOST=0.0.0.0`), or reporting a vulnerability, 
 - **Anthropic-only (today).** Agents run through the `claude` CLI, so the model provider is currently Claude. This is a deliberate v0 constraint, not a design lock-in — the agent runner ([`agentic/engine/runner.ts`](./agentic/engine/runner.ts)) is the single seam that spawns the CLI.
   **Future scope:** a model-agnostic adapter behind that seam (OpenAI / Gemini / local Ollama), selectable per agent role — widening the tool to any team regardless of which model they pay for. Tracked in [ROADMAP.md](./ROADMAP.md).
 - **Single-user / local.** No multi-user auth or shared cloud board yet. See [SECURITY.md](./SECURITY.md) before exposing it beyond loopback.
-- **Self-hosted control plane.** You run it on your machine or your own VPS with your own API key. An optional hosted control plane (session-/seat-based, on a VPS) is on the roadmap — the code stays MIT; hosting would be a convenience layer, never a paywall on the core.
+- **Self-hosted control plane.** You run it on your machine or your own VPS with your own API key. An optional hosted control plane (session-/seat-based, on a VPS) is on the roadmap.
 
 See the full plan in **[ROADMAP.md](./ROADMAP.md)**.
 
@@ -206,12 +203,7 @@ run loop wired up (create → trigger → watch → review the diff → approve)
 search, agents and git endpoints. Set the `baseUrl` and `project` collection variables, then
 walk the folders top to bottom.
 
-## Contributing
-
-Contributions welcome — start with **[CONTRIBUTING.md](./CONTRIBUTING.md)** and the
-[`good first issue`](https://github.com/airtajal/ai-agents/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
-label. By participating you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
-
 ## License
 
-[MIT](./LICENSE) © 2026 Airtajal
+Proprietary — © 2026 Airtajal, all rights reserved. See [LICENSE](./LICENSE).
+Use requires a commercial license agreement; contact the owner for access.

@@ -105,8 +105,6 @@ export const COMPARE: { feature: string; piranha: Cell; devin: Cell; cursor: Cel
   { feature: 'Runs unattended', piranha: true, devin: true, cursor: true, openhands: null },
   { feature: 'Scales across your own machines', piranha: true, devin: null, cursor: null, openhands: null },
   { feature: 'Self-hosted', piranha: true, devin: false, cursor: false, openhands: true },
-  { feature: 'Free to run', piranha: true, devin: false, cursor: false, openhands: true },
-  { feature: 'Open source (MIT)', piranha: true, devin: false, cursor: false, openhands: true },
   { feature: 'Cloud / hosted, zero setup', piranha: 'planned', devin: true, cursor: true, openhands: true },
   { feature: 'Any model provider', piranha: 'planned', devin: true, cursor: true, openhands: true },
 ];

@@ -1,6 +1,6 @@
 # Roadmap
 
-Living document — order is intent, not a promise. Ideas and PRs welcome (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
+Living document — order is intent, not a promise.
 
 ## Now (v0.1.x)
 
@@ -11,7 +11,6 @@ Living document — order is intent, not a promise. Ideas and PRs welcome (see [
 - [x] Context memory (LRU + pins) with disk reconcile on merge
 - [ ] **Demo GIF + docs site** — the biggest adoption unlock
 - [ ] **One-command run** — Docker Compose / devcontainer so first-run is 30s, not a setup chapter
-- [ ] `good first issue` backlog for new contributors
 
 ## Next
 
@@ -23,7 +22,7 @@ Living document — order is intent, not a promise. Ideas and PRs welcome (see [
 
 - [ ] **Model-agnostic adapter** — pluggable providers (OpenAI / Gemini / local Ollama) behind the runner seam, selectable per role. Removes the current Anthropic-only limitation
 - [ ] **Team mode** — multi-user auth, shared boards, seat roles (moves beyond single-user/local)
-- [ ] **Optional hosted control plane** — session-/seat-based hosting on a VPS for people who don't want to self-host. Core stays MIT; hosting is convenience, never a paywall on the engine
+- [ ] **Optional hosted control plane** — session-/seat-based hosting on a VPS for people who don't want to self-host
 
 ## Non-goals
 

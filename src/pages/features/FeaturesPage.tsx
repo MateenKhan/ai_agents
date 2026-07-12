@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Icons, REPO, INSTALL_CMD, LEAD, REST, MICRO, USE_CASES, COMPARE, COMPARE_NOTE, STEPS, NEXT, LANES, type Card, type Cell } from './content';
+import { Icons, INSTALL_CMD, LEAD, REST, MICRO, USE_CASES, COMPARE, COMPARE_NOTE, STEPS, NEXT, LANES, type Card, type Cell } from './content';
 
 /**
  * The Piranha landing page — the single source for both `/features` in the app and the
@@ -167,7 +167,6 @@ export default function FeaturesPage({ inApp = false }: { inApp?: boolean }) {
           <a className="lnk" href="#next">Next</a>
           <a className="lnk" href="#install">Install</a>
           {inApp && <Link className="btn btn-cta btn-tiny" to="/tasks">{Icons.board} Open the board</Link>}
-          <a className="btn btn-quiet btn-tiny" href={REPO} aria-label="Star Piranha on GitHub">{Icons.github} Star</a>
         </div>
       </header>
 
@@ -175,7 +174,7 @@ export default function FeaturesPage({ inApp = false }: { inApp?: boolean }) {
         <div className="rail hero">
           <div>
             <div className="pills">
-              <span className="pill free"><span className="d" />Free &amp; open source · MIT</span>
+              <span className="pill free"><span className="d" />Self-hosted · your code stays on your machine</span>
               <span className="pill plan"><span className="d" />Runs on your Claude subscription</span>
             </div>
             <h1>
@@ -188,10 +187,10 @@ export default function FeaturesPage({ inApp = false }: { inApp?: boolean }) {
               ready for <b>any task an AI can do.</b>
             </p>
             <div className="cta-row">
-              <a className="btn btn-cta" href={REPO}>{Icons.star} Star on GitHub</a>
+              <a className="btn btn-cta" href="mailto:airtajal.1@gmail.com?subject=Piranha%20access">{Icons.star} Request access</a>
               <a className="btn btn-quiet" href="#install">Deploy hosted <span aria-hidden="true">→</span></a>
             </div>
-            <p className="cta-note">$0 to run. Self-host on your machine or a $5 VPS — code stays local, secrets encrypted at rest.</p>
+            <p className="cta-note">Self-host on your machine or a $5 VPS — code stays local, secrets encrypted at rest.</p>
 
             <div className="copyline">
               <div className="lbl">One-line install</div>
@@ -270,7 +269,7 @@ export default function FeaturesPage({ inApp = false }: { inApp?: boolean }) {
               </table>
             </div>
             <p className="tablenote reveal">
-              {COMPARE_NOTE} <a href={`${REPO}/issues/new`}>Open an issue</a> — we’ll fix it.
+              {COMPARE_NOTE} <a href="mailto:airtajal.1@gmail.com?subject=Piranha%20comparison">Tell us</a> — we’ll fix it.
             </p>
           </div>
         </section>
@@ -333,11 +332,9 @@ export default function FeaturesPage({ inApp = false }: { inApp?: boolean }) {
       <footer>
         <div className="rail foot">
           <span className="brand"><Mark size={22} />Piranha</span>
-          <span className="lic">MIT License · © 2026 Piranha contributors</span>
+          <span className="lic">© 2026 Airtajal · All rights reserved</span>
           <span>
             {inApp && <><Link to="/tasks">Back to the board</Link> &nbsp;·&nbsp;</>}
-            <a href={`${REPO}/blob/main/ROADMAP.md`}>Roadmap</a> &nbsp;·&nbsp;
-            <a href={REPO}>GitHub</a> &nbsp;·&nbsp;
             <a href="#install">Deploy</a>
           </span>
         </div>

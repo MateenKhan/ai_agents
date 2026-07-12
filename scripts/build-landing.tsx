@@ -29,8 +29,8 @@ const css = readFileSync(resolve(root, 'src/pages/features/features.css'), 'utf8
 const body = renderToStaticMarkup(React.createElement(FeaturesPage));
 
 const TITLE = 'Piranha — throw a task in, watch the swarm';
-const DESC = 'A swarm of AI agents that chews through your backlog — each works in its own sandbox, learns as it goes, and nothing ships without your click. Free, self-hosted, MIT. Runs on your Claude subscription.';
-const OG_DESC = 'A swarm of AI agents. Plan → build → QA in isolated worktrees, nothing merges without your click. Free & open source (MIT). Runs on your Claude subscription.';
+const DESC = 'A swarm of AI agents that chews through your backlog — each works in its own sandbox, learns as it goes, and nothing ships without your click. Self-hosted; your code stays on your machine. Runs on your Claude subscription.';
+const OG_DESC = 'A swarm of AI agents. Plan → build → QA in isolated worktrees, nothing merges without your click. Self-hosted; your code stays local. Runs on your Claude subscription.';
 const FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230A0E14'/%3E%3Cg fill='%23FF3B1D'%3E%3Cpath d='M18 28 L28 54 L38 28 Z'/%3E%3Cpath d='M36 28 L46 54 L56 28 Z'/%3E%3Cpath d='M54 28 L64 54 L74 28 Z'/%3E%3Cpath d='M27 74 L37 48 L47 74 Z'/%3E%3Cpath d='M45 74 L55 48 L65 74 Z'/%3E%3Cpath d='M63 74 L73 48 L83 74 Z'/%3E%3C/g%3E%3C/svg%3E";
 
 // The only behaviour the static page cannot inherit from React. Reveal + copy; the headline

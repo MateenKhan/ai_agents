@@ -1,7 +1,7 @@
 {
   "name": "@airtajal/piranha",
-  "private": false,
-  "license": "MIT",
+  "private": true,
+  "license": "UNLICENSED",
   "version": "0.1.0",
   "description": "Piranha — a swarm of AI agents that plan, build, and QA your backlog in isolated git worktrees, with a human-approved merge gate.",
   "type": "module",
@@ -21,9 +21,6 @@
     "tsconfig.json",
     ".env.example"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
   "engines": {
     "node": ">=22"
   },
