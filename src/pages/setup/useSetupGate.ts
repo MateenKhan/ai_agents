@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 export const SETUP_DONE_KEY = 'piranha:setup-done';
 
 /** The slice of a project the gate needs — keeps the hook decoupled from projectContext. */
-export interface GateProject { id: string }
+export interface GateProject { id: string; repoPath?: string }
 
 export interface SetupGateInput {
   /** True while the project list is still loading — never flash setup over a loading board. */
@@ -19,7 +19,8 @@ export interface SetupGateInput {
  * First-run setup gate. The starting screen shows exactly when ALL of these hold:
  *   - the `piranha:setup-done` flag has never been written (completed OR skipped),
  *   - both the projects and tasks polls have settled (no flash-of-setup during load),
- *   - no project beyond the seeded 'default' exists,
+ *   - no project beyond the seeded 'default' exists AND none carries a repoPath
+ *     (a local import renames 'default' in place, so the id-only test alone is fooled),
  *   - the board has zero tasks.
  * Once `complete()` runs (the screen writes the flag itself), the gate never re-opens —
  * including on installs where localStorage is unavailable (private mode falls back to done,
@@ -30,7 +31,7 @@ export function useSetupGate({ projectsLoading, tasksLoading, projects, taskCoun
     try { return localStorage.getItem(SETUP_DONE_KEY) === '1'; } catch { return true; }
   });
   const needsSetup = !setupDone && !projectsLoading && !tasksLoading
-    && !projects.some(p => p.id !== 'default') && taskCount === 0;
+    && !projects.some(p => p.id !== 'default' || p.repoPath) && taskCount === 0;
   const complete = useCallback(() => setSetupDone(true), []);
   return { needsSetup, complete };
 }

@@ -374,12 +374,6 @@ const TasksPage: React.FC = () => {
   // header rows instead of leaving dead space beside the brand.
   const tabStrip = (
         <div className="flex items-end gap-2 pt-1.5" data-feature-id="tasks-tab-switcher">
-          <button 
-            onClick={() => navigate('/canvas')}
-            className="flex items-center justify-center px-3 py-1.5 mb-1 bg-indigo-600 text-white text-xs font-bold rounded shadow-sm sm:hover:bg-indigo-500 transition-colors shrink-0"
-          >
-            Architecture Canvas
-          </button>
           <div ref={tabStripRef} className="flex items-stretch gap-1 scroll-x-bar min-w-0 shrink">
             {visibleTabs.map((t) => {
               const Icon = t.icon;

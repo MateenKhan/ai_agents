@@ -38,6 +38,14 @@ describe('useSetupGate', () => {
     expect(result.current.needsSetup).toBe(false);
   });
 
+  it('stays hidden when the sole default was repurposed with a repoPath (local import renamed it in place)', () => {
+    // A local-path import renames 'default' in place, keeping id==='default' but attaching a
+    // repoPath. The id-only test would re-nag; the repoPath guard treats it as configured.
+    const { result } = renderHook(() =>
+      useSetupGate({ ...fresh, projects: [{ id: 'default', repoPath: 'C:\\code\\my-repo' }] }));
+    expect(result.current.needsSetup).toBe(false);
+  });
+
   it('stays hidden when the board already has tasks', () => {
     const { result } = renderHook(() => useSetupGate({ ...fresh, taskCount: 3 }));
     expect(result.current.needsSetup).toBe(false);

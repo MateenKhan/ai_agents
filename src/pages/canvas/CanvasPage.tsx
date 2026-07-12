@@ -12,8 +12,7 @@ import {
   Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Link } from 'react-router-dom';
-import { ChevronLeft, Save, Code, RefreshCw, Loader2 } from 'lucide-react';
+import { Code, RefreshCw, Loader2 } from 'lucide-react';
 import { nodeTypes } from './components/CustomNodes';
 import { InspectorPanel } from './components/InspectorPanel';
 import { NodePalette, PaletteItem } from './components/NodePalette';
@@ -225,14 +224,9 @@ const CanvasPage = () => {
   return (
     <div className="h-dvh flex flex-col bg-slate-100">
       <StudioNavbar />
-      <div className="h-14 shrink-0 bg-white border-b flex items-center justify-between px-4">
-        <Link
-          to="/tasks"
-          className="flex items-center text-sm font-bold text-slate-600 hover:text-slate-900"
-        >
-          <ChevronLeft size={16} className="mr-1" /> Back to Tasks Board
-        </Link>
-        <div className="text-sm font-bold text-slate-800">Architecture Canvas</div>
+      {/* Page toolbar — actions only. Brand, cross-studio nav, and the "Architecture Canvas"
+          label all live in StudioNavbar above, so this row never repeats them. */}
+      <div className="h-14 shrink-0 bg-white border-b flex items-center justify-end px-4">
         <div className="flex items-center gap-2">
           <button
             onClick={handleSyncRepo}
@@ -249,9 +243,6 @@ const CanvasPage = () => {
           >
             {isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Code size={14} />}
             Generate Code
-          </button>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-600 text-white text-xs font-bold rounded shadow-sm hover:bg-accent-500 transition-colors">
-            <Save size={14} /> Build / Verify
           </button>
         </div>
       </div>
@@ -311,8 +302,15 @@ const CanvasPage = () => {
           </ReactFlow>
         </div>
 
-        {/* Right Inspector Panel: switches between Node Inspector and Edge Inspector */}
-        {selectedNode && (
+        {/* Right Inspector Panel: the legacy generic inspector is a FALLBACK only. Node types
+            that own a dedicated left-panel surface — the framework catalogs
+            (spring-boot/nestjs/nextjs/fastapi) and the control-flow forms — already show their
+            full configuration on the left, so rendering InspectorPanel too would be two config
+            surfaces for one node. Suppress it for those; it stays for plain nodes
+            (gateway/database/cloud) that have no catalog. */}
+        {selectedNode
+          && !hasCatalogForNodeType(selectedNode.type)
+          && !isControlFlowNodeType(selectedNode.type) && (
           <InspectorPanel
             selectedNode={selectedNode}
             onUpdateNode={updateNodeData}

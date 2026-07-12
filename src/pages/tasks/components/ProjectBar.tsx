@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Tooltip } from './Tooltip';
 import { Plus, Pencil, Trash2, FolderGit2, Columns, ChevronDown, ChevronRight, RotateCcw, GitBranch, FolderSync } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
@@ -302,9 +301,11 @@ export function ProjectBar(
   // Long-press support (mobile) — hold a tab ~500ms to open its edit modal.
   const pressTimer = React.useRef<any>(null);
 
-  // First run: only the seeded host "Default" exists — the user hasn't pointed the swarm at
-  // any of their own repos yet. Drives the onboarding hint (item 92).
-  const onlyDefault = projects.length === 1 && projects[0]?.id === DEFAULT_PROJECT;
+  // First run: only the seeded host "Default" exists AND it has no repo yet — the user hasn't
+  // pointed the swarm at any of their own code. Drives the onboarding hint (item 92).
+  // The `!repoPath` guard is essential: a local-path import RENAMES the Default project in place
+  // (keeping id==='default'), so an id-only test would keep nagging after a repo is attached.
+  const onlyDefault = projects.length === 1 && projects[0]?.id === DEFAULT_PROJECT && !projects[0]?.repoPath;
 
   // Keyboard access to the switcher (item 79): the tabs are focusable buttons that already
   // switch on Enter/Space, and arrow keys move-and-select between them like a real tablist.
@@ -350,37 +351,9 @@ export function ProjectBar(
       <div className={`min-w-0 flex flex-col ${right ? 'lg:border-r lg:border-slate-200' : ''}`}>
       <div className="px-2 sm:px-3 py-2">
         <div className="flex items-center gap-3">
-          {/* Brand — first item on the page, same row as the Projects/active-project toggle.
-              Tier-1 identity: the teeth mark carries the accent red; nothing else here does.
-
-              Clicking the mark opens the landing page — the conventional home for it, and
-              it needs no new chrome in an already dense header. */}
-          <Tooltip label="What Piranha is">
-            <Link
-              to="/features"
-              data-feature-id="brand-features"
-              // Explicit, because Tooltip injects its label as aria-label when none exists —
-              // which would replace the visible "Piranha" with "What Piranha is" and break
-              // WCAG 2.5.3 (Label in Name). The visible text must survive inside the name.
-              aria-label="Piranha — what it is"
-              className="shrink-0 flex items-center gap-2 pr-3 border-r border-slate-200 rounded-lg sm:hover:opacity-80 transition-opacity"
-            >
-              <svg viewBox="0 0 100 100" aria-hidden="true" className="w-6 h-6 sm:w-7 sm:h-7 rounded-md shrink-0">
-                <rect width="100" height="100" rx="22" fill="#0A0E14" />
-                <g fill="#FF3B1D">
-                  <path d="M18 28 L28 54 L38 28 Z" /><path d="M36 28 L46 54 L56 28 Z" /><path d="M54 28 L64 54 L74 28 Z" />
-                  <path d="M27 74 L37 48 L47 74 Z" /><path d="M45 74 L55 48 L65 74 Z" /><path d="M63 74 L73 48 L83 74 Z" />
-                </g>
-              </svg>
-              <div className="flex flex-col justify-center text-left">
-                <div className="flex items-center gap-1.5">
-                  <h1 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">Piranha</h1>
-                  <div className="w-1 h-1 rounded-full bg-emerald-500 shrink-0" />
-                </div>
-                <p className="eyebrow whitespace-nowrap">Watch the swarm.</p>
-              </div>
-            </Link>
-          </Tooltip>
+          {/* Brand + cross-studio nav live once, in StudioNavbar above this bar. ProjectBar
+              starts at the Projects accordion so the mark and the studio links never render
+              twice on the same page. */}
           {/* Accordion header — minimized by default; shows the active project. */}
           <button
             onClick={() => setOpen(o => !o)}
@@ -401,18 +374,6 @@ export function ProjectBar(
           </span>
           {open ? <ChevronDown size={16} className="text-slate-400 shrink-0" /> : <ChevronRight size={16} className="text-slate-400 shrink-0" />}
           </button>
-
-          {/* Visual React Studio Designer Link */}
-          <Tooltip label="Visual React Studio Designer">
-            <Link
-              to="/designer"
-              data-feature-id="tasks-open-designer"
-              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-2xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 sm:hover:bg-indigo-100 transition-colors"
-            >
-              <Columns size={14} />
-              <span>Studio</span>
-            </Link>
-          </Tooltip>
 
           {/* Git — top-right. A project IS a git repo, so its Git panel lives on the project bar. */}
           {onOpenGit && (

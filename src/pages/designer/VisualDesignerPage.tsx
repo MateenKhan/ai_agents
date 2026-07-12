@@ -7,7 +7,6 @@ import {
   useSandpack,
 } from '@codesandbox/sandpack-react';
 import { Eye, Code2, Columns, RotateCcw, Sparkles } from 'lucide-react';
-import { ProjectBar } from '../tasks/components/ProjectBar';
 import { useProjects } from '../tasks/projectContext';
 import { DEVICE_PRESETS, DEFAULT_TWEAKS, DEFAULT_FILES } from './presets';
 import { DevicePreset, VisualTweaks } from './types';
@@ -254,7 +253,10 @@ export const VisualDesignerPage: React.FC = () => {
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden">
       <StudioNavbar />
-      <ProjectBar />
+      {/* No ProjectBar here: StudioNavbar already carries the brand, the active-project badge,
+          and cross-studio nav. The light-themed ProjectBar also clashed with this dark studio
+          and leaked the onboarding banner into the designer, so it is dropped entirely. Project
+          switching stays on the Swarm Board; the active project is reflected in StudioNavbar. */}
 
       {/* Top Header Bar */}
       <div className="border-b border-slate-800 bg-slate-900/80 px-4 py-2.5 flex items-center justify-between shrink-0">
