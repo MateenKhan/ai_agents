@@ -11,6 +11,7 @@ import { fromBuffer, cosine } from './embedder.js';
 import { codeIndexIsPostgres, pgSemanticSearch } from './indexPg.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync } from 'fs';
 import { join, dirname, resolve, isAbsolute } from 'path';
+import { store } from '../agentic/db/tasks.js';
 
 const PORT = parseInt(process.env.DB_SERVER_PORT ?? '6952');
 const ACTIVE_AGENTS = new Set<string>();
@@ -674,7 +675,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         try { dailyCap = JSON.parse(r.data).dailyCapUsd ?? 25; } catch {}
       }
       const today = new Date().toISOString().split('T')[0];
-      const spendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, `spend_${pid}_${today}`) as any;
+      const spendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, [`spend_${pid}_${today}`]) as any;
       const spend = spendRow ? Number(spendRow.data) : 0;
       res.end(JSON.stringify({ spend, cap: dailyCap, over: spend >= dailyCap }));
       return;

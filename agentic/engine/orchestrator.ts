@@ -818,7 +818,7 @@ async function dispatchPending(): Promise<void> {
     const pid = projectOf(t);
     if (!projectSpends.has(pid)) {
       const spendKey = `spend_${pid}_${today}`;
-      const curSpendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, spendKey) as any;
+      const curSpendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, [spendKey]) as any;
       projectSpends.set(pid, curSpendRow ? Number(curSpendRow.data) : 0);
     }
   }
@@ -1163,7 +1163,7 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
     const pid = projectOf(fresh);
     const spendKey = `spend_${pid}_${today}`;
     const s = await store();
-    const curSpendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, spendKey) as any;
+    const curSpendRow = await s.get(`SELECT data FROM board_settings WHERE id = ?`, [spendKey]) as any;
     const curSpend = curSpendRow ? Number(curSpendRow.data) : 0;
     await upsert(s, 'board_settings', { id: spendKey, data: String(curSpend + r.costUsd) }, ['id']);
   }
