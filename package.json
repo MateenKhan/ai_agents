@@ -38,6 +38,9 @@
     "automation"
   ],
   "pnpm": {
+    "overrides": {
+      "dompurify": "3.4.11"
+    },
     "onlyBuiltDependencies": [
       "onnxruntime-node",
       "sharp",
