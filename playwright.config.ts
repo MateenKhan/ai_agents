@@ -6,7 +6,8 @@ import { defineConfig, devices } from '@playwright/test';
 // are hermetic and prove the editor speaks the engine's schema without any backend running.
 export default defineConfig({
   testDir: 'e2e',
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: 2,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'line' : [['list']],

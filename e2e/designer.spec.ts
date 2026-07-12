@@ -15,7 +15,7 @@ test.describe('Visual React Studio Designer (/designer)', () => {
       });
     });
 
-    await page.goto('/designer');
+    await page.goto('/designer', { waitUntil: 'domcontentloaded' });
   });
 
   test('loads /designer page and displays core studio controls', async ({ page }) => {
