@@ -273,6 +273,14 @@ const MEMORY: Col[] = [
   { name: 'at', type: 'ts', notNull: true },
 ];
 
+const ACTIVEPIECES_WEBHOOKS: Col[] = [
+  { name: 'id', type: 'serial' },
+  { name: 'projectId', type: 'text' },
+  { name: 'agentRole', type: 'text' },
+  { name: 'webhookUrl', type: 'text', notNull: true },
+  { name: 'createdAt', type: 'ts', notNull: true },
+];
+
 // ── Phase 3 (multi-orchestrator safety) ──────────────────────────────────────
 // A row per live orchestrator process sharing this DB. `id` is WORKER_ID
 // (env WORKER_ID, else `${hostname}:${pid}`). `lastBeatAt` is bumped every loop
@@ -400,7 +408,7 @@ export const ALL_COLUMN_NAMES: readonly string[] = Array.from(new Set(
   ([] as Col[]).concat(
     TASKS, BOARD_SETTINGS, GIT_TOKENS, GIT_TOKEN_ASSIGNMENTS, GITHUB_APPS, PROJECTS,
     AGENTS, AGENT_META, AGENT_LOGS, AGENT_DB_USAGE, MEMORY, WORKERS, LOCKS, SYSTEM_STATE,
-    CONTEXT_FILES, CONTEXT_OPS,
+    CONTEXT_FILES, CONTEXT_OPS, ACTIVEPIECES_WEBHOOKS,
     ADDITIVE.map(([, c]) => c),
   ).map(c => c.name),
 ));
@@ -419,7 +427,7 @@ export const ALL_COLUMN_NAMES: readonly string[] = Array.from(new Set(
 const TABLE_GROUP: Record<string, DbGroup> = {
   tasks: 'tasks', board_settings: 'tasks', git_tokens: 'tasks', git_token_assignments: 'tasks',
   github_apps: 'tasks', projects: 'tasks', agents: 'tasks', agent_meta: 'tasks', memory: 'tasks',
-  workers: 'tasks', locks: 'tasks', system_state: 'tasks',
+  workers: 'tasks', locks: 'tasks', system_state: 'tasks', activepieces_webhooks: 'tasks',
   agent_logs: 'logs', agent_db_usage: 'logs', context_files: 'logs', context_ops: 'logs',
 };
 
@@ -430,6 +438,7 @@ const BASE_TABLES: Array<[string, Col[]]> = [
   ['memory', MEMORY], ['workers', WORKERS], ['locks', LOCKS], ['system_state', SYSTEM_STATE],
   ['agent_logs', AGENT_LOGS], ['agent_db_usage', AGENT_DB_USAGE],
   ['context_files', CONTEXT_FILES], ['context_ops', CONTEXT_OPS],
+  ['activepieces_webhooks', ACTIVEPIECES_WEBHOOKS],
 ];
 
 /** [owning table, index SQL] — an index is created only when its table is. */
@@ -451,6 +460,8 @@ const INDEXES: Array<[string, string]> = [
   ['context_files', 'CREATE UNIQUE INDEX IF NOT EXISTS idx_ctx_files_proj_path ON context_files(projectId, path)'],
   ['context_files', 'CREATE INDEX IF NOT EXISTS idx_ctx_files_proj ON context_files(projectId)'],
   ['context_ops', 'CREATE INDEX IF NOT EXISTS idx_ctx_ops_proj ON context_ops(projectId)'],
+  ['activepieces_webhooks', 'CREATE INDEX IF NOT EXISTS idx_activepieces_project ON activepieces_webhooks(projectId)'],
+  ['activepieces_webhooks', 'CREATE INDEX IF NOT EXISTS idx_activepieces_agent ON activepieces_webhooks(agentRole)'],
 ];
 
 /**
