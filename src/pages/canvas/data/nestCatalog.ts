@@ -1,0 +1,645 @@
+// Exhaustive NestJS option catalog for the canvas inspector. Every entry is sourced from
+// the official documentation navigation at https://docs.nestjs.com (menu structure taken
+// from the nestjs/docs.nestjs.com repository), so each docsUrl points at a real official
+// page. Data-only: no React imports, safe to lazy-load.
+
+import type { FrameworkCatalog } from './catalogTypes';
+
+export const NEST_CATALOG: FrameworkCatalog = {
+  framework: 'nestjs',
+  label: 'NestJS Enterprise Modules',
+  categories: [
+    {
+      id: 'core-architecture',
+      label: 'Core Architecture',
+      options: [
+        {
+          id: 'modules',
+          label: 'Modules',
+          description: 'Organize the application into cohesive feature modules with explicit imports and exports.',
+          docsUrl: 'https://docs.nestjs.com/modules',
+        },
+        {
+          id: 'controllers',
+          label: 'Controllers',
+          description: 'Route incoming HTTP requests to handler methods with decorators like @Get and @Post.',
+          docsUrl: 'https://docs.nestjs.com/controllers',
+        },
+        {
+          id: 'providers-di',
+          label: 'Providers & Dependency Injection',
+          description: 'Injectable services wired through the built-in constructor-based DI container.',
+          docsUrl: 'https://docs.nestjs.com/providers',
+        },
+        {
+          id: 'middleware',
+          label: 'Middleware',
+          description: 'Run request/response logic (logging, auth pre-checks) before route handlers execute.',
+          docsUrl: 'https://docs.nestjs.com/middleware',
+        },
+        {
+          id: 'exception-filters',
+          label: 'Exception Filters',
+          description: 'Centralize error handling and shape error responses for thrown exceptions.',
+          docsUrl: 'https://docs.nestjs.com/exception-filters',
+        },
+        {
+          id: 'pipes',
+          label: 'Pipes',
+          description: 'Transform and validate handler input, including the built-in ValidationPipe.',
+          docsUrl: 'https://docs.nestjs.com/pipes',
+        },
+        {
+          id: 'guards',
+          label: 'Guards',
+          description: 'Decide per-request whether a handler may run; the canonical place for authorization.',
+          docsUrl: 'https://docs.nestjs.com/guards',
+        },
+        {
+          id: 'interceptors',
+          label: 'Interceptors',
+          description: 'Wrap handler execution to add logging, response mapping, timeouts, or caching.',
+          docsUrl: 'https://docs.nestjs.com/interceptors',
+        },
+        {
+          id: 'custom-decorators',
+          label: 'Custom Route Decorators',
+          description: 'Build reusable parameter and metadata decorators such as @CurrentUser().',
+          docsUrl: 'https://docs.nestjs.com/custom-decorators',
+        },
+        {
+          id: 'custom-providers',
+          label: 'Custom Providers',
+          description: 'Register value, factory, class, and alias providers for full control over DI tokens.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/custom-providers',
+        },
+        {
+          id: 'async-providers',
+          label: 'Async Providers',
+          description: 'Defer provider creation until async setup (e.g. a database connection) completes.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/async-providers',
+        },
+        {
+          id: 'dynamic-modules',
+          label: 'Dynamic Modules',
+          description: 'Build configurable modules exposing forRoot/forRootAsync/register factory APIs.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/dynamic-modules',
+        },
+        {
+          id: 'injection-scopes',
+          label: 'Injection Scopes',
+          description: 'Choose singleton, request-scoped, or transient provider lifetimes.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/injection-scopes',
+        },
+        {
+          id: 'lazy-loading-modules',
+          label: 'Lazy-Loading Modules',
+          description: 'Load modules on demand with LazyModuleLoader to cut serverless cold-start time.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/lazy-loading-modules',
+        },
+        {
+          id: 'lifecycle-events',
+          label: 'Lifecycle Events',
+          description: 'Hook OnModuleInit/OnApplicationShutdown for startup work and graceful shutdown.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/lifecycle-events',
+        },
+        {
+          id: 'execution-context',
+          label: 'Execution Context',
+          description: 'Inspect the current HTTP/RPC/WS context and read metadata with Reflector.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/execution-context',
+        },
+        {
+          id: 'module-ref',
+          label: 'ModuleRef',
+          description: 'Resolve providers dynamically at runtime from the injection container.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/module-ref',
+        },
+        {
+          id: 'circular-dependency',
+          label: 'Circular Dependency Handling',
+          description: 'Break provider/module cycles with forwardRef() when refactoring is not possible.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/circular-dependency',
+        },
+        {
+          id: 'discovery-service',
+          label: 'DiscoveryService',
+          description: 'Enumerate providers, controllers, and metadata at runtime to build plugin systems.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/discovery-service',
+        },
+        {
+          id: 'standalone-applications',
+          label: 'Standalone Applications',
+          description: 'Use the Nest DI container without an HTTP listener for CLIs and workers.',
+          docsUrl: 'https://docs.nestjs.com/standalone-applications',
+        },
+      ],
+    },
+    {
+      id: 'api-documentation',
+      label: 'API & Documentation',
+      options: [
+        {
+          id: 'swagger-openapi',
+          label: '@nestjs/swagger (OpenAPI)',
+          description: 'Generate an OpenAPI document and Swagger UI directly from decorators and DTOs.',
+          docsUrl: 'https://docs.nestjs.com/openapi/introduction',
+          children: [
+            {
+              id: 'openapi-types-parameters',
+              label: 'Types & Parameters',
+              description: 'Annotate DTO properties with @ApiProperty for accurate schema generation.',
+              docsUrl: 'https://docs.nestjs.com/openapi/types-and-parameters',
+            },
+            {
+              id: 'openapi-operations',
+              label: 'Operations',
+              description: 'Document tags, responses, headers, and file upload endpoints per operation.',
+              docsUrl: 'https://docs.nestjs.com/openapi/operations',
+            },
+            {
+              id: 'openapi-security',
+              label: 'OpenAPI Security Schemes',
+              description: 'Declare bearer, basic, OAuth2, cookie, and API-key auth in the generated spec.',
+              docsUrl: 'https://docs.nestjs.com/openapi/security',
+            },
+            {
+              id: 'openapi-mapped-types',
+              label: 'Mapped Types',
+              description: 'Derive PartialType/PickType/OmitType/IntersectionType variants of DTOs.',
+              docsUrl: 'https://docs.nestjs.com/openapi/mapped-types',
+            },
+            {
+              id: 'openapi-cli-plugin',
+              label: 'Swagger CLI Plugin',
+              description: 'Compiler plugin that infers @ApiProperty metadata to remove decorator boilerplate.',
+              docsUrl: 'https://docs.nestjs.com/openapi/cli-plugin',
+            },
+          ],
+        },
+        {
+          id: 'versioning',
+          label: 'API Versioning',
+          description: 'Version endpoints via URI, header, media type, or custom strategy.',
+          docsUrl: 'https://docs.nestjs.com/techniques/versioning',
+        },
+        {
+          id: 'throttler',
+          label: '@nestjs/throttler (Rate Limiting)',
+          description: 'Protect endpoints from brute force with configurable TTL/limit throttling guards.',
+          docsUrl: 'https://docs.nestjs.com/security/rate-limiting',
+        },
+        {
+          id: 'serialization',
+          label: 'Serialization',
+          description: 'Shape responses with class-transformer, excluding or exposing fields per DTO.',
+          docsUrl: 'https://docs.nestjs.com/techniques/serialization',
+        },
+        {
+          id: 'http-module',
+          label: '@nestjs/axios HTTP Module',
+          description: 'Call external services with the Axios-based HttpService wrapped in Observables.',
+          docsUrl: 'https://docs.nestjs.com/techniques/http-module',
+        },
+        {
+          id: 'mvc',
+          label: 'MVC Templating',
+          description: 'Server-render views with template engines like Handlebars for classic MVC apps.',
+          docsUrl: 'https://docs.nestjs.com/techniques/mvc',
+        },
+        {
+          id: 'serve-static',
+          label: 'Serve Static Assets',
+          description: 'Serve SPA bundles or static files with @nestjs/serve-static.',
+          docsUrl: 'https://docs.nestjs.com/recipes/serve-static',
+        },
+        {
+          id: 'compodoc-documentation',
+          label: 'Compodoc Documentation',
+          description: 'Generate a browsable project documentation site from the Nest source tree.',
+          docsUrl: 'https://docs.nestjs.com/recipes/documentation',
+        },
+        {
+          id: 'crud-generator',
+          label: 'CRUD Generator',
+          description: 'Scaffold a resource (module, controller, service, DTOs, tests) with one CLI command.',
+          docsUrl: 'https://docs.nestjs.com/recipes/crud-generator',
+        },
+      ],
+    },
+    {
+      id: 'graphql',
+      label: 'GraphQL',
+      options: [
+        {
+          id: 'graphql-quick-start',
+          label: '@nestjs/graphql (Apollo / Mercurius)',
+          description: 'Code-first or schema-first GraphQL server on Apollo or Mercurius drivers.',
+          docsUrl: 'https://docs.nestjs.com/graphql/quick-start',
+        },
+        {
+          id: 'graphql-resolvers',
+          label: 'Resolvers',
+          description: 'Define queries and field resolvers with @Resolver/@Query/@ResolveField decorators.',
+          docsUrl: 'https://docs.nestjs.com/graphql/resolvers',
+        },
+        {
+          id: 'graphql-mutations',
+          label: 'Mutations',
+          description: 'Model write operations with @Mutation and typed input objects.',
+          docsUrl: 'https://docs.nestjs.com/graphql/mutations',
+        },
+        {
+          id: 'graphql-subscriptions',
+          label: 'Subscriptions',
+          description: 'Push realtime GraphQL events over WebSockets using PubSub.',
+          docsUrl: 'https://docs.nestjs.com/graphql/subscriptions',
+        },
+        {
+          id: 'graphql-federation',
+          label: 'Apollo Federation',
+          description: 'Compose a supergraph from multiple subgraph services for distributed GraphQL.',
+          docsUrl: 'https://docs.nestjs.com/graphql/federation',
+        },
+        {
+          id: 'graphql-complexity',
+          label: 'Query Complexity',
+          description: 'Reject overly expensive queries by scoring fields with complexity estimators.',
+          docsUrl: 'https://docs.nestjs.com/graphql/complexity',
+        },
+        {
+          id: 'graphql-field-middleware',
+          label: 'Field Middleware',
+          description: 'Intercept individual field resolution to transform results or enforce field-level rules.',
+          docsUrl: 'https://docs.nestjs.com/graphql/field-middleware',
+        },
+        {
+          id: 'graphql-cli-plugin',
+          label: 'GraphQL CLI Plugin',
+          description: 'Compiler plugin that auto-annotates classes to reduce code-first boilerplate.',
+          docsUrl: 'https://docs.nestjs.com/graphql/cli-plugin',
+        },
+      ],
+    },
+    {
+      id: 'security-identity',
+      label: 'Security & Identity',
+      options: [
+        {
+          id: 'authentication-jwt',
+          label: 'Authentication (@nestjs/jwt)',
+          description: 'Official JWT-based authentication flow: validate credentials, sign and verify tokens.',
+          docsUrl: 'https://docs.nestjs.com/security/authentication',
+        },
+        {
+          id: 'passport',
+          label: '@nestjs/passport Strategies',
+          description: 'Integrate Passport strategies (local, JWT, OAuth providers) behind AuthGuard.',
+          docsUrl: 'https://docs.nestjs.com/recipes/passport',
+        },
+        {
+          id: 'authorization-rbac',
+          label: 'Authorization (RBAC / CASL)',
+          description: 'Enforce role- and claims-based access, including CASL ability-based policies.',
+          docsUrl: 'https://docs.nestjs.com/security/authorization',
+        },
+        {
+          id: 'encryption-hashing',
+          label: 'Encryption & Hashing',
+          description: 'Encrypt payloads with Node crypto and hash passwords with bcrypt or argon2.',
+          docsUrl: 'https://docs.nestjs.com/security/encryption-and-hashing',
+        },
+        {
+          id: 'helmet',
+          label: 'Helmet Security Headers',
+          description: 'Set protective HTTP headers (CSP, HSTS, etc.) via the helmet middleware.',
+          docsUrl: 'https://docs.nestjs.com/security/helmet',
+        },
+        {
+          id: 'cors',
+          label: 'CORS',
+          description: 'Configure cross-origin resource sharing with enableCors options.',
+          docsUrl: 'https://docs.nestjs.com/security/cors',
+        },
+        {
+          id: 'csrf',
+          label: 'CSRF Protection',
+          description: 'Mitigate cross-site request forgery for cookie/session-based apps.',
+          docsUrl: 'https://docs.nestjs.com/security/csrf',
+        },
+        {
+          id: 'session',
+          label: 'Sessions',
+          description: 'Persist user state across requests with express-session or @fastify/secure-session.',
+          docsUrl: 'https://docs.nestjs.com/techniques/session',
+        },
+        {
+          id: 'cookies',
+          label: 'Cookies',
+          description: 'Read and set cookies with cookie-parser or @fastify/cookie.',
+          docsUrl: 'https://docs.nestjs.com/techniques/cookies',
+        },
+      ],
+    },
+    {
+      id: 'persistence',
+      label: 'Persistence & Databases',
+      options: [
+        {
+          id: 'typeorm',
+          label: '@nestjs/typeorm (TypeORM)',
+          description: 'First-party TypeORM integration for PostgreSQL, MySQL, and other SQL databases.',
+          docsUrl: 'https://docs.nestjs.com/techniques/database',
+        },
+        {
+          id: 'sequelize',
+          label: '@nestjs/sequelize (Sequelize)',
+          description: 'Promise-based Sequelize ORM integration with decorated model classes.',
+          docsUrl: 'https://docs.nestjs.com/recipes/sql-sequelize',
+        },
+        {
+          id: 'mongoose',
+          label: '@nestjs/mongoose (MongoDB)',
+          description: 'Schema-based MongoDB object modeling through the official Mongoose module.',
+          docsUrl: 'https://docs.nestjs.com/techniques/mongodb',
+        },
+        {
+          id: 'prisma',
+          label: 'Prisma',
+          description: 'Type-safe database client with generated types, integrated via a PrismaService.',
+          docsUrl: 'https://docs.nestjs.com/recipes/prisma',
+        },
+        {
+          id: 'mikroorm',
+          label: 'MikroORM',
+          description: 'Unit-of-work TypeScript ORM integrated through @mikro-orm/nestjs.',
+          docsUrl: 'https://docs.nestjs.com/recipes/mikroorm',
+        },
+      ],
+    },
+    {
+      id: 'microservices',
+      label: 'Microservices & Transports',
+      options: [
+        {
+          id: 'microservices-basics',
+          label: 'Microservices Overview',
+          description: 'Message- and event-based services with request-response and event patterns.',
+          docsUrl: 'https://docs.nestjs.com/microservices/basics',
+        },
+        {
+          id: 'transport-kafka',
+          label: 'Kafka Transport',
+          description: 'High-throughput event streaming transport built on kafkajs.',
+          docsUrl: 'https://docs.nestjs.com/microservices/kafka',
+        },
+        {
+          id: 'transport-rabbitmq',
+          label: 'RabbitMQ Transport',
+          description: 'AMQP message broker transport with queues, acks, and routing options.',
+          docsUrl: 'https://docs.nestjs.com/microservices/rabbitmq',
+        },
+        {
+          id: 'transport-redis',
+          label: 'Redis Transport',
+          description: 'Publish/subscribe messaging over Redis channels for lightweight service links.',
+          docsUrl: 'https://docs.nestjs.com/microservices/redis',
+        },
+        {
+          id: 'transport-nats',
+          label: 'NATS Transport',
+          description: 'Subject-based messaging with queue groups for load-balanced NATS consumers.',
+          docsUrl: 'https://docs.nestjs.com/microservices/nats',
+        },
+        {
+          id: 'transport-mqtt',
+          label: 'MQTT Transport',
+          description: 'Lightweight pub/sub transport suited to IoT and constrained networks.',
+          docsUrl: 'https://docs.nestjs.com/microservices/mqtt',
+        },
+        {
+          id: 'transport-grpc',
+          label: 'gRPC Transport',
+          description: 'Contract-first RPC over HTTP/2 with Protocol Buffers definitions.',
+          docsUrl: 'https://docs.nestjs.com/microservices/grpc',
+        },
+        {
+          id: 'custom-transport',
+          label: 'Custom Transporters',
+          description: 'Implement a bespoke transport strategy (e.g. Google Cloud Pub/Sub) for microservices.',
+          docsUrl: 'https://docs.nestjs.com/microservices/custom-transport',
+        },
+      ],
+    },
+    {
+      id: 'background-jobs-events',
+      label: 'Background Jobs & Events',
+      options: [
+        {
+          id: 'bullmq-queues',
+          label: '@nestjs/bullmq (Queues)',
+          description: 'Redis-backed BullMQ task queues with concurrency control, retries, and schedulers.',
+          docsUrl: 'https://docs.nestjs.com/techniques/queues',
+        },
+        {
+          id: 'schedule',
+          label: '@nestjs/schedule',
+          description: 'Declarative cron jobs, intervals, and timeouts with the @Cron decorator.',
+          docsUrl: 'https://docs.nestjs.com/techniques/task-scheduling',
+        },
+        {
+          id: 'event-emitter',
+          label: '@nestjs/event-emitter',
+          description: 'In-process domain events with @OnEvent listeners for decoupled modules.',
+          docsUrl: 'https://docs.nestjs.com/techniques/events',
+        },
+        {
+          id: 'cqrs',
+          label: '@nestjs/cqrs',
+          description: 'Commands, queries, events, and sagas for CQRS/event-sourced architectures.',
+          docsUrl: 'https://docs.nestjs.com/recipes/cqrs',
+        },
+      ],
+    },
+    {
+      id: 'realtime-streaming',
+      label: 'Realtime & Streaming',
+      options: [
+        {
+          id: 'websocket-gateways',
+          label: 'WebSocket Gateways',
+          description: 'Realtime gateways with @WebSocketGateway on socket.io or ws platforms.',
+          docsUrl: 'https://docs.nestjs.com/websockets/gateways',
+        },
+        {
+          id: 'ws-adapter',
+          label: 'WebSocket Adapters',
+          description: 'Swap the socket engine (socket.io, ws, or a Redis-propagated custom adapter).',
+          docsUrl: 'https://docs.nestjs.com/websockets/adapter',
+        },
+        {
+          id: 'server-sent-events',
+          label: 'Server-Sent Events',
+          description: 'Push one-way realtime updates over HTTP with the @Sse decorator.',
+          docsUrl: 'https://docs.nestjs.com/techniques/server-sent-events',
+        },
+        {
+          id: 'streaming-files',
+          label: 'Streaming Files',
+          description: 'Return StreamableFile responses for efficient large-file downloads.',
+          docsUrl: 'https://docs.nestjs.com/techniques/streaming-files',
+        },
+        {
+          id: 'file-upload',
+          label: 'File Upload (Multer)',
+          description: 'Handle multipart/form-data uploads with FileInterceptor and Multer.',
+          docsUrl: 'https://docs.nestjs.com/techniques/file-upload',
+        },
+      ],
+    },
+    {
+      id: 'config-validation',
+      label: 'Configuration & Validation',
+      options: [
+        {
+          id: 'config',
+          label: '@nestjs/config',
+          description: 'Load and validate environment configuration with namespaced, typed ConfigService.',
+          docsUrl: 'https://docs.nestjs.com/techniques/configuration',
+        },
+        {
+          id: 'class-validator',
+          label: 'ValidationPipe (class-validator)',
+          description: 'Decorator-based DTO validation and transformation via the global ValidationPipe.',
+          docsUrl: 'https://docs.nestjs.com/techniques/validation',
+        },
+      ],
+    },
+    {
+      id: 'caching-performance',
+      label: 'Caching & Performance',
+      options: [
+        {
+          id: 'cache-manager',
+          label: '@nestjs/cache-manager',
+          description: 'In-memory or Redis (Keyv) response and data caching with CacheInterceptor.',
+          docsUrl: 'https://docs.nestjs.com/techniques/caching',
+        },
+        {
+          id: 'compression',
+          label: 'Compression',
+          description: 'Shrink response payloads with gzip/brotli compression middleware.',
+          docsUrl: 'https://docs.nestjs.com/techniques/compression',
+        },
+        {
+          id: 'fastify',
+          label: 'Fastify Platform',
+          description: 'Swap Express for Fastify to roughly double raw HTTP throughput.',
+          docsUrl: 'https://docs.nestjs.com/techniques/performance',
+        },
+        {
+          id: 'swc',
+          label: 'SWC Builder',
+          description: 'Compile and test with SWC for roughly 20x faster builds than the default tsc.',
+          docsUrl: 'https://docs.nestjs.com/recipes/swc',
+        },
+      ],
+    },
+    {
+      id: 'observability-health',
+      label: 'Observability & Health',
+      options: [
+        {
+          id: 'terminus',
+          label: '@nestjs/terminus (Healthchecks)',
+          description: 'Readiness/liveness endpoints with database, HTTP, memory, and disk indicators.',
+          docsUrl: 'https://docs.nestjs.com/recipes/terminus',
+        },
+        {
+          id: 'logger',
+          label: 'Logger',
+          description: 'Built-in logger service with custom logger and JSON structured logging support.',
+          docsUrl: 'https://docs.nestjs.com/techniques/logger',
+        },
+        {
+          id: 'devtools',
+          label: 'NestJS Devtools',
+          description: 'Visualize the dependency graph and debug the application with the Devtools platform.',
+          docsUrl: 'https://docs.nestjs.com/devtools/overview',
+        },
+        {
+          id: 'sentry',
+          label: 'Sentry Integration',
+          description: 'Capture errors and performance traces with the official @sentry/nestjs SDK.',
+          docsUrl: 'https://docs.nestjs.com/recipes/sentry',
+        },
+        {
+          id: 'async-local-storage',
+          label: 'Async Local Storage',
+          description: 'Propagate per-request context (trace ids, tenants) without parameter drilling.',
+          docsUrl: 'https://docs.nestjs.com/recipes/async-local-storage',
+        },
+      ],
+    },
+    {
+      id: 'testing-tooling',
+      label: 'Testing & Tooling',
+      options: [
+        {
+          id: 'testing',
+          label: 'Testing (@nestjs/testing)',
+          description: 'Unit and e2e testing with Test.createTestingModule and dependency overrides.',
+          docsUrl: 'https://docs.nestjs.com/fundamentals/testing',
+        },
+        {
+          id: 'suites',
+          label: 'Suites (unit testing)',
+          description: 'Auto-mocked solitary/sociable unit tests for DI classes via the Suites framework.',
+          docsUrl: 'https://docs.nestjs.com/recipes/suites',
+        },
+        {
+          id: 'repl',
+          label: 'REPL',
+          description: 'Inspect and invoke providers interactively from a terminal REPL session.',
+          docsUrl: 'https://docs.nestjs.com/recipes/repl',
+        },
+        {
+          id: 'hot-reload',
+          label: 'Hot Reload',
+          description: 'Speed up development feedback with webpack HMR for the application entry.',
+          docsUrl: 'https://docs.nestjs.com/recipes/hot-reload',
+        },
+        {
+          id: 'nest-cli',
+          label: 'Nest CLI',
+          description: 'Scaffold, build, and serve projects with the nest command-line interface.',
+          docsUrl: 'https://docs.nestjs.com/cli/overview',
+        },
+        {
+          id: 'monorepo',
+          label: 'Monorepo Mode',
+          description: 'Manage multiple apps and shared libraries in a single CLI workspace.',
+          docsUrl: 'https://docs.nestjs.com/cli/monorepo',
+        },
+        {
+          id: 'nest-commander',
+          label: 'nest-commander',
+          description: 'Build full CLI applications with Nest DI on top of Commander.',
+          docsUrl: 'https://docs.nestjs.com/recipes/nest-commander',
+        },
+        {
+          id: 'router-module',
+          label: 'RouterModule',
+          description: 'Compose hierarchical route prefixes across modules for large HTTP apps.',
+          docsUrl: 'https://docs.nestjs.com/recipes/router-module',
+        },
+        {
+          id: 'serverless',
+          label: 'Serverless Deployment',
+          description: 'Package the app as a serverless handler and optimize cold starts.',
+          docsUrl: 'https://docs.nestjs.com/faq/serverless',
+        },
+      ],
+    },
+  ],
+};
