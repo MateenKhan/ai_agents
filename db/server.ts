@@ -690,6 +690,51 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     res.end(JSON.stringify(VERSION_INFO)); return;
   }
 
+  // Activepieces Webhook Integrations
+  if (req.method === 'GET' && (req.url || '').startsWith('/integrations/activepieces')) {
+    try {
+      const u = new URL(req.url, 'http://x');
+      const projectId = u.searchParams.get('projectId') || null;
+      const agentRole = u.searchParams.get('agentRole') || null;
+      if (!projectId && !agentRole) {
+        res.statusCode = 400; res.end(JSON.stringify({ error: 'Must provide projectId or agentRole' })); return;
+      }
+      const { getTasksDb } = await import('./tasks.js');
+      const db = getTasksDb();
+      let row;
+      if (projectId) {
+        row = await db.get(`SELECT * FROM activepieces_webhooks WHERE projectId = ?`, [projectId]);
+      } else {
+        row = await db.get(`SELECT * FROM activepieces_webhooks WHERE agentRole = ?`, [agentRole]);
+      }
+      res.end(JSON.stringify(row || {})); return;
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); return; }
+  }
+
+  if (req.method === 'PUT' && (req.url || '').split('?')[0] === '/integrations/activepieces') {
+    try {
+      const body = JSON.parse((await readBody(req)) || '{}');
+      const { projectId, agentRole, webhookUrl } = body;
+      if (!projectId && !agentRole) {
+        res.statusCode = 400; res.end(JSON.stringify({ error: 'Must provide projectId or agentRole' })); return;
+      }
+      if (!webhookUrl) {
+        res.statusCode = 400; res.end(JSON.stringify({ error: 'Must provide webhookUrl' })); return;
+      }
+      const { getTasksDb } = await import('./tasks.js');
+      const db = getTasksDb();
+      const now = new Date().toISOString();
+      if (projectId) {
+        await db.run(`DELETE FROM activepieces_webhooks WHERE projectId = ?`, [projectId]);
+        await db.run(`INSERT INTO activepieces_webhooks (projectId, webhookUrl, createdAt) VALUES (?, ?, ?)`, [projectId, webhookUrl, now]);
+      } else {
+        await db.run(`DELETE FROM activepieces_webhooks WHERE agentRole = ?`, [agentRole]);
+        await db.run(`INSERT INTO activepieces_webhooks (agentRole, webhookUrl, createdAt) VALUES (?, ?, ?)`, [agentRole, webhookUrl, now]);
+      }
+      res.end(JSON.stringify({ ok: true })); return;
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); return; }
+  }
+
   // --- Backend: create tables on a Postgres target ("Create tables" button) ---
   // POST /backend/migrate { url } → open a pgStore to that url, run the portable
   // migrations (see agentic/db/migrations.ts) to CREATE every table, then close the
