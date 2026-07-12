@@ -223,28 +223,19 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   mkdirSync(logsDir, { recursive: true });
   const logFile = join(logsDir, `${agentName}.log`);
 
-  // Read the task ONCE: its project drives the log file location, the git token lookup and
-  // the code-index scope. Three separate getTask() calls used to disagree under a concurrent
-  // project move, and each one paid a db round-trip on the spawn path.
   const task = await getTask(taskId).catch(() => null);
   const projectId = task?.projectId || 'default';
 
-  // The task's own append-only log, one file per task for the whole pipeline. Its absolute
-  // path is persisted on the row so the UI can reopen it after a reload or a server crash —
-  // the per-slot file above is truncated every run and shared between unrelated tasks.
   const taskFile = taskLogPath(projectId, taskId);
   if (taskFile) {
     try { mkdirSync(dirname(taskFile), { recursive: true }); } catch { /* disk */ }
     if (task && task.logPath !== taskFile) {
-      updateTask(taskId, { logPath: taskFile }).catch(() => { /* best-effort: never block a spawn */ });
+      updateTask(taskId, { logPath: taskFile }).catch(() => { /* best-effort */ });
     }
   }
 
   const cwd = await resolveCwd(taskId, worktree);
 
-  // Every line goes to BOTH files: the per-slot file is truncated per run (the Logs tab tails
-  // the current run), the per-task file only ever grows (the task's full history).
-  // Full ISO stamp (date + time) so the Logs tab can show either date+time or just time.
   const log = (line: string) => {
     const stamped = `[${new Date().toISOString()}] ${line}\n`;
     try { appendFileSync(logFile, stamped); } catch { /* disk */ }
@@ -254,103 +245,152 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   try { writeFileSync(logFile, header); } catch { /* disk */ }
   if (taskFile) { try { appendFileSync(taskFile, header); } catch { /* disk */ } }
 
-  const modelArgs = model ? ['--model', model] : [];
-  const profile = opts.permissionProfile || 'standard';
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--max-turns', '80', ...modelArgs, ...claudeFlags(profile, opts.role)];
-
-  if (profile !== 'dangerous') {
-    const claudeDir = join(cwd, '.claude');
-    try { mkdirSync(claudeDir, { recursive: true }); } catch {}
-    const settings = {
-      permissions: {
-        allow: ["Edit", "Write", "Bash(pnpm test)", "Bash(pnpm build)", "Bash(pnpm typecheck)", "Bash(git log*)", "Bash(git status)", "Bash(git diff*)", "Bash(git show*)"],
-        deny: ["Bash(curl*)", "Bash(wget*)", "Bash(git push*)", "Read(.env)", "Read(**/.secret.key)", "WebFetch", "WebSearch"]
-      }
-    };
-    try { writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(settings, null, 2)); } catch {}
-  }
-
-  // Agents authenticate git with their assigned PAT (or the '*' default) — injected as a
-  // per-process Authorization header scoped to the token's host. No token → no git auth env.
   let gitEnv: Record<string, string> = {};
   try {
-    // Credentials are account-wide, so the project is not part of the lookup any more.
     const tok = await resolveAgentToken(agentName);
     gitEnv = gitAuthEnv(tok);
     if (tok) log(`🔑 git auth: token "${tok.label}" (${tok.scope}) for ${tok.host}`);
-  } catch { /* token lookup is best-effort — never block a run */ }
+  } catch { /* best-effort */ }
 
-  let proc: ChildProcess;
-  try {
-    // CODE_INDEX_ROOT pins the shared code index to the HOST repo root (where the db server
-    // and local.db live), so `db:search`'s offline fallback resolves the ONE index even though
-    // the agent's cwd is a worktree that has no local.db of its own. The daemon path (127.0.0.1
-    // :6952/search) already works from any cwd; this makes the fallback work too.
-    // CODE_INDEX_PROJECT scopes the search to THIS task's project so a multi-project install
-    // queries the right per-project index (index-<projectId>.db), not the default one.
-    proc = spawn(CLAUDE_BIN, args, { cwd, env: { ...process.env, ...gitEnv, AGENT_NAME: agentName, TASK_ID: taskId, CODE_INDEX_ROOT: process.cwd(), CODE_INDEX_PROJECT: projectId } });
-  } catch (e: any) {
-    log(`SPAWN FAILED: ${e?.message || e}`);
-    return false;
-  }
-
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const ac = new AbortController();
   const startedAt = Date.now();
-  let tail = '';
-  let buf = '';
-
   let totalCost = 0;
+  let tail = '';
 
-  const record = (chunk: string) => {
-    const rec = running.get(agentName);
-    if (rec) rec.lastOutputAt = Date.now();
+  const recordOutput = (chunk: string) => {
     tail = (tail + chunk).slice(-4000);
-    buf += chunk;
-    const lines = buf.split('\n');
-    buf = lines.pop() || '';
-    for (const ln of lines) {
-      if (!ln.trim()) continue;
-      const action = parseEvent(ln);
-      if (action) log(action);
-      try {
-        const ev = JSON.parse(ln);
-        if (ev?.type === 'result' && typeof ev.total_cost_usd === 'number') {
-          totalCost += ev.total_cost_usd;
-        }
-      } catch {}
-    }
   };
 
-  proc.stdout?.on('data', d => record(d.toString()));
-  proc.stderr?.on('data', d => record(d.toString()));
+  const timer = setTimeout(() => { try { ac.abort(); } catch { /* gone */ } }, AGENT_TIMEOUT_MS);
+  running.set(agentName, { abortController: ac, taskId, startedAt, lastOutputAt: Date.now(), timer });
 
-  const timer = setTimeout(() => { try { proc.kill('SIGKILL'); } catch { /* gone */ } }, AGENT_TIMEOUT_MS);
+  log(`spawned: Anthropic Node.js Client -p … --model ${model}  (cwd=${cwd})`);
 
-  proc.on('exit', (code) => {
+  const tools: Anthropic.Tool[] = [];
+  if (opts.role !== 'plan') {
+    tools.push({
+      name: 'Bash',
+      description: 'Execute a bash command in the current working directory.',
+      input_schema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] }
+    });
+    tools.push({
+      name: 'Edit',
+      description: 'Edit a file by specifying search and replace strings.',
+      input_schema: { type: 'object', properties: { path: { type: 'string' }, search: { type: 'string' }, replace: { type: 'string' } }, required: ['path', 'search', 'replace'] }
+    });
+    tools.push({
+      name: 'Write',
+      description: 'Write text to a file.',
+      input_schema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] }
+    });
+  }
+  tools.push({
+    name: 'Read',
+    description: 'Read the contents of a file.',
+    input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] }
+  });
+
+  (async () => {
+    let messages: Anthropic.MessageParam[] = [{ role: 'user', content: prompt }];
+    let turns = 0;
+    const maxTurns = 80;
+    
+    while (turns < maxTurns) {
+      if (ac.signal.aborted) break;
+      turns++;
+
+      try {
+        const msg = await anthropic.messages.create({
+          model: model || 'claude-3-7-sonnet-20250219',
+          max_tokens: 8192,
+          messages,
+          tools: tools.length > 0 ? tools : undefined,
+          system: "You are an autonomous agent."
+        }, { signal: ac.signal });
+
+        const r = running.get(agentName);
+        if (r) r.lastOutputAt = Date.now();
+
+        messages.push({ role: 'assistant', content: msg.content });
+        let nextMessage: Anthropic.MessageParam = { role: 'user', content: [] };
+        
+        for (const block of msg.content) {
+          if (block.type === 'text') {
+            const lines = block.text.split('\n');
+            for (const ln of lines) if (ln.trim()) {
+              log(`· ${ln.trim().slice(0, 200)}`);
+              recordOutput(ln + '\n');
+            }
+          } else if (block.type === 'tool_use') {
+            const toolName = block.name;
+            const input: any = block.input;
+            
+            const detail = input.command || input.path || '';
+            log(`${toolName}: ${String(detail).slice(0, 160)}`);
+            recordOutput(`Tool ${toolName} called with ${JSON.stringify(input)}\n`);
+            
+            let result = '';
+            let isError = false;
+            try {
+              if (toolName === 'Bash') {
+                const env = { ...process.env, ...gitEnv, AGENT_NAME: agentName, TASK_ID: taskId, CODE_INDEX_ROOT: process.cwd(), CODE_INDEX_PROJECT: projectId };
+                result = execSync(input.command, { cwd, encoding: 'utf-8', timeout: 30000, env });
+              } else if (toolName === 'Read') {
+                result = readFileSync(join(cwd, input.path), 'utf-8');
+              } else if (toolName === 'Write') {
+                writeFileSync(join(cwd, input.path), input.content);
+                result = 'File written successfully.';
+              } else if (toolName === 'Edit') {
+                let text = readFileSync(join(cwd, input.path), 'utf-8');
+                text = text.replace(input.search, input.replace);
+                writeFileSync(join(cwd, input.path), text);
+                result = 'File edited successfully.';
+              } else {
+                result = 'Tool not found.';
+                isError = true;
+              }
+            } catch (e: any) {
+              result = String(e.message || e);
+              isError = true;
+            }
+            
+            recordOutput(`Tool result: ${result}\n`);
+            if (Array.isArray(nextMessage.content)) {
+              nextMessage.content.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: result,
+                is_error: isError
+              });
+            }
+          }
+        }
+        
+        if (msg.stop_reason === 'tool_use') {
+          messages.push(nextMessage);
+        } else {
+          break; // done
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') break;
+        log(`API Error: ${err.message}`);
+        recordOutput(`API Error: ${err.message}\n`);
+        break;
+      }
+    }
+
     clearTimeout(timer);
     running.delete(agentName);
     const durationMs = Date.now() - startedAt;
-    const failure: FailureKind = code === 0 ? 'none' : classify(tail);
+    const failure: FailureKind = tail.includes('API Error:') ? classify(tail) : 'none';
+    const code = failure === 'none' ? 0 : 1;
     log(`── EXIT code=${code} (${Math.round(durationMs / 1000)}s, ${failure}) ──`);
-    // A 'limit' exit carries the reset time (null when the message had no epoch — the
-    // orchestrator then falls back to its default pause window).
     onExit({ code, durationMs, failure, outputTail: tail, resetAt: failure === 'limit' ? parseLimitReset(tail) : null, costUsd: totalCost });
-  });
+  })();
 
-  // Spawn-level failure (e.g. `claude` not found / not launchable) fires 'error',
-  // NOT 'exit'. Without this the task would stay claimed forever with an empty log.
-  proc.on('error', (err: any) => {
-    clearTimeout(timer);
-    running.delete(agentName);
-    const msg = err?.message || String(err);
-    log(`── SPAWN ERROR: ${msg} — is '${CLAUDE_BIN}' on PATH? (set CLAUDE_BIN to the full path if not) ──`);
-    onExit({ code: null, durationMs: Date.now() - startedAt, failure: 'crash', outputTail: msg });
-  });
-
-  running.set(agentName, { proc, taskId, startedAt, lastOutputAt: Date.now(), timer });
-  log(`spawned: ${CLAUDE_BIN} -p … --model ${model}  (cwd=${cwd})`);
   return true;
 }
-
 export function isAgentBusy(agentName: string): boolean {
   return running.has(agentName);
 }

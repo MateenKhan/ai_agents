@@ -78,6 +78,7 @@
     "agents:vps": "set -a; [ -f .env ] && . ./.env; set +a; pnpm run agents"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@huggingface/transformers": "^4.2.0",
     "@typescript-eslint/typescript-estree": "^8.59.0",
     "@xyflow/react": "^12.11.2",
