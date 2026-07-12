@@ -89,7 +89,8 @@ usable and safe out-of-box experience. Everything below is ordered by priority.
 6. **Demo GIF in the README** — record a task flowing plan→build→qa→review→merge with the
    built-in recorder. Highest-ROI marketing artifact; the README placeholder is waiting.
 
-7. **Live events feed — MANDATORY.** The event data exists (`agent_logs` rows + the task
+7. **Live events feed — MANDATORY.** *(SHIPPED — Events tab: EventsFeed.tsx + GET /events.)*
+   The event data exists (`agent_logs` rows + the task
    journal) but the UI has no single live activity view. Add an **Events** table:
 
    | Task | Agent | Action | Link | Time | Attempt |
@@ -103,7 +104,9 @@ usable and safe out-of-box experience. Everything below is ordered by priority.
    - Filterable by task/agent; newest first; polls like the board does. Lives as a Board-tab
      panel or its own tab — decide in UI review.
 
-8. **Usage-aware pause + auto-resume — MANDATORY.** When the Claude plan limit hits, agents
+8. **Usage-aware pause + auto-resume — MANDATORY.** *(SHIPPED — `limit` FailureKind +
+   `system_state.limitPausedUntil` pause gate + LimitBanner countdown. Still to prove live:
+   an actual limit window observed end-to-end.)* When the Claude plan limit hits, agents
    fail; today that's classified as a generic `network` failure and blindly retried/backed
    off. Instead:
    - Parse the limit error from agent output — the CLI's message carries the **reset

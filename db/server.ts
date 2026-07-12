@@ -133,7 +133,7 @@ function ragAnswer(question: string, ctx: string, cwd: string): Promise<string> 
   });
 }
 
-import { getAllTasks, getTask, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, setProjectReadiness, setProjectMaxConcurrency, getAgentDefaults, setAgentDefaults, type RunConfig } from './tasks.js';
+import { getAllTasks, getTask, createTask, updateTask, deleteTask, bulkUpdatePriorities, getBoardSettings, updateBoardSettings, getTasksDb, getLogsDb, initTasksSchema, runMigrations, getGitConfig, setGitConfig, listGitTokensRaw, getGitTokenRaw, addGitToken, updateGitToken, deleteGitToken, getTokenAssignments, setTokenAssignment, getCodeIndexConfig, setCodeIndexConfig, getHeartbeat, getRecentLogs, listProjects, getProject, createProject, updateProject, deleteProject, createPendingGithubApp, getGithubApp, listGithubApps, listGithubAppsRaw, updateGithubApp, deleteGithubApp, mintInstallationToken, listAppInstallations, listInstallationRepos, setProjectRunConfig, setProjectReadiness, setProjectMaxConcurrency, getAgentDefaults, setAgentDefaults, type RunConfig, type Task } from './tasks.js';
 // Datastore backend config — the persisted choice + its encrypted URL. Applied at boot.
 import { getBackendConfig, setBackendConfig, getMaskedBackendConfig } from './backendConfig.ts';
 import { specIssues } from './intakeGate.ts';
@@ -1515,8 +1515,17 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   // --- Agent Status API ---
-  if (req.method === 'GET' && req.url === '/agent-status') {
-    res.end(JSON.stringify(Array.from(ACTIVE_AGENTS)));
+  // Also reports the plan-limit pause window: the orchestrator persists an ISO timestamp
+  // under system_state.limitPausedUntil while the swarm waits for the limit to reset.
+  // Read defensively — the table (or row) may not exist yet, and this diagnostic route
+  // must always respond — so any failure just reports null.
+  if (req.method === 'GET' && (req.url || '').split('?')[0] === '/agent-status') {
+    let limitPausedUntil: string | null = null;
+    try {
+      const row = getTasksDb().prepare(`SELECT value FROM system_state WHERE key = 'limitPausedUntil'`).get() as any;
+      limitPausedUntil = row?.value ?? null;
+    } catch { /* system_state not created yet (parallel migration) — report null */ }
+    res.end(JSON.stringify({ agents: Array.from(ACTIVE_AGENTS), limitPausedUntil }));
     return;
   }
 
@@ -3119,6 +3128,44 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const agentStatus = req.url === '/orchestrator/pause' ? 'PAUSED' : 'STARTED';
       await updateBoardSettings({ ...s, agentStatus });
       res.end(JSON.stringify({ ok: true }));
+    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── live events feed ── GET /events?project=&limit=&offset= — recent agent_logs rows
+  // (newest first) joined with task metadata from the tasks DB for the UI's Events tab.
+  // Tasks may have been deleted since their log lines were written; those rows still
+  // render, with taskTitle/agent/attempt/logPath null. limit defaults to 100 (hard cap
+  // 500); offset pages further back. getRecentLogs has no offset parameter, so we
+  // over-fetch offset+limit rows and slice — the cap keeps that bounded.
+  if (req.method === 'GET' && (req.url || '').split('?')[0] === '/events') {
+    try {
+      const u = new URL(req.url!, 'http://x');
+      const limit = Math.min(500, Math.max(1, parseInt(u.searchParams.get('limit') || '', 10) || 100));
+      const offset = Math.max(0, parseInt(u.searchParams.get('offset') || '', 10) || 0);
+      const pid = projectIdOf(req);
+      const rows = (await getRecentLogs(offset + limit, pid)).slice(offset, offset + limit);
+      // One tasks read for the whole page, not one per row. Rows whose task is gone
+      // simply miss from the map (logs.db outlives task deletion by design).
+      const tasksById = new Map<string, Task>();
+      try { for (const t of await getAllTasks(pid)) tasksById.set(t.id, t); } catch { /* tasks db optional */ }
+      const events = rows.map(r => {
+        const t = tasksById.get(r.taskId);
+        // claimedBy is '<workerId>:<agentName>' — the readable name is the last segment.
+        const agent = t?.claimedBy ? (String(t.claimedBy).split(':').pop() || null) : null;
+        return {
+          id: r.id,
+          taskId: r.taskId,
+          taskTitle: t?.title ?? null,
+          agent,
+          message: r.msg,
+          type: r.type,
+          ts: r.ts,
+          attempt: t?.attempts ?? null,
+          logPath: t?.logPath ?? null,
+        };
+      });
+      res.end(JSON.stringify({ ok: true, events }));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }

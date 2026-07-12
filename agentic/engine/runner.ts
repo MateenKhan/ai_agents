@@ -189,8 +189,27 @@ function parseEvent(line: string): string | null {
 
 // ── spawn / kill ───────────────────────────────────────────────────────────────
 
-function classify(out: string): FailureKind {
+/** Extract the reset epoch from the CLI's plan-limit message (e.g.
+ *  "Claude AI usage limit reached|1783725600") and return it as an ISO timestamp. The epoch
+ *  may be seconds or milliseconds — values below 10^12 are seconds (10^12 ms is ~2001, so no
+ *  real reset time is ambiguous). Null when the message carries no epoch. Pure — exported for
+ *  the orchestrator's pause computation and for tests. */
+export function parseLimitReset(output: string): string | null {
+  const m = /usage limit reached\|?\s*(\d{9,13})/i.exec(output || '');
+  if (!m) return null;
+  let epoch = parseInt(m[1], 10);
+  if (epoch < 1e12) epoch *= 1000; // seconds → milliseconds
+  return new Date(epoch).toISOString();
+}
+
+/** Classify a failed run's output. Pure — exported for tests.
+ *  'limit' MUST be checked first, and only on the explicit plan-limit message: that output can
+ *  also contain 429/rate-limit text, and demoting it to 'network' sends it to the circuit
+ *  breaker's blind retries — burning the task's attempts on a window that stays shut for hours.
+ *  A plain 429/overloaded/rate-limit WITHOUT the message stays 'network' (the breaker owns those). */
+export function classify(out: string): FailureKind {
   const o = out.toLowerCase();
+  if (/usage limit reached/.test(o)) return 'limit';
   if (/enotfound|econnrefused|econnreset|etimedout|fetch failed|network|socket hang up|rate.?limit|overloaded|429|529|503/.test(o)) return 'network';
   return 'crash';
 }
@@ -290,7 +309,9 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
     const durationMs = Date.now() - startedAt;
     const failure: FailureKind = code === 0 ? 'none' : classify(tail);
     log(`── EXIT code=${code} (${Math.round(durationMs / 1000)}s, ${failure}) ──`);
-    onExit({ code, durationMs, failure, outputTail: tail });
+    // A 'limit' exit carries the reset time (null when the message had no epoch — the
+    // orchestrator then falls back to its default pause window).
+    onExit({ code, durationMs, failure, outputTail: tail, resetAt: failure === 'limit' ? parseLimitReset(tail) : null });
   });
 
   // Spawn-level failure (e.g. `claude` not found / not launchable) fires 'error',

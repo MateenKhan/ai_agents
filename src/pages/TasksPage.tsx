@@ -37,6 +37,8 @@ const PromptModal = lazy(() => import('./tasks/components/PromptModal').then(m =
 const SettingsModal = lazy(() => import('./tasks/components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const TerminalMonitor = lazy(() => import('./tasks/components/TerminalMonitor').then(m => ({ default: m.TerminalMonitor })));
 const LogsTab = lazy(() => import('./tasks/components/LogsTab'));
+const EventsFeed = lazy(() => import('./tasks/components/EventsFeed'));
+const LimitBanner = lazy(() => import('./tasks/components/LimitBanner'));
 const DbTab = lazy(() => import('./tasks/components/DbTab'));
 const AgentsTab = lazy(() => import('./tasks/components/AgentsTab'));
 const GitPanel = lazy(() => import('./tasks/components/GitPanel').then(m => ({ default: m.GitPanel })));
@@ -81,8 +83,8 @@ const TasksPage: React.FC = () => {
   const { tab: urlTab } = useParams<{ tab?: string }>();
   // `search` is not a tab — it is the Search view of the Context tab. The path is kept so
   // the old /tasks/search deep link (and anyone's bookmark) still lands somewhere correct.
-  const PATH_TO_TAB: Record<string, TabId> = { context: 'context', search: 'context', analytics: 'analytics', logs: 'logs', database: 'db', agents: 'agents' };
-  const TAB_TO_PATH: Record<TabId, string> = { board: '', context: 'context', analytics: 'analytics', logs: 'logs', db: 'database', agents: 'agents' };
+  const PATH_TO_TAB: Record<string, TabId> = { context: 'context', search: 'context', analytics: 'analytics', events: 'events', logs: 'logs', database: 'db', agents: 'agents' };
+  const TAB_TO_PATH: Record<TabId, string> = { board: '', context: 'context', analytics: 'analytics', events: 'events', logs: 'logs', db: 'database', agents: 'agents' };
   const activeTab: TabId = PATH_TO_TAB[urlTab ?? ''] ?? 'board';
   const setActiveTab = (t: TabId) => navigate(`/tasks${TAB_TO_PATH[t] ? '/' + TAB_TO_PATH[t] : ''}`);
 
@@ -525,6 +527,11 @@ const TasksPage: React.FC = () => {
           </button>
         </div>
       )}
+      {/* Plan-limit pause banner — amber sibling of the offline banner above. Self-contained:
+          it polls /agent-status itself and renders nothing unless the swarm is actually paused. */}
+      <Suspense fallback={null}>
+        <LimitBanner />
+      </Suspense>
       {/* The header is two columns: brand + tabs on the left, the tank on the right, sharing
           a top edge. The tabs live up here so the tank can span both rows without leaving
           dead space beside them. */}
@@ -556,6 +563,10 @@ const TasksPage: React.FC = () => {
         ) : activeTab === 'analytics' ? (
           <Suspense fallback={<div className="p-10 flex justify-center"><PiranhaLoader size={40} label="Loading analytics…" /></div>}>
             <AnalyticsTab tasks={tasks} />
+          </Suspense>
+        ) : activeTab === 'events' ? (
+          <Suspense fallback={<div className="p-10 flex justify-center"><PiranhaLoader size={40} label="Loading events…" /></div>}>
+            <EventsFeed onOpenLog={(_taskId, agent) => { setLogsAgent(agent ?? null); setActiveTab('logs'); }} />
           </Suspense>
         ) : activeTab === 'logs' ? (
           <Suspense fallback={<div className="p-10 flex justify-center"><PiranhaLoader size={40} label="Loading logs…" /></div>}>

@@ -149,7 +149,8 @@ caller are stripped.
 | `GET` | `/agent-logs/:name` | `?project` | Array of `{ id, message, timestamp }` (`__clone__`/`__index__` are synthetic streams) |
 | `DELETE` | `/agent-logs/:name` | — | `{ ok }` — truncate one agent log file |
 | `GET` | `/agent-log-files` | `?project` | `{ files }` — the Logs-tab chips |
-| `GET` | `/agent-status` | — | Array of active agent names |
+| `GET` | `/events` | `?project`, `?limit` (default 100, cap 500), `?offset` | `{ ok, events: [{ id, taskId, taskTitle, agent, message, type, ts, attempt, logPath }] }` — newest first; deleted tasks render with `taskTitle` null |
+| `GET` | `/agent-status` | — | `{ agents, limitPausedUntil }` — active agent names + the plan-limit pause window (ISO timestamp, or `null` when not paused) |
 | `POST` | `/agent-stop/:name` | — | `{ ok }` — legacy no-op that clears a UI-tracking entry |
 | `GET` | `/db-usage` | — | `{ usage }` — per-agent DB usage summary |
 

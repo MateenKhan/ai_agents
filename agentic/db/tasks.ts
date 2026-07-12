@@ -432,6 +432,23 @@ export async function releaseLock(name: string, holder: string): Promise<void> {
   await s.run(`DELETE FROM locks WHERE name = ? AND holder = ?`, [name, holder]);
 }
 
+// ── system state (orchestrator-wide durable flags) ──────────────────────────────
+// One row per key in system_state. First key: 'limitPausedUntil' — the ISO time the
+// plan-limit pause lifts. Persisted (not in-memory) so a restart mid-pause stays paused.
+
+export async function getSystemState(key: string): Promise<string | null> {
+  const s = await store();
+  const r = await s.get<{ value: string | null }>(`SELECT value FROM system_state WHERE key = ?`, [key]);
+  return r?.value ?? null;
+}
+
+/** Set a system-state value; null deletes the row (absent key reads back as null). */
+export async function setSystemState(key: string, value: string | null): Promise<void> {
+  const s = await store();
+  if (value === null) { await s.run(`DELETE FROM system_state WHERE key = ?`, [key]); return; }
+  await upsert(s, 'system_state', { key, value }, ['key']);
+}
+
 // ── board settings + heartbeat (orchestrator liveness) ─────────────────────────
 
 export async function getBoardSettings(): Promise<any> {

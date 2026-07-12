@@ -33,8 +33,10 @@ export type WorktreeMode = 'plan' | 'create' | 'reuse' | 'none';
 /** QA outcome — gates whether work advances to merge or bounces back to build. */
 export type QaVerdict = 'pass' | 'fail' | null;
 
-/** How a headless agent run ended — feeds the circuit breaker + retry policy. */
-export type FailureKind = 'network' | 'timeout' | 'stall' | 'crash' | 'none';
+/** How a headless agent run ended — feeds the circuit breaker + retry policy.
+ *  'limit' = the user's Claude plan usage window is exhausted: not this task's fault and not
+ *  a transient outage — every agent would fail identically, so the swarm pauses until reset. */
+export type FailureKind = 'network' | 'timeout' | 'stall' | 'crash' | 'limit' | 'none';
 
 /** A single testable acceptance scenario (Gherkin GIVEN/WHEN/THEN).
  *  Replaces the old free-text "Definition of Done" — every task is a set of these. */
@@ -208,6 +210,10 @@ export interface RunResult {
   durationMs: number;
   failure: FailureKind;
   outputTail: string;
+  /** Only meaningful when failure === 'limit': the ISO time the plan's usage window resets,
+   *  parsed from the CLI's message. Null when the message carried no epoch — the orchestrator
+   *  then falls back to a default pause. */
+  resetAt?: string | null;
 }
 
 /** One structured action parsed from an agent's stream-json output (for the Logs UI). */

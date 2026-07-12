@@ -58,6 +58,7 @@ import { setConfig, getConfig } from '../runtime-context';
 import {
   getAllTasks, getTask, updateTask, getBoardSettings, updateBoardSettings, beatHeartbeat, getTasksDb, getProject, listProjects, getAgentDefaults,
   WORKER_ID, registerWorker, heartbeatWorker, listStaleWorkers, claimTask, acquireLock, releaseLock,
+  getSystemState, setSystemState,
 } from '../db/tasks';
 import { isPostgres } from '../db/getStore';
 import { addAgentLog, getLogsDb } from '../db/logs';
@@ -255,6 +256,66 @@ function startDbProbe(): void {
   tick();
 }
 
+// ── plan-limit pause ─────────────────────────────────────────────────────────────
+// When `claude -p` fails because the user's Claude PLAN usage window is exhausted, the
+// failure says nothing about the task and nothing transient about the network: every
+// agent dispatched before the window resets fails the same way, burning attempts. So the
+// WHOLE swarm pauses. The resume time is persisted in system_state ('limitPausedUntil'),
+// which is what makes a restart during the pause stay paused — the dispatch gate reads
+// the durable value, so the boot path needs no special handling.
+const LIMIT_PAUSE_KEY = 'limitPausedUntil';
+// The CLI's limit message usually carries the reset epoch; when it doesn't, wait this long.
+const LIMIT_PAUSE_DEFAULT_MS = 30 * 60 * 1000;
+let limitPausedUntilMs: number | null = null; // in-memory mirror of the persisted value
+let limitPauseAnnounced = false;              // so entering the pause logs exactly once
+
+/** Pause the swarm for a 'limit' run result and put the task back in the pool untouched:
+ *  the attempt dispatch() spent is refunded, nothing dead-letters, and the circuit breaker
+ *  is not fed — a shut usage window is neither the task's fault nor an API outage. */
+async function pauseForLimit(task: Task, r: RunResult): Promise<void> {
+  // 1–3 min of jitter past the reset, so a fleet sharing one plan doesn't slam the API
+  // in the same second the window opens.
+  const jitter = 60_000 + Math.floor(Math.random() * 120_000);
+  const base = r.resetAt ? Date.parse(r.resetAt) : NaN;
+  const until = (Number.isFinite(base) ? base : Date.now() + LIMIT_PAUSE_DEFAULT_MS) + jitter;
+  const iso = new Date(until).toISOString();
+  await setSystemState(LIMIT_PAUSE_KEY, iso);
+  limitPausedUntilMs = until;
+  limitPauseAnnounced = true; // this IS the entering-the-pause announcement
+  await updateTask(task.id, {
+    started: null, claimedBy: null, leaseExpiresAt: null,
+    attempts: Math.max(0, (task.attempts || 1) - 1), // refund — the run never got to work
+    nextRetryAt: iso, lastError: 'plan usage limit reached — swarm paused until the window resets',
+  });
+  log(task.id, `⏸ plan limit reached — swarm paused until ${iso}`, 'warning');
+  setStatus(`⏸ plan limit reached — swarm paused until ${iso}`, true);
+}
+
+/** The dispatch gate: true while the persisted pause is in force. Reads the durable value
+ *  once per call (dispatchPending runs once per loop tick, which already does DB reads), so
+ *  a pause set by a previous process — or by another worker sharing the DB — is honoured.
+ *  Clears the value and logs the resume exactly once when the window passes. */
+async function limitPauseActive(): Promise<boolean> {
+  const iso = await getSystemState(LIMIT_PAUSE_KEY);
+  if (!iso) { limitPausedUntilMs = null; limitPauseAnnounced = false; return false; }
+  const until = Date.parse(iso);
+  if (Number.isFinite(until) && until > Date.now()) {
+    if (!limitPauseAnnounced || limitPausedUntilMs !== until) {
+      log('__system__', `⏸ plan limit reached — swarm paused until ${iso}`, 'warning');
+      setStatus(`⏸ plan limit reached — swarm paused until ${iso}`, true);
+    }
+    limitPausedUntilMs = until;
+    limitPauseAnnounced = true;
+    return true;
+  }
+  // The window passed (or the stored value is garbage) — clear it and resume.
+  await setSystemState(LIMIT_PAUSE_KEY, null);
+  limitPausedUntilMs = null;
+  limitPauseAnnounced = false;
+  log('__system__', '▶ limit window over — resuming dispatch', 'success');
+  return false;
+}
+
 // How many times a task may be escalated to the architect for a re-plan before it
 // dead-letters to BLOCKED (env RESCUE_MAX, default 1 — one re-plan then human).
 const MAX_RESCUE = Math.max(0, parseInt(process.env.RESCUE_MAX || '') || 1);
@@ -359,6 +420,10 @@ function canSpawn(active: number): boolean {
 async function computeSteadyStatus(): Promise<string> {
   if (breaker.state === 'open') return '⛔ Anthropic API unreachable — dispatch paused, retrying every 15s';
   if (dbBreaker.state === 'open') return '⛔ db-server offline — healing, dispatch paused';
+  // The in-memory mirror is refreshed by the dispatch gate each tick — cheap and current.
+  if (limitPausedUntilMs && limitPausedUntilMs > Date.now()) {
+    return `⏸ plan limit reached — swarm paused until ${new Date(limitPausedUntilMs).toISOString()}`;
+  }
   const working = agentTaskMap.size;
   const pending = (await allTasks()).filter(
     x => x.status === 'WORKING' && !x.started && x.control !== 'paused' && x.control !== 'stop'
@@ -727,6 +792,9 @@ async function dispatch(task: Task, route: Routed, name: string): Promise<void> 
 }
 
 async function dispatchPending(): Promise<void> {
+  // Plan-limit pause: while the persisted window is in force, dispatch NOTHING this tick —
+  // the plan's usage budget is account-wide, so every spawn would fail identically.
+  if (await limitPauseActive()) return;
   const now = Date.now();
   const pending = (await allTasks()).filter(
     // 'paused' holds a task out of dispatch; 'stop' is a kill-now request handled by the
@@ -1133,6 +1201,15 @@ async function handleAgentExit(name: string, taskId: string, route: Routed, r: R
     }
 
     log(taskId, `✅ ${role} finished "${stage.id}" → reported "${outcome}" → ${decision.to}${legacy ? ' (legacy stage write)' : ''}`, 'success');
+    return;
+  }
+
+  // PLAN LIMIT — handled before the merge-conflict kickback and before failTask, because it
+  // is neither: a merge that died on the usage limit did not conflict (bouncing it would cost
+  // the dev a pointless rebase cycle), and failTask's retry/dead-letter budget must not be
+  // spent on a window that stays shut for hours. Pause the swarm; the task goes back untouched.
+  if (r.failure === 'limit') {
+    await pauseForLimit(fresh, r);
     return;
   }
 

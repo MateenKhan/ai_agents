@@ -30,19 +30,19 @@ Spec for the items: docs/SPEC.md → Release 1 → P0 items 7 and 8. Do not comm
 ## Wave status
 | # | Task | Files | Agent | Status |
 |---|---|---|---|---|
-| 1 | Limit detection + global pause/auto-resume (backend) | agentic/types.ts, agentic/engine/runner.ts, agentic/engine/orchestrator.ts, agentic/db/migrations.ts, agentic/db/tasks.ts, agentic/__tests__/limitPause.test.ts | dispatched | 🚧 |
-| 2 | /events endpoint + limitPausedUntil on /agent-status + api-reference | db/server.ts, docs/api-reference.md, db/__tests__/events.test.ts | dispatched | 🚧 |
-| 3 | EventsFeed table component (Task/Agent/Action/Link/Time/Attempt) | src/pages/tasks/components/EventsFeed.tsx + __tests__/EventsFeed.test.tsx | dispatched | 🚧 |
-| 4 | LimitBanner component (countdown banner) | src/pages/tasks/components/LimitBanner.tsx + __tests__/LimitBanner.test.tsx | dispatched | 🚧 |
+| 1 | Limit detection + global pause/auto-resume (backend) | agentic/types.ts, agentic/engine/runner.ts, agentic/engine/orchestrator.ts, agentic/db/migrations.ts, agentic/db/tasks.ts, agentic/__tests__/limitPause.test.ts | dispatched | ✅ 10/10 tests; limit branch in handleAgentExit before merge-kickback; pause gate reads durable kv each tick (restart-safe) |
+| 2 | /events endpoint + limitPausedUntil on /agent-status + api-reference | db/server.ts, docs/api-reference.md | dispatched | ✅ tsc clean; tests skipped (server binds port at import — no seam; the planned server-split fixes this). ⚠ DEVIATION: /agent-status changed bare-array → { agents, limitPausedUntil } (grep found no in-tree consumers; governor must re-verify) |
+| 3 | EventsFeed table component (Task/Agent/Action/Link/Time/Attempt) | src/pages/tasks/components/EventsFeed.tsx + __tests__/EventsFeed.test.tsx | dispatched | ✅ 7/7 tests; props { onOpenLog?(taskId, agent) }; polls /events every 5s; filter bar; sticky-header table |
+| 4 | LimitBanner component (countdown banner) | src/pages/tasks/components/LimitBanner.tsx + __tests__/LimitBanner.test.tsx | dispatched | ✅ 5/5 tests; no props (self-contained poll); amber-100/900 for AA contrast; icon CirclePause |
 
 ## Integration (governor = the orchestrating session; do AFTER agents finish)
-- [ ] Review each agent's diff; agents edited ONLY their assigned files.
-- [ ] Wire EventsFeed into the UI (tabsConfig.ts + TasksPage.tsx — new "Events" tab, closeable).
-- [ ] Wire LimitBanner into TasksPage.tsx next to the offline banner.
-- [ ] `pnpm run typecheck` clean; full `pnpm test` green; `pnpm run build` clean.
-- [ ] Update SPEC P0 items 7+8 status; update this ledger; report to the user. NO commits.
+- [x] Review each agent's diff; agents edited ONLY their assigned files. (Confirmed via git status; the /agent-status shape deviation was verified safe — LimitBanner is the only in-tree consumer.)
+- [x] Wire EventsFeed into the UI (tabsConfig.ts + TasksPage.tsx — new "Events" tab, closeable; onOpenLog opens the Logs tab on that agent).
+- [x] Wire LimitBanner into TasksPage.tsx next to the offline banner.
+- [x] `pnpm run typecheck` clean; full `pnpm test` green (684/684, +22 from the wave; tabsConfig test expectation updated for the new tab); `pnpm run build` clean.
+- [x] SPEC P0 items 7+8 marked SHIPPED; safety-net cron deleted. NO commits (per standing rule).
 
-## Next actions (for a resumed session)
-1. Check wave status above; if agents are still running, wait/monitor.
-2. If agents finished: do the Integration checklist.
-3. If everything is checked: CronDelete the safety-net job and stop.
+## WAVE COMPLETE — 2026-07-12
+All work is uncommitted in the working tree for the user's review. Note: the user committed
+the earlier session's work themselves as 75624a2 mid-wave. Remaining follow-up (not this
+wave): observe a real limit window end-to-end (SPEC §6 verification backlog).

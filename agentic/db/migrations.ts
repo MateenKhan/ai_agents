@@ -312,6 +312,15 @@ const CONTEXT_FILES: Col[] = [
   { name: 'lastUsedAt', type: 'ts', notNull: true },
 ];
 
+// ── System state (tasks group) ───────────────────────────────────────────────
+// Tiny durable key/value slot for orchestrator-wide flags that must survive a restart.
+// First key: 'limitPausedUntil' — the ISO time the plan-limit pause lifts, so a process
+// that reboots mid-pause stays paused instead of resuming into a shut usage window.
+const SYSTEM_STATE: Col[] = [
+  { name: 'key', type: 'text', pk: true },
+  { name: 'value', type: 'text' },
+];
+
 const CONTEXT_OPS: Col[] = [
   { name: 'id', type: 'serial' },
   { name: 'projectId', type: 'text', notNull: true },
@@ -390,7 +399,7 @@ const ADDITIVE: Array<[string, Col]> = [
 export const ALL_COLUMN_NAMES: readonly string[] = Array.from(new Set(
   ([] as Col[]).concat(
     TASKS, BOARD_SETTINGS, GIT_TOKENS, GIT_TOKEN_ASSIGNMENTS, GITHUB_APPS, PROJECTS,
-    AGENTS, AGENT_META, AGENT_LOGS, AGENT_DB_USAGE, MEMORY, WORKERS, LOCKS,
+    AGENTS, AGENT_META, AGENT_LOGS, AGENT_DB_USAGE, MEMORY, WORKERS, LOCKS, SYSTEM_STATE,
     CONTEXT_FILES, CONTEXT_OPS,
     ADDITIVE.map(([, c]) => c),
   ).map(c => c.name),
@@ -410,7 +419,7 @@ export const ALL_COLUMN_NAMES: readonly string[] = Array.from(new Set(
 const TABLE_GROUP: Record<string, DbGroup> = {
   tasks: 'tasks', board_settings: 'tasks', git_tokens: 'tasks', git_token_assignments: 'tasks',
   github_apps: 'tasks', projects: 'tasks', agents: 'tasks', agent_meta: 'tasks', memory: 'tasks',
-  workers: 'tasks', locks: 'tasks',
+  workers: 'tasks', locks: 'tasks', system_state: 'tasks',
   agent_logs: 'logs', agent_db_usage: 'logs', context_files: 'logs', context_ops: 'logs',
 };
 
@@ -418,7 +427,7 @@ const BASE_TABLES: Array<[string, Col[]]> = [
   ['tasks', TASKS], ['board_settings', BOARD_SETTINGS], ['git_tokens', GIT_TOKENS],
   ['git_token_assignments', GIT_TOKEN_ASSIGNMENTS], ['github_apps', GITHUB_APPS],
   ['projects', PROJECTS], ['agents', AGENTS], ['agent_meta', AGENT_META],
-  ['memory', MEMORY], ['workers', WORKERS], ['locks', LOCKS],
+  ['memory', MEMORY], ['workers', WORKERS], ['locks', LOCKS], ['system_state', SYSTEM_STATE],
   ['agent_logs', AGENT_LOGS], ['agent_db_usage', AGENT_DB_USAGE],
   ['context_files', CONTEXT_FILES], ['context_ops', CONTEXT_OPS],
 ];
