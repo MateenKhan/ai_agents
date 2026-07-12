@@ -9,6 +9,7 @@ import { getConfig } from '../runtime-context';
 import { openDb } from './connection';
 import type { Store } from './store';
 import { getStore, ensureMigrated } from './getStore';
+import { redactSecrets } from '../redact';
 
 export interface AgentLog {
   id?: number;
@@ -44,8 +45,11 @@ export async function addAgentLog(
   projectId?: string | null,
 ): Promise<void> {
   const s = await store();
+  // Redact at the STORAGE layer so no log line — whatever call site produced it — can
+  // persist a token in plaintext (security-audit-2026-07 §6b). Centralized here, it is
+  // unmissable, unlike the previous scattered per-call-site redaction.
   await s.run(`INSERT INTO agent_logs (taskId, message, type, timestamp, projectId) VALUES (?,?,?,?,?)`,
-    [taskId, message, type, new Date().toISOString(), projectId ?? null]);
+    [taskId, redactSecrets(message), type, new Date().toISOString(), projectId ?? null]);
 }
 
 export async function getAgentLogs(taskId: string, limit = 200): Promise<AgentLog[]> {

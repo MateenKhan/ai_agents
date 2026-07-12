@@ -9,8 +9,8 @@ import { getDb, getDbFor, resetDb, resetDbFor } from './db.js';
 import { fromBuffer, cosine } from './embedder.js';
 // Shared code index (Postgres + pgvector) — only used when getBackendConfig().kind==='postgres'.
 import { codeIndexIsPostgres, pgSemanticSearch } from './indexPg.js';
-import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync, renameSync } from 'fs';
-import { join, dirname, resolve, isAbsolute, basename } from 'path';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync, realpathSync } from 'fs';
+import { join, dirname, resolve, isAbsolute, basename, sep } from 'path';
 import { store } from '../agentic/db/tasks.js';
 import { fileURLToPath } from 'url';
 import { Router } from './router.js';
@@ -122,7 +122,12 @@ function ragAnswer(question: string, ctx: string, cwd: string): Promise<string> 
 
   const bin = process.env.CLAUDE_BIN || 'claude';
   const model = process.env.RAG_MODEL || 'sonnet';
-  const flags = (process.env.CLAUDE_FLAGS || '--dangerously-skip-permissions').split(' ').filter(Boolean);
+  // RAG is a read-only code-search assistant: route through the sandbox flags (architect
+  // is a read-only role → acceptEdits + --disallowedTools Edit,Write) instead of the raw
+  // --dangerously-skip-permissions bypass. An explicit CLAUDE_FLAGS still wins for power users.
+  const flags = process.env.CLAUDE_FLAGS
+    ? process.env.CLAUDE_FLAGS.split(' ').filter(Boolean)
+    : sandboxSpawnFlags('architect', 'standard');
   const args = ['-p', '--model', model, '--output-format', 'text', ...flags];
 
   return new Promise(resolve => {
@@ -175,6 +180,46 @@ export function projectIdOf(req: IncomingMessage, body?: any): string {
 export async function projectRepoPath(projectId: string): Promise<string> {
   try { const p = await getProject(projectId); if (p?.repoPath) return p.repoPath; } catch { /* no db */ }
   return process.cwd();
+}
+
+// ── /file confinement (security-audit-2026-07 §1b/1c/6a) ─────────────────────────
+// The HTTP file API is NOT sandboxed the way agents are, so its confinement lives here.
+// Sensitive files are denied regardless of project (the AES master key, env files,
+// any SQLite DB) so neither the default-project host-repo leak nor a user repo can
+// serve them.
+export function isDeniedFile(rel: string): boolean {
+  const base = basename(String(rel || '')).toLowerCase();
+  if (base === '.secret.key') return true;               // AES-256-GCM master key
+  if (base === '.env' || base.startsWith('.env.')) return true;
+  if (/\.db(-wal|-shm)?$/.test(base)) return true;       // *.db and its WAL/SHM sidecars
+  return false;
+}
+
+/** Confine a repo-relative path under `root` with realpath, so symlinks/`..`/absolute
+ *  paths cannot escape and the host repo (default project → process.cwd()) is refused
+ *  outright. Returns the absolute path to operate on, or `{ error, status }` to send.
+ *  Applied to EVERY /file verb (GET/PUT/POST/DELETE/ai-edit) — the string-prefix guard
+ *  it replaces was symlink-unsafe and skipped the host-repo refusal on the write verbs. */
+export type ConfineResult = { abs: string } | { error: string; status: number };
+export function confineRepoPath(root: string, rel: string): ConfineResult {
+  // The 'default' project's repo IS the orchestrator's own install (host cwd). The file
+  // API is for USER project repos only — never expose/modify the host's own tree.
+  if (resolve(root) === resolve(process.cwd())) return { error: 'file API is disabled for the host repo', status: 403 };
+  if (typeof rel !== 'string' || !rel.trim()) return { error: 'path is required', status: 400 };
+  if (rel.includes('\0')) return { error: 'invalid path', status: 400 };
+  if (isAbsolute(rel) || rel.includes('..')) return { error: 'path escapes repo', status: 400 };
+  if (isDeniedFile(rel)) return { error: 'access to this file is denied', status: 403 };
+  const abs = join(root, rel);
+  let rootReal: string;
+  try { rootReal = realpathSync(root); } catch { rootReal = resolve(root); }
+  // realpath the longest EXISTING ancestor (the target may be a not-yet-created file),
+  // then confirm the resolved path stays inside the realpath'd repo root.
+  let probe = abs; const tail: string[] = [];
+  while (!existsSync(probe)) { const parent = dirname(probe); if (parent === probe) break; tail.unshift(basename(probe)); probe = parent; }
+  let real: string;
+  try { real = tail.length ? join(realpathSync(probe), ...tail) : realpathSync(probe); } catch { real = abs; }
+  if (real !== rootReal && !real.startsWith(rootReal + sep)) return { error: 'path escapes repo', status: 400 };
+  return { abs: real };
 }
 
 // ── Repo run-config: detect (heuristic + Opus) and execute install/run/build/test ──
@@ -1284,8 +1329,9 @@ export const server = createServer(async (req: IncomingMessage, res: ServerRespo
       const u = new URL(req.url, 'http://x');
       const rel = u.searchParams.get('path') || '';
       const root = await projectRepoPath(projectIdOf(req));
-      const abs = join(root, rel);
-      if (!abs.startsWith(root) || rel.includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
+      const c = confineRepoPath(root, rel);
+      if ('error' in c) { res.statusCode = c.status; res.end(JSON.stringify({ error: c.error })); return; }
+      const abs = c.abs;
       const bytes = statSync(abs).size;
       const tooBig = bytes > 512 * 1024;
       const content = tooBig ? '' : readFileSync(abs, 'utf-8');
@@ -1304,8 +1350,9 @@ export const server = createServer(async (req: IncomingMessage, res: ServerRespo
       const body = JSON.parse(await readBody(req));
       const rel = String(body.path || '');
       const root = await projectRepoPath(projectIdOf(req, body));
-      const abs = join(root, rel);
-      if (!abs.startsWith(root) || rel.includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
+      const c = confineRepoPath(root, rel);
+      if ('error' in c) { res.statusCode = c.status; res.end(JSON.stringify({ error: c.error })); return; }
+      const abs = c.abs;
       if (!existsSync(abs)) { res.statusCode = 404; res.end(JSON.stringify({ error: 'file does not exist — use POST to create' })); return; }
       writeFileSync(abs, String(body.content ?? ''), 'utf-8');
       res.end(JSON.stringify({ ok: true, path: rel, bytes: statSync(abs).size }));
@@ -1318,10 +1365,10 @@ export const server = createServer(async (req: IncomingMessage, res: ServerRespo
     try {
       const body = JSON.parse(await readBody(req));
       const rel = String(body.path || '');
-      if (!rel.trim()) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
       const root = await projectRepoPath(projectIdOf(req, body));
-      const abs = join(root, rel);
-      if (!abs.startsWith(root) || rel.includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
+      const c = confineRepoPath(root, rel);
+      if ('error' in c) { res.statusCode = c.status; res.end(JSON.stringify({ error: c.error })); return; }
+      const abs = c.abs;
       if (existsSync(abs)) { res.statusCode = 409; res.end(JSON.stringify({ error: 'file already exists' })); return; }
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, String(body.content ?? ''), 'utf-8');
@@ -1335,8 +1382,9 @@ export const server = createServer(async (req: IncomingMessage, res: ServerRespo
     try {
       const rel = new URL(req.url!, 'http://x').searchParams.get('path') || '';
       const root = await projectRepoPath(projectIdOf(req));
-      const abs = join(root, rel);
-      if (!abs.startsWith(root) || rel.includes('..')) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path escapes repo' })); return; }
+      const c = confineRepoPath(root, rel);
+      if ('error' in c) { res.statusCode = c.status; res.end(JSON.stringify({ error: c.error })); return; }
+      const abs = c.abs;
       if (!existsSync(abs)) { res.statusCode = 404; res.end(JSON.stringify({ error: 'file not found' })); return; }
       unlinkSync(abs);
       res.end(JSON.stringify({ ok: true, path: rel }));
@@ -1353,6 +1401,9 @@ export const server = createServer(async (req: IncomingMessage, res: ServerRespo
       const instruction = String(body.instruction || '').trim();
       if (!instruction) { res.statusCode = 400; res.end(JSON.stringify({ error: 'instruction required' })); return; }
       const root = await projectRepoPath(projectIdOf(req, body));
+      // Host repo (default project) is never editable through the file API — same refusal
+      // the read/write verbs apply. Reject up front so nothing is read or proposed for it.
+      if (resolve(root) === resolve(process.cwd())) { res.statusCode = 403; res.end(JSON.stringify({ error: 'file API is disabled for the host repo' })); return; }
 
       // Read each tagged repo file (guard per path); note skips to report in the answer.
       const tagged: Array<{ path: string }> = Array.isArray(body.files) ? body.files : [];
@@ -1361,8 +1412,9 @@ export const server = createServer(async (req: IncomingMessage, res: ServerRespo
       const repoFiles: Array<{ path: string; content: string }> = [];
       for (const f of tagged) {
         const rel = String(f?.path || '');
-        const abs = join(root, rel);
-        if (!rel || !abs.startsWith(root) || rel.includes('..')) { skipped.push(`${rel || '(empty)'} — path escapes repo`); continue; }
+        const c = confineRepoPath(root, rel);
+        if ('error' in c) { skipped.push(`${rel || '(empty)'} — ${c.error}`); continue; }
+        const abs = c.abs;
         if (!existsSync(abs)) { skipped.push(`${rel} — missing`); continue; }
         if (statSync(abs).size > 512 * 1024) { skipped.push(`${rel} — >512KB`); continue; }
         repoFiles.push({ path: rel, content: readFileSync(abs, 'utf-8') });
@@ -1399,8 +1451,11 @@ export const server = createServer(async (req: IncomingMessage, res: ServerRespo
       const effortFlags = ['low', 'medium', 'high'].includes(effort) ? ['--effort', effort] : [];
 
       const t0 = Date.now();
+      // Route through the sandbox flags (architect is read-only → acceptEdits +
+      // --disallowedTools Edit,Write) instead of the raw --dangerously-skip-permissions:
+      // ai-edit only PROPOSES (writes nothing itself), so it needs no write/bypass grant.
       const proc = spawnSync(CLAUDE_BIN,
-        ['-p', prompt, '--model', model, ...sessionFlags, ...effortFlags, '--output-format', 'json', '--dangerously-skip-permissions'],
+        ['-p', prompt, '--model', model, ...sessionFlags, ...effortFlags, '--output-format', 'json', ...sandboxSpawnFlags('architect', 'standard')],
         { encoding: 'utf8', timeout: 150000, maxBuffer: 16 * 1024 * 1024 });
       const wallMs = Date.now() - t0;
       // spawnSync killed on timeout → surface a clear 504, not the generic "could not parse" 502
@@ -1424,8 +1479,9 @@ export const server = createServer(async (req: IncomingMessage, res: ServerRespo
       const proposals: Array<{ path: string; oldContent: string; newContent: string; diff: string }> = [];
       for (const f of parsed.files) {
         const rel = String(f?.path || '');
-        const abs = join(root, rel);
-        if (!rel || !abs.startsWith(root) || rel.includes('..')) { skipped.push(`${rel || '(empty)'} — proposal outside repo, dropped`); continue; }
+        const c = confineRepoPath(root, rel);
+        if ('error' in c) { skipped.push(`${rel || '(empty)'} — proposal outside repo, dropped`); continue; }
+        const abs = c.abs;
         const newContent = String(f.content ?? '');
         const oldContent = existsSync(abs) ? readFileSync(abs, 'utf-8') : '';
         if (oldContent === newContent) continue; // no-op proposal
@@ -2384,92 +2440,14 @@ export const server = createServer(async (req: IncomingMessage, res: ServerRespo
     return;
   }
 
-  // ── FS APIs ────────────────────────────────────────────────────────────────
-  const parsedUrl = new URL(req.url || '', 'http://x');
-  const pathPart = parsedUrl.pathname;
-
-  if (req.method === 'GET' && pathPart === '/api/fs/list') {
-    try {
-      const dirPath = parsedUrl.searchParams.get('dir') || process.cwd();
-      const walk = (dir) => {
-        const stats = statSync(dir);
-        if (!stats.isDirectory()) {
-          return { name: basename(dir), path: dir, type: 'file', size: stats.size };
-        }
-        const children = [];
-        const items = readdirSync(dir);
-        for (const child of items) {
-          if (child === '.git' || child === 'node_modules') continue;
-          children.push(walk(join(dir, child)));
-        }
-        return { name: basename(dir), path: dir, type: 'directory', children };
-      };
-      res.end(JSON.stringify(walk(dirPath)));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'GET' && pathPart === '/api/fs/read') {
-    try {
-      const filePath = parsedUrl.searchParams.get('path');
-      if (!filePath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
-      const fileContent = readFileSync(filePath, 'utf-8');
-      res.end(JSON.stringify({ content: fileContent }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'POST' && pathPart === '/api/fs/write') {
-    try {
-      const body = JSON.parse(await readBody(req) || '{}');
-      if (!body.path || typeof body.content !== 'string') { res.statusCode = 400; res.end(JSON.stringify({ error: 'path and content are required' })); return; }
-      mkdirSync(dirname(body.path), { recursive: true });
-      writeFileSync(body.path, body.content, 'utf-8');
-      res.end(JSON.stringify({ ok: true }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'PUT' && pathPart === '/api/fs/rename') {
-    try {
-      const body = JSON.parse(await readBody(req) || '{}');
-      if (!body.oldPath || !body.newPath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'oldPath and newPath are required' })); return; }
-      renameSync(body.oldPath, body.newPath);
-      res.end(JSON.stringify({ ok: true }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'DELETE' && pathPart === '/api/fs/delete') {
-    try {
-      const filePath = parsedUrl.searchParams.get('path');
-      if (!filePath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
-      if (existsSync(filePath)) {
-        const stats = statSync(filePath);
-        if (stats.isDirectory()) {
-          rmSync(filePath, { recursive: true, force: true });
-        } else {
-          unlinkSync(filePath);
-        }
-      }
-      res.end(JSON.stringify({ ok: true }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'POST' && pathPart === '/api/fs/run') {
-    try {
-      const body = JSON.parse(await readBody(req) || '{}');
-      if (!body.command) { res.statusCode = 400; res.end(JSON.stringify({ error: 'command is required' })); return; }
-      const child = spawnSync(body.command, { shell: true, cwd: body.cwd || process.cwd() });
-      res.end(JSON.stringify({
-        stdout: child.stdout ? child.stdout.toString() : '',
-        stderr: child.stderr ? child.stderr.toString() : '',
-        exitCode: child.status
-      }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
+  // ── FS APIs (REMOVED — security-audit-2026-07 §1a) ───────────────────────────
+  // The `/api/fs/*` family (list/read/write/rename/delete/run) was an unauthenticated,
+  // unconfined arbitrary filesystem + shell surface: `/api/fs/run` did `spawnSync(cmd,
+  // {shell:true})` (unauthenticated RCE), and read/write/delete/rename operated on raw,
+  // unconfined paths (e.g. GET /api/fs/read?path=db/.secret.key). All are DELETED.
+  // The guarded `/files` (tree) and `/file` (read/write/delete + ai-edit) routes above
+  // are the confined, denylisted replacements for the read/write/list operations; there
+  // is no replacement for run — an unbounded shell endpoint has no safe form.
 
   res.statusCode = 404;
   res.end(JSON.stringify({ error: 'Not found' }));

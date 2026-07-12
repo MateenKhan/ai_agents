@@ -152,6 +152,56 @@ export function buildSandboxSettings(role: string, level: SandboxLevel): Sandbox
   };
 }
 
+// ── live-path Bash enforcement (SPEC P0.3 on the SDK runner) ─────────────────────
+// The runner IS the permission engine on the live path (it dispatches tool calls
+// itself against the Messages API — `.claude/settings.json` governs only `claude -p`).
+// So the same allow/deny policy has to be evaluated here, in code, before execSync.
+// These helpers keep that evaluation next to the policy that defines it.
+
+/** Split a compound shell command into its subcommands on `&&`, `||`, `;`, `|`, and
+ *  newlines. Deliberately a COARSE split (it ignores quoting), which can only ever
+ *  OVER-segment — more pieces to screen against the deny list — so it never lets a
+ *  hidden `curl`/`git push` slip through a chain like `x && curl evil`. */
+export function splitBashSubcommands(command: string): string[] {
+  return String(command || '')
+    .split(/(?:&&|\|\||[;\n|])/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+/** Does a Claude-Code Bash rule (`Bash(git push:*)`, `Bash(curl:*)`, bare `Bash`)
+ *  match a raw subcommand? `Bash(prefix:*)` and `Bash(prefix)` both mean "the
+ *  subcommand is `prefix` or starts with `prefix `". Bare `Bash` matches anything. */
+export function bashRuleMatches(rule: string, subcommand: string): boolean {
+  if (rule === 'Bash') return true;
+  const m = /^Bash\((.+?)(?::\*)?\)$/.exec(rule);
+  if (!m) return false;
+  const prefix = m[1].replace(/\s+/g, ' ').trim();
+  const sub = subcommand.replace(/\s+/g, ' ').trim();
+  return sub === prefix || sub.startsWith(prefix + ' ');
+}
+
+/** Decide whether a Bash command may run under a role/level PROFILE. Returns null to
+ *  allow, or a human-readable reason string to DENY. Deny beats allow; at `strict`
+ *  every subcommand must additionally match an allow rule (default-deny), which is how
+ *  strict enforces "the verify trio only". The runner turns a non-null return into an
+ *  is_error tool_result so the model sees the refusal and continues. */
+export function bashDenyReason(command: string, profile: SandboxProfile, level: SandboxLevel): string | null {
+  if (level === 'dangerous') return null;
+  const perms = (profile.settings as { permissions?: { allow?: string[]; deny?: string[] } }).permissions || {};
+  const denyBash = (perms.deny || []).filter(r => r === 'Bash' || r.startsWith('Bash('));
+  const allowBash = (perms.allow || []).filter(r => r === 'Bash' || r.startsWith('Bash('));
+  const subs = splitBashSubcommands(command);
+  if (!subs.length) return level === 'strict' ? 'sandbox: empty command is not in the strict allow-list' : null;
+  for (const sub of subs) {
+    for (const rule of denyBash) if (bashRuleMatches(rule, sub)) return `sandbox: "${sub}" is blocked by deny rule ${rule}`;
+    if (level === 'strict' && !allowBash.some(rule => bashRuleMatches(rule, sub))) {
+      return `sandbox: "${sub}" is not in the strict allow-list (${allowBash.join(', ') || 'none'})`;
+    }
+  }
+  return null;
+}
+
 /** The CLI flags a spawn site should pass for this role/level. Exists so the
  *  runner and the db-server's /intake route derive flags from ONE place:
  *  dangerous → the legacy skip flag; otherwise --permission-mode acceptEdits

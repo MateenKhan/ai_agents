@@ -1,21 +1,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // agentic-core — headless agent runner
-// Spawns `claude -p` as a child process per task. No WSL/tmux/IDE. Handles:
+// Runs one agent per task through a hand-rolled @anthropic-ai/sdk tool loop against
+// the Messages API (NOT `claude -p`). Because the runner dispatches tool calls itself,
+// it IS the permission engine on the live path: the P0.3 sandbox (buildSandboxSettings'
+// allow/deny + isReadOnlyRole) is enforced HERE, inside the tool executor, before any
+// side effect — a `.claude/settings.json` on disk only governs the CLI. Also handles:
 //  - per-role model tiering (--model)
 //  - git-worktree isolation (plan / create / reuse / none)
 //  - a FRESH log per run (the Logs tab always shows the current run)
-//  - stream-json parsing into readable action lines (search / read / edit / cmd)
 //  - failure classification for the circuit breaker + stall detection
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { spawn, execSync, type ChildProcess } from 'node:child_process';
-import { mkdirSync, existsSync, writeFileSync, appendFileSync, symlinkSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { mkdirSync, existsSync, writeFileSync, appendFileSync, symlinkSync, readFileSync, realpathSync } from 'node:fs';
+import { join, dirname, resolve, sep, basename } from 'node:path';
 import type { RunResult, FailureKind, WorktreeMode, AgentRole } from '../types';
 import { getConfig } from '../runtime-context';
 import Anthropic from '@anthropic-ai/sdk';
 import { resolveAgentToken, gitAuthEnv, getTask, getProject, updateTask } from '../db/tasks';
-import { writeWorktreeSettings } from './sandbox';
+import { writeWorktreeSettings, buildSandboxSettings, isReadOnlyRole, bashDenyReason } from './sandbox';
 import { taskLogPath } from './task-log-file';
 
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
@@ -324,8 +327,33 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
 
   log(`spawned: Anthropic Node.js Client -p … --model ${model}  (cwd=${cwd})`);
 
+  // ── P0.3 sandbox, enforced in-process (the runner is the permission engine) ──
+  // Derive the role/level profile ONCE. Read-only roles (owner, architect,
+  // security-engineer, …) get ONLY Read — no Bash/Edit/Write tool is even offered,
+  // replacing the old always-true role-vs-"plan" string gate. The profile's allow/deny
+  // lists screen every Bash command below; file tools are confined to the worktree.
+  const level = opts.permissionProfile || 'standard';
+  const readOnly = isReadOnlyRole(opts.role);
+  const sandboxProfile = buildSandboxSettings(opts.role, level);
+
+  // The realpath'd worktree root — the boundary every Read/Write/Edit path is confined
+  // to. Resolving symlinks here (and on each target's longest existing ancestor below)
+  // closes the `symlink -> /etc/passwd` and `../../escape` holes the old join(cwd,…) left.
+  const cwdReal = (() => { try { return realpathSync(cwd); } catch { return resolve(cwd); } })();
+  const confineToWorktree = (p: string): string => {
+    const resolved = resolve(cwd, String(p || ''));
+    // realpath the longest EXISTING ancestor so a symlink anywhere on the path can't
+    // point the (possibly not-yet-created) target outside the worktree.
+    let probe = resolved; const tail: string[] = [];
+    while (!existsSync(probe)) { const parent = dirname(probe); if (parent === probe) break; tail.unshift(basename(probe)); probe = parent; }
+    let real: string;
+    try { real = tail.length ? join(realpathSync(probe), ...tail) : realpathSync(probe); } catch { real = resolved; }
+    if (real !== cwdReal && !real.startsWith(cwdReal + sep)) throw new Error(`sandbox: path escapes the worktree: ${p}`);
+    return real;
+  };
+
   const tools: Anthropic.Tool[] = [];
-  if (opts.role !== 'plan') {
+  if (!readOnly) {
     tools.push({
       name: 'Bash',
       description: 'Execute a bash command in the current working directory.',
@@ -396,18 +424,30 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
             let result = '';
             let isError = false;
             try {
-              if (toolName === 'Bash') {
-                const env = { ...process.env, ...gitEnv, AGENT_NAME: agentName, TASK_ID: taskId, CODE_INDEX_ROOT: process.cwd(), CODE_INDEX_PROJECT: projectId };
-                result = execSync(input.command, { cwd, encoding: 'utf-8', timeout: 30000, env });
+              if (readOnly && (toolName === 'Bash' || toolName === 'Write' || toolName === 'Edit')) {
+                // Belt to the tool-surface braces above: a read-only role never writes or shells,
+                // even if a tool_use for one arrives (e.g. from a resumed transcript).
+                result = `sandbox: role "${opts.role}" is read-only — ${toolName} is not permitted`;
+                isError = true;
+              } else if (toolName === 'Bash') {
+                // Screen the command against the profile's deny/allow lists BEFORE running it:
+                // curl/wget/git push (and, at strict, anything outside the verify trio) are denied.
+                const denied = bashDenyReason(String(input.command || ''), sandboxProfile, level);
+                if (denied) { result = denied; isError = true; }
+                else {
+                  const env = { ...process.env, ...gitEnv, AGENT_NAME: agentName, TASK_ID: taskId, CODE_INDEX_ROOT: process.cwd(), CODE_INDEX_PROJECT: projectId };
+                  result = execSync(input.command, { cwd, encoding: 'utf-8', timeout: 30000, env });
+                }
               } else if (toolName === 'Read') {
-                result = readFileSync(join(cwd, input.path), 'utf-8');
+                result = readFileSync(confineToWorktree(input.path), 'utf-8');
               } else if (toolName === 'Write') {
-                writeFileSync(join(cwd, input.path), input.content);
+                writeFileSync(confineToWorktree(input.path), input.content);
                 result = 'File written successfully.';
               } else if (toolName === 'Edit') {
-                let text = readFileSync(join(cwd, input.path), 'utf-8');
+                const abs = confineToWorktree(input.path);
+                let text = readFileSync(abs, 'utf-8');
                 text = text.replace(input.search, input.replace);
-                writeFileSync(join(cwd, input.path), text);
+                writeFileSync(abs, text);
                 result = 'File edited successfully.';
               } else {
                 result = 'Tool not found.';

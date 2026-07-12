@@ -58,6 +58,36 @@ describe('getRecentLogs', () => {
   });
 });
 
+// Redaction at the storage layer (security-audit-2026-07 §6b): every log line is scrubbed
+// inside addAgentLog, so no call site can persist a token in plaintext — the DB row and the
+// /task-logs feed built from it never carry a secret, regardless of who wrote the line.
+describe('addAgentLog redaction', () => {
+  beforeEach(async () => { await clearAgentLogs(); });
+
+  it('scrubs a GitHub token from a stored log line', async () => {
+    await addAgentLog('t-redact', 'pushing with ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 now', 'info', 'proj_r');
+    const row = (await getRecentLogs(10, 'proj_r')).find(r => r.taskId === 't-redact')!;
+    expect(row.msg).not.toContain('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
+    expect(row.msg).toContain('gh?_***');
+  });
+
+  it('masks url credentials and Bearer/token pairs', async () => {
+    await addAgentLog('t-redact', 'clone https://x-access-token:ghs_supersecretvalue@github.com/o/r.git', 'info', 'proj_r');
+    await addAgentLog('t-redact', 'Authorization: Bearer sk-topsecretsessionvalue', 'error', 'proj_r');
+    const rows = await getRecentLogs(10, 'proj_r');
+    const joined = rows.map(r => r.msg).join('\n');
+    expect(joined).not.toContain('ghs_supersecretvalue');
+    expect(joined).toContain('***@github.com');
+    expect(joined).not.toContain('sk-topsecretsessionvalue');
+  });
+
+  it('leaves ordinary log text unchanged', async () => {
+    await addAgentLog('t-redact', 'build finished in 12s', 'success', 'proj_r');
+    const row = (await getRecentLogs(10, 'proj_r')).find(r => r.taskId === 't-redact')!;
+    expect(row.msg).toBe('build finished in 12s');
+  });
+});
+
 // Logs follow the WORK, and work is per-project: a task belongs to exactly one project, so
 // its log rows must never surface in another project's feed. Only engine-wide '__system__'
 // lines are project-less and shown everywhere.

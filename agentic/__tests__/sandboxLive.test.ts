@@ -1,19 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// LIVE-PATH sandbox gap (SPEC P0.3) — documenting test.
+// LIVE-PATH sandbox enforcement (SPEC P0.3) — regression test.
 //
 // See docs/sandbox-verification-2026-07.md. The agent worker runs through a
-// hand-rolled @anthropic-ai/sdk tool loop in runner.ts, NOT `claude -p`. As a
-// result the P0.3 sandbox — writeWorktreeSettings' `.claude/settings.json`,
-// buildSandboxSettings' allow/deny lists, sandboxSpawnFlags — is INERT on the
-// path real agents execute on: the Messages API never reads those.
+// hand-rolled @anthropic-ai/sdk tool loop in runner.ts, NOT `claude -p`. So the
+// P0.3 policy (buildSandboxSettings' allow/deny lists, isReadOnlyRole) MUST be
+// enforced inside the runner's own tool executor — a `.claude/settings.json` on
+// disk is invisible to the Messages API.
 //
-// These tests are SKIPPED because the guarantees do not hold today. They encode
-// the invariants that must be true AFTER enforcement is moved into the runner's
-// own tool executor (design in §4 of the verification doc). Unskip them when the
-// fix lands; they should then pass.
+// These tests were skipped while the runner was inert; the enforcement now lives
+// in the tool executor (bashDenyReason before execSync, realpath worktree
+// confinement on Read/Write/Edit, isReadOnlyRole tool-surface gate + belt), so
+// they are unskipped and must pass. The behavioural half (curl denied, strict
+// default-deny, prefix matching) is exercised directly against bashDenyReason in
+// sandbox.test.ts.
 //
-// The assertions are static source checks (dependency-free, deterministic) rather
-// than live agent spawns, so they can run in CI without an API key.
+// The assertions here are static source checks (dependency-free, deterministic)
+// rather than live agent spawns, so they run in CI without an API key.
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -21,7 +23,7 @@ import { join } from 'node:path';
 
 const runnerSrc = readFileSync(join(__dirname, '..', 'engine', 'runner.ts'), 'utf-8');
 
-describe.skip('P0.3 live-path enforcement (currently inert — see sandbox-verification-2026-07.md)', () => {
+describe('P0.3 live-path enforcement (runner tool executor)', () => {
   it('gates the tool surface by role classification, not the never-matching string "plan"', () => {
     // BUG: runner.ts:328 does `if (opts.role !== 'plan')`. No agent role is named
     // 'plan' (that is a workflow stage id / WorktreeMode), so the guard is always
@@ -55,5 +57,13 @@ describe.skip('P0.3 live-path enforcement (currently inert — see sandbox-verif
     // Heuristic: the executor should reference a deny check near the Bash branch.
     const bashBranch = runnerSrc.slice(runnerSrc.indexOf("toolName === 'Bash'"));
     expect(bashBranch).toMatch(/deny|isAllowed|denied|matchRule|sandbox/i);
+    // Specifically: it calls the shared policy screen before running the command.
+    expect(bashBranch).toMatch(/bashDenyReason\s*\(/);
+  });
+
+  it('refuses write/shell tools for a read-only role even if a tool_use arrives (belt)', () => {
+    // The tool surface omits Bash/Edit/Write for read-only roles; this is the belt behind
+    // that — a resumed transcript replaying a Write must still be rejected, not executed.
+    expect(runnerSrc).toMatch(/readOnly\s*&&/);
   });
 });
