@@ -1,4 +1,4 @@
-﻿import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
@@ -6,6 +6,7 @@ import TasksPage from './pages/TasksPage';
 import WorkflowPage from './pages/WorkflowPage';
 import CanvasPage from './pages/canvas/CanvasPage';
 import IDEPage from './pages/ide';
+import { VisualDesignerPage } from './pages/designer/VisualDesignerPage';
 import { ProjectProvider } from './pages/tasks/projectContext';
 import { ToastProvider } from './pages/tasks/components/Toast';
 import { ConfirmProvider } from './pages/tasks/components/ConfirmProvider';
@@ -21,11 +22,11 @@ createRoot(document.getElementById('root')!).render(
         durations. It CANNOT touch Framer Motion: those 18 <motion.*> components animate
         inline transforms from JS on rAF, which no media query can see. Without this,
         every toast spring, slide-over and layout animation played at full motion for a
-        user who explicitly asked for none â€” while the CSS comment claimed otherwise.
+        user who explicitly asked for none -- while the CSS comment claimed otherwise.
 
         `reducedMotion="user"` reads the same OS setting and makes Framer skip transform
         and layout animation, keeping opacity fades (which don't trigger vestibular
-        symptoms). It must sit ABOVE ToastProvider: toasts are the app's loudest motion. */}
+       symptoms). It must sit ABOVE ToastProvider: toasts are the app's loudest motion. */}
     <MotionConfig reducedMotion="user">
       <ToastProvider>
         <ConfirmProvider>
@@ -37,10 +38,11 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/tasks/:tab" element={<TasksPage />} />
                 <Route path="/ide" element={<IDEPage />} />
                 <Route path="/canvas" element={<CanvasPage />} />
+                <Route path="/designer" element={<VisualDesignerPage />} />
                 {/* Preview: the editor renders and saves to localStorage, but the engine still
                     runs its built-in pipeline. Wiring it up needs the /workflow endpoint. */}
                 <Route path="/workflow" element={<WorkflowPage />} />
-                {/* The landing page. Same component GitHub Pages gets, prerendered â€” see
+                {/* The landing page. Same component GitHub Pages gets, prerendered -- see
                     scripts/build-landing.tsx. */}
                 <Route path="/features" element={<Suspense fallback={null}><FeaturesPage /></Suspense>} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
@@ -52,4 +54,3 @@ createRoot(document.getElementById('root')!).render(
     </MotionConfig>
   </React.StrictMode>,
 );
-
