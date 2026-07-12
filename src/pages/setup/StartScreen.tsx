@@ -1,12 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { GitBranch, FolderPlus, FolderGit2, Cpu, ShieldAlert, ArrowRight } from 'lucide-react';
-import { API_BASE, withProject } from '../../../apiBase';
-import { useProjects } from '../projectContext';
-
-/** localStorage flag: the first-run setup was completed (or explicitly skipped). */
-export const SETUP_DONE_KEY = 'piranha:setup-done';
+import { GitBranch, FolderPlus, FolderGit2, Cpu, ShieldAlert, ArrowRight, KeyRound } from 'lucide-react';
+import { API_BASE, withProject } from '../../apiBase';
+import { useProjects } from '../tasks/projectContext';
+import { SETUP_DONE_KEY } from './useSetupGate';
 
 type Mode = 'clone' | 'new';
+
+/** A stored git credential the clone form can attach (PAT or installed GitHub App). */
+interface TokenOption { id: string; label: string }
+
+/** Shown when POST /git/init-repo 404s — the UI is newer than the running db-server. */
+export const INIT_REPO_UNSUPPORTED =
+  'Backend update required — this Piranha server doesn’t have /git/init-repo yet. ' +
+  'Restart with the latest version, or pick another option.';
 
 /**
  * First-run starting screen. The project source is the root decision every task and agent
@@ -24,6 +30,9 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
   // Clone form
   const [url, setUrl] = useState('');
   const [branch, setBranch] = useState('');
+  const [folder, setFolder] = useState('');
+  const [tokenId, setTokenId] = useState('');
+  const [tokens, setTokens] = useState<TokenOption[]>([]);
   // New-folder form
   const [dir, setDir] = useState('');
   const [name, setName] = useState('');
@@ -42,6 +51,10 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
         setDailyCap(d?.dailyCapUsd != null ? String(d.dailyCapUsd) : '25');
       })
       .catch(() => { /* offline — keep defaults */ });
+    // Stored PATs / GitHub Apps, so a private repo can be cloned right from setup.
+    fetch(withProject(`${API_BASE}/git/tokens`)).then(r => r.json())
+      .then(d => { if (Array.isArray(d?.tokens)) setTokens(d.tokens.map((t: any) => ({ id: String(t.id), label: String(t.label || t.id) }))); })
+      .catch(() => { /* offline — the select just offers "none" */ });
   }, []);
 
   const [busy, setBusy] = useState(false);
@@ -80,11 +93,17 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
       } catch { /* transient */ }
     }, 500);
     try {
-      // Relative dir resolves server-side into the projects base — derive it from the URL.
+      // A relative dir resolves server-side into the projects base. The explicit Folder field
+      // wins; otherwise derive the folder name from the URL, as `git clone` itself would.
       const derivedDir = (cleanUrl.split('/').pop() || 'repo').replace(/\.git$/, '');
       const r = await fetch(withProject(`${API_BASE}/git/clone`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: cleanUrl, dir: derivedDir, branch: branch.trim() || undefined }),
+        body: JSON.stringify({
+          url: cleanUrl,
+          dir: folder.trim() || derivedDir,
+          branch: branch.trim() || undefined,
+          tokenId: tokenId || undefined,
+        }),
       });
       const d = await r.json();
       if (!r.ok || !d.ok) throw new Error(d.error || 'Clone failed');
@@ -114,6 +133,9 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dir: cleanDir, name: cleanName }),
       });
+      // A 404 means the running db-server predates this endpoint — say so plainly instead
+      // of surfacing whatever the server's catch-all "not found" body happens to be.
+      if (r.status === 404) throw new Error(INIT_REPO_UNSUPPORTED);
       const d = await r.json();
       if (!r.ok || !d.ok) throw new Error(d.error || 'Could not create the folder');
       await refreshProjects();
@@ -170,19 +192,38 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
           {mode === 'clone' ? (
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <label className="eyebrow">Repository URL</label>
-                <input autoFocus type="text" value={url} onChange={e => setUrl(e.target.value)} disabled={busy}
+                <label className="eyebrow" htmlFor="start-clone-url">Repository URL</label>
+                <input id="start-clone-url" autoFocus type="text" value={url} onChange={e => setUrl(e.target.value)} disabled={busy}
                   className={input} placeholder="https://github.com/you/your-repo.git" />
               </div>
-              <div className="space-y-1.5">
-                <label className="eyebrow">Branch <span className="normal-case font-normal text-slate-400">(optional)</span></label>
-                <input type="text" value={branch} onChange={e => setBranch(e.target.value)} disabled={busy}
-                  className={input} placeholder="default branch" />
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 space-y-1.5">
+                  <label className="eyebrow" htmlFor="start-clone-branch">Branch <span className="normal-case font-normal text-slate-400">(optional)</span></label>
+                  <input id="start-clone-branch" type="text" value={branch} onChange={e => setBranch(e.target.value)} disabled={busy}
+                    className={input} placeholder="default branch" />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <label className="eyebrow" htmlFor="start-clone-folder">Folder <span className="normal-case font-normal text-slate-400">(optional)</span></label>
+                  <input id="start-clone-folder" type="text" value={folder} onChange={e => setFolder(e.target.value)} disabled={busy}
+                    className={`${input} font-mono`} placeholder="derived from the URL" />
+                </div>
               </div>
-              <p className="text-micro text-slate-500">
-                Private repo? Finish setup with a public one (or the new-folder option) and add a token under
-                Git → Tokens — cloning private repos needs it.
-              </p>
+              <div className="space-y-1.5">
+                <label className="eyebrow flex items-center gap-1.5" htmlFor="start-clone-token">
+                  <KeyRound size={12} className="text-slate-400" /> Access token <span className="normal-case font-normal text-slate-400">(optional — private repos)</span>
+                </label>
+                <select id="start-clone-token" value={tokenId} onChange={e => setTokenId(e.target.value)} disabled={busy}
+                  className={`${input} cursor-pointer`}>
+                  <option value="">None — public repo</option>
+                  {tokens.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+                {tokens.length === 0 && (
+                  <p className="text-micro text-slate-500">
+                    No stored tokens yet. Private repo? Finish setup with a public one (or the
+                    new-folder option) and add a token under Git → Tokens.
+                  </p>
+                )}
+              </div>
               {log.length > 0 && (
                 <pre className="max-h-36 overflow-y-auto text-2xs font-mono bg-slate-900 text-slate-200 rounded-lg px-3 py-2 whitespace-pre-wrap">{log.join('\n')}</pre>
               )}
@@ -190,20 +231,20 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
           ) : (
             <div className="space-y-3">
               <div className="space-y-1.5">
-                <label className="eyebrow">Folder path</label>
-                <input autoFocus type="text" value={dir} onChange={e => setDir(e.target.value)} disabled={busy}
+                <label className="eyebrow" htmlFor="start-init-dir">Folder path</label>
+                <input id="start-init-dir" autoFocus type="text" value={dir} onChange={e => setDir(e.target.value)} disabled={busy}
                   className={`${input} font-mono`} placeholder="C:\code\my-app  ·  or relative: my-app" />
               </div>
               <div className="space-y-1.5">
-                <label className="eyebrow">Project name</label>
-                <input type="text" value={name} onChange={e => setName(e.target.value)} disabled={busy}
+                <label className="eyebrow" htmlFor="start-init-name">Project name</label>
+                <input id="start-init-name" type="text" value={name} onChange={e => setName(e.target.value)} disabled={busy}
                   className={input} placeholder="My App" />
               </div>
             </div>
           )}
 
           {error && (
-            <div className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</div>
+            <div role="alert" className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{error}</div>
           )}
         </div>
 
@@ -216,7 +257,7 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
             </span>
             <span className="flex items-center gap-2">
               <span className={`text-2xs font-semibold ${(Number(maxConc) || 0) === 0 ? 'text-emerald-600' : 'text-transparent select-none'}`}>unlimited</span>
-              <input type="text" inputMode="numeric" value={maxConc}
+              <input type="text" inputMode="numeric" value={maxConc} aria-label="Max concurrent agents"
                 onChange={e => setMaxConc(e.target.value.replace(/[^\d]/g, ''))}
                 className="w-20 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500" />
             </span>
@@ -236,6 +277,7 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
             </span>
             <select
               value={profile}
+              aria-label="Permission profile"
               onChange={e => setProfile(e.target.value as 'strict' | 'standard' | 'dangerous')}
               className="px-2 py-1.5 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500 cursor-pointer"
             >

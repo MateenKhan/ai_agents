@@ -17,7 +17,7 @@ import { Modal } from './tasks/components/Modal';
 import { useToast } from './tasks/components/Toast';
 import { useConfirm } from './tasks/components/ConfirmProvider';
 import { ProjectBar } from './tasks/components/ProjectBar';
-import { StartScreen, SETUP_DONE_KEY } from './tasks/components/StartScreen';
+import { StartScreen, useSetupGate } from './setup';
 import { AgentTank } from '../components/piranha/AgentTank';
 import { PiranhaLoader } from '../components/piranha/PiranhaLoader';
 import { StudioNavbar } from '../components/navigation/StudioNavbar';
@@ -157,12 +157,10 @@ const TasksPage: React.FC = () => {
   };
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
 
-  // ── First-run setup gate ──
-  const [setupDone, setSetupDone] = useState<boolean>(() => {
-    try { return localStorage.getItem(SETUP_DONE_KEY) === '1'; } catch { return true; }
+  // ── First-run setup gate ── (all the "is this a fresh install?" logic lives in the hook)
+  const { needsSetup, complete: completeSetup } = useSetupGate({
+    projectsLoading, tasksLoading: loading, projects, taskCount: tasks.length,
   });
-  const needsSetup = !setupDone && !projectsLoading && !loading
-    && !projects.some(p => p.id !== 'default') && tasks.length === 0;
 
   // ── Item 90: global offline banner ──
   // The db-server (:6952) is the whole backend; when it is down every panel fails silently.
@@ -344,7 +342,7 @@ const TasksPage: React.FC = () => {
   // brand-new install (only the seeded default project, zero tasks, setup never completed)
   // gets the starting screen before the board. Completing or skipping it never nags again.
   if (needsSetup) {
-    return <StartScreen onDone={() => setSetupDone(true)} />;
+    return <StartScreen onDone={completeSetup} />;
   }
 
   // Your Review — the page's one notification affordance. It opens the review panel
