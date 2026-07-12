@@ -1,17 +1,20 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   SandpackProvider,
   SandpackLayout,
   SandpackCodeEditor,
   SandpackPreview,
+  useSandpack,
 } from '@codesandbox/sandpack-react';
-import { Eye, Code2, Columns, RotateCcw } from 'lucide-react';
+import { Eye, Code2, Columns, RotateCcw, Sparkles } from 'lucide-react';
 import { ProjectBar } from '../tasks/components/ProjectBar';
+import { useProjects } from '../tasks/projectContext';
 import { DEVICE_PRESETS, DEFAULT_TWEAKS, DEFAULT_FILES } from './presets';
 import { DevicePreset, VisualTweaks } from './types';
 import { TweaksSidebar } from './components/TweaksSidebar';
 import { AgentPromptBar } from './components/AgentPromptBar';
 import { ViewportContainer } from './components/ViewportContainer';
+import { AiAssistantDrawer, AI_DRAWER_STORAGE_KEY } from './components/AiAssistantDrawer';
 
 const buildDynamicCSS = (t: VisualTweaks) => `:root {
   --bg-color: ${t.bgColor};
@@ -210,13 +213,42 @@ h1 {
   padding: 20px 24px;
 }`;
 
+/**
+ * Reports Sandpack's active file (the code tab the user is viewing) up to the page, so the
+ * AI drawer — which lives OUTSIDE the SandpackProvider — can pass the right file context to
+ * FileChat. Renders nothing.
+ */
+const ActiveFileTracker: React.FC<{ onActiveFile: (path: string) => void }> = ({ onActiveFile }) => {
+  const { sandpack } = useSandpack();
+  useEffect(() => {
+    onActiveFile(sandpack.activeFile);
+  }, [sandpack.activeFile, onActiveFile]);
+  return null;
+};
+
 export const VisualDesignerPage: React.FC = () => {
+  const { activeId } = useProjects();
   const [selectedPreset, setSelectedPreset] = useState<DevicePreset>(DEVICE_PRESETS[0]);
   const [tweaks, setTweaks] = useState<VisualTweaks>(DEFAULT_TWEAKS);
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [zoom, setZoom] = useState<number>(1);
   const [code, setCode] = useState<string>(DEFAULT_FILES['/App.tsx']);
   const [viewMode, setViewMode] = useState<'split' | 'preview' | 'code'>('split');
+
+  // Which Sandpack file the user is viewing — the AI drawer's selection context.
+  const [activeFile, setActiveFile] = useState<string>('/App.tsx');
+
+  // AI Assistant & Inspector drawer — collapsed by default, persisted across visits.
+  const [aiDrawerOpen, setAiDrawerOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(AI_DRAWER_STORAGE_KEY) === '1'; } catch { return false; }
+  });
+  const toggleAiDrawer = useCallback(() => {
+    setAiDrawerOpen(open => {
+      const next = !open;
+      try { localStorage.setItem(AI_DRAWER_STORAGE_KEY, next ? '1' : '0'); } catch { /* quota */ }
+      return next;
+    });
+  }, []);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden">
@@ -279,6 +311,22 @@ export const VisualDesignerPage: React.FC = () => {
 
           <button
             type="button"
+            data-testid="ai-chat-toggle"
+            onClick={toggleAiDrawer}
+            aria-pressed={aiDrawerOpen}
+            className={`px-2.5 py-1 text-2xs font-medium border rounded-lg transition-colors flex items-center gap-1.5 ${
+              aiDrawerOpen
+                ? 'bg-indigo-600 border-indigo-500 text-white'
+                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+            }`}
+            title="Toggle AI Assistant & Inspector"
+          >
+            <Sparkles size={13} />
+            <span>AI Chat</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => {
               setCode(DEFAULT_FILES['/App.tsx']);
               setTweaks(DEFAULT_TWEAKS);
@@ -302,8 +350,9 @@ export const VisualDesignerPage: React.FC = () => {
             onReset={() => setTweaks(DEFAULT_TWEAKS)}
         />
 
-        {/* Sandpack Workspace Area */}
-        <div className="flex-1 flex flex-col overflow-hidden relative">
+        {/* Sandpack Workspace Area — min-w-0 lets it shrink when the AI drawer opens
+            instead of forcing the flex row to overflow. */}
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden relative">
           <SandpackProvider
              template="react-ts"
              theme="dark"
@@ -318,6 +367,7 @@ export const VisualDesignerPage: React.FC = () => {
                 },
               }}
           >
+            <ActiveFileTracker onActiveFile={setActiveFile} />
             <SandpackLayout
               style={{
                 flex: 1,
@@ -372,6 +422,15 @@ export const VisualDesignerPage: React.FC = () => {
           {/* Bottom Agent Prompt Bar */}
           <AgentPromptBar code={code} tweaks={tweaks} />
         </div>
+
+        {/* Right-hand AI Assistant & Inspector drawer (collapsible, persisted) */}
+        {aiDrawerOpen && (
+          <AiAssistantDrawer
+            projectId={activeId || 'default-project'}
+            activeFile={activeFile}
+            onClose={toggleAiDrawer}
+          />
+        )}
       </div>
     </div>
   );

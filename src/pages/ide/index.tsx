@@ -3,6 +3,7 @@ import { Play } from 'lucide-react';
 import { API_BASE } from '../../apiBase';
 import { LogConsole } from '../tasks/components/LogConsole';
 import FileTreeSidebar from './FileTreeSidebar';
+import { StudioNavbar } from '../../components/navigation/StudioNavbar';
 
 export default function IDEPage() {
   const [openFiles, setOpenFiles] = useState<{path: string, content: string}[]>([]);
@@ -64,9 +65,8 @@ export default function IDEPage() {
 
   return (
     <div className="flex flex-col h-screen bg-white">
-      <div className="flex items-center border-b border-slate-200 bg-slate-50 px-4 py-2">
-        <span className="text-sm font-bold text-slate-800">IDE</span>
-      </div>
+      {/* Universal studio switcher — replaces the old static "IDE" label bar. */}
+      <StudioNavbar />
       <div className="flex flex-1 min-h-0">
         <FileTreeSidebar onFileSelect={handleFileSelect} />
         <div className="flex flex-col flex-1 min-w-0 bg-white">

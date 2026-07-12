@@ -69,4 +69,36 @@ test.describe('Visual React Studio Designer (/designer)', () => {
     await viewCode.click();
     await viewSplit.click();
   });
+
+  test('AI chat toggle opens the assistant drawer and shows the active code context', async ({ page }) => {
+    // Collapsed by default: the drawer is not in the DOM until toggled.
+    await expect(page.getByTestId('ai-assistant-drawer')).toHaveCount(0);
+
+    await page.getByTestId('ai-chat-toggle').click();
+
+    const drawer = page.getByTestId('ai-assistant-drawer');
+    await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText('AI Assistant & Inspector');
+
+    // The context banner reflects the Sandpack file the designer is on (App.tsx by default),
+    // which is also what the chat prompts will operate on.
+    const context = page.getByTestId('designer-ai-context');
+    await expect(context).toBeVisible();
+    await expect(context).toContainText('App.tsx');
+
+    // Toggling again collapses the drawer.
+    await page.getByTestId('ai-chat-toggle').click();
+    await expect(page.getByTestId('ai-assistant-drawer')).toHaveCount(0);
+  });
+
+  test('AI drawer open state persists across a reload', async ({ page }) => {
+    await page.getByTestId('ai-chat-toggle').click();
+    await expect(page.getByTestId('ai-assistant-drawer')).toBeVisible();
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    // Restored from localStorage without another click.
+    await expect(page.getByTestId('ai-assistant-drawer')).toBeVisible();
+    await expect(page.getByTestId('designer-ai-context')).toContainText('App.tsx');
+  });
 });

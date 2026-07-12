@@ -47,15 +47,54 @@ function Delta({ value, tone = 'neutral', suffix }: { value: number; tone?: 'neu
 
 // Agent-role palette, hoisted so the bars, the stacked swimlanes and the shared legend
 // all read from ONE source — keeping the role legend consistent with the bar colours (item 44).
-const ROLE_ORDER = ['architect', 'dev', 'qa', 'merge'];
-const ROLE_COLOR: Record<string, string> = { architect: 'bg-fuchsia-500', dev: 'bg-accent-500', qa: 'bg-amber-500', merge: 'bg-emerald-500' };
+//
+// The classic pipeline four keep their historical colours. Every OTHER role (the expanded
+// DEFAULT_AGENTS roster — product-owner, sre, tech-writer, … — plus anything user-defined)
+// gets a stable colour from a deterministic palette: hash(role) → palette index, so a role
+// renders the same hue on every visit and on every machine, with no registry to maintain.
+const CLASSIC_ROLES = ['architect', 'dev', 'qa', 'merge'] as const;
+const CLASSIC_ROLE_COLOR: Record<string, string> = { architect: 'bg-fuchsia-500', dev: 'bg-accent-500', qa: 'bg-amber-500', merge: 'bg-emerald-500' };
 
-function RoleLegend() {
+// Distinct mid-tone Tailwind hues (500–700 weights hold AA contrast as swatches/bars on the
+// app's white cards and slate-100 tracks). Deliberately skips the classic four's hues and
+// rose — rose is this app's error colour, and a role must never read as a failure. `ai-*`
+// (violet) is the one in-house semantic token that fits here, so it leads the ramp.
+const EXTRA_ROLE_PALETTE = [
+  'bg-ai-500', 'bg-sky-600', 'bg-teal-600', 'bg-indigo-500', 'bg-lime-700',
+  'bg-cyan-700', 'bg-orange-600', 'bg-blue-600', 'bg-pink-600', 'bg-purple-700',
+];
+
+// Small ×31 string hash — dependency-free and stable across sessions/platforms, which is
+// all "same role, same colour, forever" needs. The seed (81) was picked by brute force so
+// the eleven expanded DEFAULT_AGENTS roles land on ten DISTINCT palette slots (the maximum
+// possible with a ten-entry palette) — a genuinely unknown user-defined role may still share
+// a hue with another, which is the accepted trade-off of registry-free colouring.
+function hashRole(role: string): number {
+  let h = 81;
+  for (let i = 0; i < role.length; i++) h = (Math.imul(h, 31) + role.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/** Colour class for a role: classic roles keep their fixed colours; others hash into the palette. */
+export function roleColor(role: string): string {
+  return CLASSIC_ROLE_COLOR[role] ?? EXTRA_ROLE_PALETTE[hashRole(role) % EXTRA_ROLE_PALETTE.length];
+}
+
+/** Canonical display order for whatever roles the data actually holds:
+ *  the classic pipeline four first (in pipeline order), then everything else alphabetically. */
+export function orderRoles(present: Iterable<string>): string[] {
+  const set = new Set(present);
+  const classic = CLASSIC_ROLES.filter(r => set.has(r));
+  const rest = [...set].filter(r => !(CLASSIC_ROLES as readonly string[]).includes(r)).sort();
+  return [...classic, ...rest];
+}
+
+function RoleLegend({ roles }: { roles: string[] }) {
   return (
     <div className="flex flex-wrap gap-x-3 gap-y-1 pt-0.5">
-      {ROLE_ORDER.map(role => (
+      {roles.map(role => (
         <span key={role} className="inline-flex items-center gap-1 text-micro text-slate-500 capitalize">
-          <span className={`inline-block w-2 h-2 rounded-sm ${ROLE_COLOR[role]}`} />
+          <span className={`inline-block w-2 h-2 rounded-sm ${roleColor(role)}`} />
           {role}
         </span>
       ))}
@@ -140,6 +179,9 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
   for (const { timings } of tasksWithTime) for (const [role, ms] of Object.entries(timings)) roleTotals[role] = (roleTotals[role] || 0) + ms;
   const grandTotal = Object.values(roleTotals).reduce((s, v) => s + v, 0);
   const topByTime = [...tasksWithTime].sort((a, b) => b.total - a.total).slice(0, 8);
+  // Display order derived from the data actually present — classic four first, then the
+  // expanded roles alphabetically — so new roles chart and appear in the legend automatically.
+  const roleOrder = orderRoles(Object.keys(roleTotals));
 
   // ── Models ──
   const byModel: Record<string, number> = {};
@@ -266,12 +308,12 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
           <p className="text-xs text-slate-500">No agent time recorded yet — accumulates as agents finish runs.</p>
         ) : (
           <div className="space-y-1.5">
-            {ROLE_ORDER.filter(r => roleTotals[r]).map(role => (
+            {roleOrder.map(role => (
               <div key={role} className="grid grid-cols-[72px_1fr_3.5rem_2.25rem] items-center gap-3">
                 <span className="text-xs font-semibold text-slate-800 capitalize">{role}</span>
                 <Tooltip label={`${role}: ${fmtMins(roleTotals[role])} (${Math.round((roleTotals[role] / grandTotal) * 100)}%)`}>
                   <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div className={`h-full ${ROLE_COLOR[role] || 'bg-slate-400'} rounded-full`} style={{ width: `${(roleTotals[role] / grandTotal) * 100}%` }} />
+                    <div className={`h-full ${roleColor(role)} rounded-full`} style={{ width: `${(roleTotals[role] / grandTotal) * 100}%` }} />
                   </div>
                 </Tooltip>
                 <span className="text-xs font-bold text-slate-700 text-right">{fmtMins(roleTotals[role])}</span>
@@ -282,7 +324,7 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
               <span>Total agent time across {tasksWithTime.length} task{tasksWithTime.length !== 1 ? 's' : ''}</span>
               <span className="font-bold text-slate-700">{fmtMins(grandTotal)}</span>
             </div>
-            <RoleLegend />
+            <RoleLegend roles={roleOrder} />
           </div>
         )}
       </Section>
@@ -301,17 +343,17 @@ export default function AnalyticsTab({ tasks }: AnalyticsTabProps) {
                   </Tooltip>
                   <span className="font-bold text-slate-700">{fmtMins(total)}</span>
                 </div>
-                <div className="grid h-2 rounded-full overflow-hidden bg-slate-100" style={{ gridTemplateColumns: ROLE_ORDER.filter(r => timings[r]).map(r => `${timings[r]}fr`).join(' ') }}>
-                  {ROLE_ORDER.filter(r => timings[r]).map(role => (
+                <div className="grid h-2 rounded-full overflow-hidden bg-slate-100" style={{ gridTemplateColumns: orderRoles(Object.keys(timings).filter(r => timings[r])).map(r => `${timings[r]}fr`).join(' ') }}>
+                  {orderRoles(Object.keys(timings).filter(r => timings[r])).map(role => (
                     <Tooltip key={role} label={`${role}: ${fmtMins(timings[role])}`}>
-                      <div className={`w-full h-full ${ROLE_COLOR[role] || 'bg-slate-400'}`} />
+                      <div className={`w-full h-full ${roleColor(role)}`} />
                     </Tooltip>
                   ))}
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-                  {ROLE_ORDER.filter(r => timings[r]).map(role => (
+                  {orderRoles(Object.keys(timings).filter(r => timings[r])).map(role => (
                     <span key={role} className="text-micro text-slate-500 capitalize">
-                      <span className={`inline-block w-2 h-2 rounded-sm mr-1 align-middle ${ROLE_COLOR[role] || 'bg-slate-400'}`} />
+                      <span className={`inline-block w-2 h-2 rounded-sm mr-1 align-middle ${roleColor(role)}`} />
                       {role} {fmtMins(timings[role])}
                     </span>
                   ))}

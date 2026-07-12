@@ -20,6 +20,7 @@ import { ProjectBar } from './tasks/components/ProjectBar';
 import { StartScreen, SETUP_DONE_KEY } from './tasks/components/StartScreen';
 import { AgentTank } from '../components/piranha/AgentTank';
 import { PiranhaLoader } from '../components/piranha/PiranhaLoader';
+import { StudioNavbar } from '../components/navigation/StudioNavbar';
 import { useProjects } from './tasks/projectContext';
 import type { Task, Column } from './tasks/types';
 import { loadColumns, saveColumns, BOARD_COLUMNS_EVENT } from './tasks/boardConfig';
@@ -514,6 +515,8 @@ const TasksPage: React.FC = () => {
        that forgot to guess (Agents) simply grew the page — which is the scrollbar you saw. A
        flex column measures the header instead of estimating it. */
     <div className="h-dvh flex flex-col overflow-hidden bg-slate-100 text-slate-800 selection:bg-accent-200 selection:text-accent-900">
+      {/* Universal studio switcher — the same bar every studio page renders at its top. */}
+      <StudioNavbar />
       {/* Item 90: slim page-wide banner when the db-server (the whole backend) is unreachable.
           Health is polled independently of the tasks fetch, so this reads exactly "offline",
           not "one request 500'd". `role=status` + polite live region announces it once. */}
