@@ -1,48 +1,39 @@
-# Dispatch ledger — P0 items 7+8 (events feed + usage-aware auto-resume)
+# Dispatch ledger — Canvas exhaustive catalog + context-aware inspector wave
 
-_Operational state for the current agent wave. A resumed session (cron firing after a plan-limit
-window, or a fresh conversation) reads THIS file first and continues from "Next actions".
-Spec for the items: docs/SPEC.md → Release 1 → P0 items 7 and 8. Do not commit anything._
+_Operational state for the current agent wave. A resumed session reads THIS file first and
+continues from "Next actions". Spec: docs/canvas-control-flow-pending.md plus the user's
+2026-07-12 instruction: exhaustive options from the OFFICIAL sources (start.spring.io
+metadata, incl. Spring Cloud legacy Ribbon/Config Server/Hystrix), every option with a docs
+link + one-line description, and clicking a canvas node must switch the left-menu options
+to that node's catalog. Do not commit anything unless the user says push._
 
-## Safety-net schedule
-- A session-scoped cron re-invokes the orchestrating session periodically with "read
-  docs/LEDGER.md and continue". Firings during a limit window fail harmlessly; the first
-  firing after the reset resumes the work. Cron id: `ed335228` (fires :13 and :43 each hour;
-  session-scoped — dies if the VS Code session closes; auto-expires after 7 days).
-- Delete the cron (CronDelete) when the Integration section is fully checked off.
+## Previous wave (complete, still uncommitted in tree — do not touch)
+- 10 default IT-role agents added to agentic/db/defaults.ts + agentic/__tests__/defaultRoles.test.ts.
+  QA-approved: typecheck clean, 694/694 tests. Awaiting the user's push decision.
+- Follow-up parked: src/pages/tasks/components/AnalyticsTab.tsx hardcodes ROLE_ORDER/ROLE_COLOR
+  for architect/dev/qa/merge — new roles render uncolored. Fold into a later UI wave.
 
 ## Contracts (agents build to these; do not renegotiate)
-- `FailureKind` (agentic/types.ts:37) gains `'limit'`; `RunResult` (:207) gains
-  `resetAt?: string | null` (ISO, from the parsed epoch).
-- Limit detection: only the explicit usage-limit message (e.g. `usage limit reached|<epoch>`,
-  epoch in seconds or ms) classifies as `limit`; plain 429/overloaded stays `network`.
-- Persistence: new `system_state(key TEXT PRIMARY KEY, value TEXT)` kv table (tasks DB group,
-  idempotent migration); key `limitPausedUntil` holds an ISO timestamp; helpers
-  `getSystemState/setSystemState` exported from agentic/db/tasks.ts.
-- `GET /agent-status` additionally returns `limitPausedUntil: string | null` (server reads the
-  kv via raw SQL with a try/catch so a missing table = null).
-- `GET /events?project=&limit=&offset=` → `{ ok, events: [{ id, taskId, taskTitle, agent,
-  message, type, ts, attempt, logPath }] }`, newest first, limit default 100. Source:
-  `agent_logs` (id, taskId, message, type, timestamp, projectId — logs DB) joined with tasks
-  (title, claimedBy → agent, attempts, logPath).
-- UI relative time: reuse `timeAgo` from src/pages/tasks/lib/timeUtil.ts.
+- Shared types: src/pages/canvas/data/catalogTypes.ts (CatalogOption { id, label, description,
+  docsUrl, status?, successor?, children? }, CatalogCategory, FrameworkCatalog). Every option
+  MUST have an official docsUrl and a one-line description.
+- Data files: springCatalog.ts (SPRING_CATALOG), nestCatalog.ts (NEST_CATALOG),
+  nextCatalog.ts (NEXT_CATALOG), fastapiCatalog.ts (FASTAPI_CATALOG) — all under
+  src/pages/canvas/data/, data-only, lazy-loadable.
+- Spring Cloud Netflix legacy (Ribbon/Hystrix/Zuul) included with status + successor
+  (LoadBalancer / Resilience4j / Gateway). Eureka + Config Server + Gateway as GA entries.
+- Validation tests live in src/pages/canvas/data/__tests__/ (one file per research agent).
 
 ## Wave status
 | # | Task | Files | Agent | Status |
 |---|---|---|---|---|
-| 1 | Limit detection + global pause/auto-resume (backend) | agentic/types.ts, agentic/engine/runner.ts, agentic/engine/orchestrator.ts, agentic/db/migrations.ts, agentic/db/tasks.ts, agentic/__tests__/limitPause.test.ts | dispatched | ✅ 10/10 tests; limit branch in handleAgentExit before merge-kickback; pause gate reads durable kv each tick (restart-safe) |
-| 2 | /events endpoint + limitPausedUntil on /agent-status + api-reference | db/server.ts, docs/api-reference.md | dispatched | ✅ tsc clean; tests skipped (server binds port at import — no seam; the planned server-split fixes this). ⚠ DEVIATION: /agent-status changed bare-array → { agents, limitPausedUntil } (grep found no in-tree consumers; governor must re-verify) |
-| 3 | EventsFeed table component (Task/Agent/Action/Link/Time/Attempt) | src/pages/tasks/components/EventsFeed.tsx + __tests__/EventsFeed.test.tsx | dispatched | ✅ 7/7 tests; props { onOpenLog?(taskId, agent) }; polls /events every 5s; filter bar; sticky-header table |
-| 4 | LimitBanner component (countdown banner) | src/pages/tasks/components/LimitBanner.tsx + __tests__/LimitBanner.test.tsx | dispatched | ✅ 5/5 tests; no props (self-contained poll); amber-100/900 for AA contrast; icon CirclePause |
+| 1 | Spring Boot + Spring Cloud exhaustive catalog (scrape start.spring.io metadata + spring.io docs) | springCatalog.ts + springCatalog.test.ts | research agent | DISPATCHED |
+| 2 | NestJS / Next.js / FastAPI(+AI) exhaustive catalogs (official docs) | nestCatalog.ts, nextCatalog.ts, fastapiCatalog.ts + ecosystemCatalogs.test.ts | research agent | DISPATCHED |
+| 3 | Canvas UI: control-flow nodes (§3 of pending doc) + context-aware inspector — clicking a node swaps the left panel to that node type's catalog accordions (lazy-loaded, checkboxes, docs links rendered) | NodePalette.tsx, EdgeInspector.tsx, InspectorPanel.tsx, CanvasPage.tsx, new CatalogInspector component + tests, e2e spec | dev agent | BLOCKED ON 1+2 |
+| 4 | Rewrite docs/canvas-control-flow-pending.md as the full-blown catalog document generated from the data files (links + descriptions per item) | docs/canvas-control-flow-pending.md | tech-writer agent | BLOCKED ON 1+2 |
 
-## Integration (governor = the orchestrating session; do AFTER agents finish)
-- [x] Review each agent's diff; agents edited ONLY their assigned files. (Confirmed via git status; the /agent-status shape deviation was verified safe — LimitBanner is the only in-tree consumer.)
-- [x] Wire EventsFeed into the UI (tabsConfig.ts + TasksPage.tsx — new "Events" tab, closeable; onOpenLog opens the Logs tab on that agent).
-- [x] Wire LimitBanner into TasksPage.tsx next to the offline banner.
-- [x] `pnpm run typecheck` clean; full `pnpm test` green (684/684, +22 from the wave; tabsConfig test expectation updated for the new tab); `pnpm run build` clean.
-- [x] SPEC P0 items 7+8 marked SHIPPED; safety-net cron deleted. NO commits (per standing rule).
-
-## WAVE COMPLETE — 2026-07-12
-All work is uncommitted in the working tree for the user's review. Note: the user committed
-the earlier session's work themselves as 75624a2 mid-wave. Remaining follow-up (not this
-wave): observe a real limit window end-to-end (SPEC §6 verification backlog).
+## Next actions (governor)
+1. When agents 1+2 report: verify diffs stayed in their file lists; run typecheck + full suite.
+2. Dispatch agents 3 (dev) and 4 (tech-writer) in parallel with the real catalog exports named.
+3. Integrate: typecheck + full vitest + attempt `pnpm run test:e2e` for the canvas spec.
+4. Report to user; NO commits without an explicit push instruction.
