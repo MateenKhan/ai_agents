@@ -54,7 +54,7 @@ export const TRANSIENT_LOG_TABLES = ['agent_logs', 'agent_db_usage'] as const;
 /** The only `board_settings` keys that are configuration. Everything else in that table is
  *  runtime state or points at a real checkout — see the header. */
 export const DEFAULT_BOARD_SETTINGS: Readonly<Record<string, unknown>> = Object.freeze({
-  agent_defaults: { maxConcurrency: 0, skipPermissions: true },
+  agent_defaults: { maxConcurrency: 0, permissionProfile: 'standard' },
 });
 
 /** Keys a restore may delete/overwrite in board_settings. Derived, so adding a default above

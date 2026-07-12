@@ -725,7 +725,7 @@ async function triagePass(): Promise<void> {
     agentName: 'triage', taskId: anchor.id, role: 'architect',
     // Triage is not a workflow stage; it runs the architect directly, on the architect's model.
     prompt: triagePromptFor(pid, tasks), model: getConfig().models?.architect || arch.model, worktree: 'none',
-    skipPermissions: await skipPermissionsEnabled(),
+    permissionProfile: await getPermissionProfile(),
     onExit: (r) => { release(); log('__system__', `🔭 architect triage done (${pid}, ${tasks.length} task(s), ${r.failure})`, r.failure === 'none' ? 'success' : 'warning'); },
   });
   if (ok) { log('__system__', `🔭 architect triage — reviewing ${tasks.length} in-flight task(s) in project ${pid}`, 'info'); setStatus(`Architect triage — reviewing ${tasks.length} task(s) in ${pid}`, true); }
@@ -735,8 +735,8 @@ async function triagePass(): Promise<void> {
 /** Does the user allow agents to run with `--dangerously-skip-permissions`?
  *  Owned in Settings -> Agent safety. Absent => true, so the product works out of the box —
  *  but it is now a VISIBLE setting rather than a silent env-var default. */
-async function skipPermissionsEnabled(): Promise<boolean> {
-  try { return (await getAgentDefaults()).skipPermissions !== false; } catch { return true; }
+async function getPermissionProfile(): Promise<'strict' | 'standard' | 'dangerous'> {
+  try { return (await getAgentDefaults()).permissionProfile; } catch { return 'standard'; }
 }
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
@@ -777,7 +777,7 @@ async function dispatch(task: Task, route: Routed, name: string): Promise<void> 
 
   const ok = await spawnHeadlessAgent({
     agentName: name, taskId: task.id, role: role as AgentRole, prompt, model, worktree: wt,
-    skipPermissions: await skipPermissionsEnabled(),
+    permissionProfile: await getPermissionProfile(),
     onExit: (r) => { handleAgentExit(name, task.id, route, r, verdictBefore).catch(e => log(task.id, `exit handler error: ${e?.message || e}`, 'error')); },
   });
   if (ok) log(task.id, `🚀 ${role} (${model}) as ${name} — stage ${stage.id}, attempt ${attempts}/${perStage?.attempts ?? maxAttempts()}`, 'success');
@@ -1012,7 +1012,7 @@ async function runAdvisor(name: string, task: Task, target: WfStage, ac: AgentCo
     `  curl -X PUT http://127.0.0.1:6952/tasks/${task.id} -H "Content-Type: application/json" -d '{"consultAnswer":"<your answer>"}'`,
   ].join('\n');
 
-  const skip = await skipPermissionsEnabled();
+  const profile = await getPermissionProfile();
   agentTaskMap.set(name, task.id);
   log(task.id, `🔎 advisor ${role} (${model}) as ${name} — answering a peer's consult`, 'info');
   await new Promise<void>((resolve) => {
@@ -1020,7 +1020,7 @@ async function runAdvisor(name: string, task: Task, target: WfStage, ac: AgentCo
     const done = () => { if (settled) return; settled = true; agentTaskMap.delete(name); resolve(); };
     spawnHeadlessAgent({
       agentName: name, taskId: task.id, role, prompt, model, worktree: 'none',
-      skipPermissions: skip, onExit: () => done(),
+      permissionProfile: profile, onExit: () => done(),
     }).then(ok => { if (!ok) done(); }).catch(() => done());
   });
   const fresh = await getTask(task.id);

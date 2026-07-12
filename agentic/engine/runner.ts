@@ -25,9 +25,11 @@ const CLAUDE_FLAGS_ENV = process.env.CLAUDE_FLAGS
   ? process.env.CLAUDE_FLAGS.split(' ').filter(Boolean)
   : null;
 
-function claudeFlags(skipPermissions: boolean): string[] {
+function claudeFlags(profile: 'strict' | 'standard' | 'dangerous', role: AgentRole): string[] {
   if (CLAUDE_FLAGS_ENV) return CLAUDE_FLAGS_ENV;
-  return skipPermissions ? ['--dangerously-skip-permissions'] : [];
+  const flags = profile === 'dangerous' ? ['--dangerously-skip-permissions'] : ['--permission-mode', 'acceptEdits'];
+  if (role === 'plan') flags.push('--disallowedTools', 'Edit,Write');
+  return flags;
 }
 const AGENT_TIMEOUT_MS = parseInt(process.env.AGENT_TIMEOUT_MS || String(30 * 60 * 1000));
 
@@ -38,9 +40,8 @@ export interface SpawnOptions {
   prompt: string;
   model: string;
   worktree: WorktreeMode;
-  /** Pass --dangerously-skip-permissions. Owned by the user via Settings; when false the
-   *  agent will block on the first file write instead of editing without asking. */
-  skipPermissions?: boolean;
+  /** Agent permission profile. 'strict' prompts on write. 'standard' allows edits and safe bash. 'dangerous' skips all prompts. */
+  permissionProfile?: 'strict' | 'standard' | 'dangerous';
   onExit: (result: RunResult) => void;
 }
 
@@ -254,7 +255,20 @@ export async function spawnHeadlessAgent(opts: SpawnOptions): Promise<boolean> {
   if (taskFile) { try { appendFileSync(taskFile, header); } catch { /* disk */ } }
 
   const modelArgs = model ? ['--model', model] : [];
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...modelArgs, ...claudeFlags(opts.skipPermissions !== false)];
+  const profile = opts.permissionProfile || 'standard';
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...modelArgs, ...claudeFlags(profile, opts.role)];
+
+  if (profile !== 'dangerous') {
+    const claudeDir = join(cwd, '.claude');
+    try { mkdirSync(claudeDir, { recursive: true }); } catch {}
+    const settings = {
+      permissions: {
+        allow: ["Edit", "Write", "Bash(pnpm test)", "Bash(pnpm build)", "Bash(pnpm typecheck)", "Bash(git log*)", "Bash(git status)", "Bash(git diff*)", "Bash(git show*)"],
+        deny: ["Bash(curl*)", "Bash(wget*)", "Bash(git push*)", "Read(.env)", "Read(**/.secret.key)", "WebFetch", "WebSearch"]
+      }
+    };
+    try { writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(settings, null, 2)); } catch {}
+  }
 
   // Agents authenticate git with their assigned PAT (or the '*' default) — injected as a
   // per-process Authorization header scoped to the token's host. No token → no git auth env.

@@ -26,32 +26,29 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
   // Global agent defaults: max concurrent agents per project ('' = unset → 0/unlimited),
   // and whether agents may skip Claude's permission prompts.
   const [agentMaxConc, setAgentMaxConc] = useState<string>('');
-  const [skipPerms, setSkipPerms] = useState(true);
+  const [profile, setProfile] = useState<'strict' | 'standard' | 'dangerous'>('standard');
   useEffect(() => {
     if (!isOpen) return;
     fetch(`${API_BASE}/agent-defaults`).then(r => r.json())
       .then(d => {
         setAgentMaxConc(d?.maxConcurrency ? String(d.maxConcurrency) : '0');
-        setSkipPerms(d?.skipPermissions !== false);
+        setProfile(d?.permissionProfile || 'standard');
       })
       .catch(() => {});
   }, [isOpen]);
 
-  // Enabling this is the one irreversible-feeling toggle in the product: it lets agents
-  // write/delete/commit unattended. Gate the ENABLE direction behind a type-to-confirm;
-  // turning it OFF is always safe and immediate.
-  const toggleSkipPerms = async (next: boolean) => {
-    if (next && !skipPerms) {
+  const toggleProfile = async (next: 'strict' | 'standard' | 'dangerous') => {
+    if (next === 'dangerous' && profile !== 'dangerous') {
       const ok = await confirm({
-        title: 'Skip permission prompts?',
-        message: 'Agents will edit, delete and commit files without asking — including unattended overnight runs. Enable this only if you trust every agent you run.',
+        title: 'Enable dangerous mode?',
+        message: 'Agents will run with full worktree access and skip permission prompts. Enable this only if you trust every agent you run.',
         confirmLabel: 'Enable',
         tone: 'danger',
         requireType: 'SKIP',
       });
       if (!ok) return;
     }
-    setSkipPerms(next);
+    setProfile(next);
   };
 
   const handleSave = () => {
@@ -59,7 +56,7 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         maxConcurrency: Math.max(0, Math.floor(Number(agentMaxConc) || 0)),
-        skipPermissions: skipPerms,
+        permissionProfile: profile,
       }),
     }).catch(() => {});
     onSave(cols);
@@ -153,39 +150,38 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
         <p className="text-micro text-slate-500 mt-2">Default cap on how many agents run at once <span className="font-semibold">per project</span> — <span className="font-mono">0 = unlimited</span> (still bounded by CPU/RAM). A project can override this in its editor.</p>
       </div>
 
-      {/* Agent safety — the single most dangerous setting in the product. It used to be a
-          silent env-var default with no UI at all. Surfaced so the user OWNS it. */}
       <div className="mb-6">
         <h3 className="eyebrow mb-2.5">Agent Safety</h3>
         <label
           data-feature-id="settings-skip-perms"
-          className={`flex items-start justify-between gap-3 px-3 py-3 rounded-lg border cursor-pointer transition-colors ${
-            skipPerms ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50'
+          className={`flex items-center justify-between gap-3 px-3 py-3 rounded-lg border transition-colors ${
+            profile === 'dangerous' ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50'
           }`}
         >
           <span className="flex items-start gap-2.5 min-w-0">
-            <ShieldAlert size={16} className={`mt-0.5 shrink-0 ${skipPerms ? 'text-rose-600' : 'text-slate-400'}`} />
+            <ShieldAlert size={16} className={`mt-0.5 shrink-0 ${profile === 'dangerous' ? 'text-rose-600' : 'text-slate-400'}`} />
             <span className="min-w-0">
               <span className="block text-sm font-semibold text-slate-900">
-                Skip permission prompts
-                {skipPerms && <span className="ml-2 align-middle text-micro font-bold uppercase tracking-wider text-rose-700">Dangerous</span>}
+                Permission Profile
+                {profile === 'dangerous' && <span className="ml-2 align-middle text-micro font-bold uppercase tracking-wider text-rose-700">Dangerous</span>}
               </span>
               <span className="block text-2xs text-slate-600 mt-1 leading-relaxed">
-                Agents edit, delete and commit files without asking. Required for unattended runs —
-                turn it off and an agent will stop at its first file write instead.
+                Controls the sandbox strictness for headless agents. Strict: halts and prompts on write. Standard: allows scoped file writes, blocks commands like curl. Dangerous: allows anything, skips all prompts.
               </span>
             </span>
           </span>
-          <input
-            type="checkbox"
-            checked={skipPerms}
-            onChange={e => toggleSkipPerms(e.target.checked)}
-            className="w-5 h-5 shrink-0 mt-0.5 accent-rose-600"
-          />
+          <select
+            value={profile}
+            onChange={e => toggleProfile(e.target.value as 'strict' | 'standard' | 'dangerous')}
+            className="px-2 py-1.5 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500 cursor-pointer"
+          >
+            <option value="strict">Strict</option>
+            <option value="standard">Standard (Default)</option>
+            <option value="dangerous">Dangerous</option>
+          </select>
         </label>
         <p className="text-micro text-slate-500 mt-2">
-          Passes <span className="font-mono">--dangerously-skip-permissions</span> to each agent. Setting the
-          <span className="font-mono"> CLAUDE_FLAGS</span> environment variable overrides this entirely.
+          Passes <span className="font-mono">--permission-mode</span> and a tailored <span className="font-mono">settings.json</span> to each agent.
         </p>
       </div>
 

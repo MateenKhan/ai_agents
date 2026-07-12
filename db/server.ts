@@ -1173,7 +1173,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const b = JSON.parse((await readBody(req)) || '{}');
       res.end(JSON.stringify(await setAgentDefaults({
         maxConcurrency: b.maxConcurrency != null ? Number(b.maxConcurrency) : undefined,
-        skipPermissions: b.skipPermissions != null ? !!b.skipPermissions : undefined,
+        permissionProfile: b.permissionProfile,
       })));
     } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;

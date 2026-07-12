@@ -39,7 +39,7 @@ describe('declarative defaults exist at boot', () => {
     expect(DEFAULT_BOARD_SETTINGS).toHaveProperty('agent_defaults');
     const d = await getAgentDefaults();
     expect(d.maxConcurrency).toBe(0);
-    expect(d.skipPermissions).toBe(true);
+    expect(d.permissionProfile).toBe('standard');
   });
 
   it('boot seeding never overwrites a value the user has changed', async () => {
@@ -120,11 +120,11 @@ describe('restore blast radius', () => {
     });
 
     it(`[${mode}] reverts agent_defaults to the declared value`, async () => {
-      await setAgentDefaults({ maxConcurrency: 9, skipPermissions: false });
+      await setAgentDefaults({ maxConcurrency: 9, permissionProfile: 'strict' });
       await restoreDefaults(mode);
       const d = await getAgentDefaults();
       expect(d.maxConcurrency).toBe(0);
-      expect(d.skipPermissions).toBe(true);
+      expect(d.permissionProfile).toBe('standard');
     });
   }
 });

@@ -30,12 +30,12 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
 
   // Workspace settings (global agent defaults — same contract as SettingsModal)
   const [maxConc, setMaxConc] = useState('0');
-  const [skipPerms, setSkipPerms] = useState(true);
+  const [profile, setProfile] = useState<'strict' | 'standard' | 'dangerous'>('standard');
   useEffect(() => {
     fetch(`${API_BASE}/agent-defaults`).then(r => r.json())
       .then(d => {
         setMaxConc(d?.maxConcurrency ? String(d.maxConcurrency) : '0');
-        setSkipPerms(d?.skipPermissions !== false);
+        setProfile(d?.permissionProfile || 'standard');
       })
       .catch(() => { /* offline — keep defaults */ });
   }, []);
@@ -50,7 +50,7 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           maxConcurrency: Math.max(0, Math.floor(Number(maxConc) || 0)),
-          skipPermissions: skipPerms,
+          permissionProfile: profile,
         }),
       });
     } catch { /* best-effort — Settings can fix it later */ }
@@ -215,22 +215,28 @@ export function StartScreen({ onDone }: { onDone: () => void }) {
                 className="w-20 px-2 py-1.5 text-sm text-right font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500" />
             </span>
           </label>
-          <label className={`flex items-start justify-between gap-3 px-3 py-3 rounded-lg border cursor-pointer transition-colors ${skipPerms ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50'}`}>
+          <label className={`flex items-center justify-between gap-3 px-3 py-3 rounded-lg border transition-colors ${profile === 'dangerous' ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50'}`}>
             <span className="flex items-start gap-2.5 min-w-0">
-              <ShieldAlert size={16} className={`mt-0.5 shrink-0 ${skipPerms ? 'text-rose-600' : 'text-slate-400'}`} />
+              <ShieldAlert size={16} className={`mt-0.5 shrink-0 ${profile === 'dangerous' ? 'text-rose-600' : 'text-slate-400'}`} />
               <span className="min-w-0">
                 <span className="block text-sm font-semibold text-slate-900">
-                  Skip permission prompts
-                  {skipPerms && <span className="ml-2 align-middle text-micro font-bold uppercase tracking-wider text-rose-700">Dangerous</span>}
+                  Permission Profile
+                  {profile === 'dangerous' && <span className="ml-2 align-middle text-micro font-bold uppercase tracking-wider text-rose-700">Dangerous</span>}
                 </span>
                 <span className="block text-2xs text-slate-600 mt-1 leading-relaxed">
-                  Agents edit, delete and commit files without asking — required for unattended runs.
-                  Turn it off and an agent stops at its first file write instead. Change anytime in Settings.
+                  Controls the sandbox strictness for headless agents.
                 </span>
               </span>
             </span>
-            <input type="checkbox" checked={skipPerms} onChange={e => setSkipPerms(e.target.checked)}
-              className="w-5 h-5 shrink-0 mt-0.5 accent-rose-600" />
+            <select
+              value={profile}
+              onChange={e => setProfile(e.target.value as 'strict' | 'standard' | 'dangerous')}
+              className="px-2 py-1.5 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500 cursor-pointer"
+            >
+              <option value="strict">Strict</option>
+              <option value="standard">Standard (Default)</option>
+              <option value="dangerous">Dangerous</option>
+            </select>
           </label>
         </div>
 
