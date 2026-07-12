@@ -29,6 +29,10 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
   const [profile, setProfile] = useState<'strict' | 'standard' | 'dangerous'>('standard');
   const [taskCap, setTaskCap] = useState<string>('2');
   const [dailyCap, setDailyCap] = useState<string>('25');
+
+  // Activepieces Integration
+  const [apUrl, setApUrl] = useState<string>('');
+  const [apApiKey, setApApiKey] = useState<string>('');
   useEffect(() => {
     if (!isOpen) return;
     fetch(`${API_BASE}/agent-defaults`).then(r => r.json())
@@ -37,6 +41,13 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
         setProfile(d?.permissionProfile || 'standard');
         setTaskCap(d?.taskCapUsd != null ? String(d.taskCapUsd) : '2');
         setDailyCap(d?.dailyCapUsd != null ? String(d.dailyCapUsd) : '25');
+      })
+      .catch(() => {});
+
+    fetch(`${API_BASE}/integrations/activepieces`).then(r => r.json())
+      .then(d => {
+        setApUrl(d?.webhookUrl || '');
+        setApApiKey(d?.apiKey || '');
       })
       .catch(() => {});
   }, [isOpen]);
@@ -65,6 +76,15 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
         dailyCapUsd: Number(dailyCap) || 0,
       }),
     }).catch(() => {});
+
+    fetch(`${API_BASE}/integrations/activepieces`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        webhookUrl: apUrl,
+        apiKey: apApiKey,
+      }),
+    }).catch(() => {});
+
     onSave(cols);
     onClose();
   };
@@ -222,6 +242,33 @@ export function SettingsModal({ isOpen, onClose, columns, onSave, hiddenTabs, on
         <p className="text-micro text-slate-500 mt-2">
           Passes <span className="font-mono">--permission-mode</span> and a tailored <span className="font-mono">settings.json</span> to each agent.
         </p>
+      </div>
+
+      <div className="mb-6">
+        <h3 className="eyebrow mb-2.5">Integrations</h3>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50">
+            <span className="text-sm font-semibold text-slate-700">Activepieces Webhook URL</span>
+            <input
+              type="text"
+              value={apUrl}
+              onChange={e => setApUrl(e.target.value)}
+              className="w-64 px-2 py-1.5 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500"
+              placeholder="https://..."
+            />
+          </label>
+          <label className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50">
+            <span className="text-sm font-semibold text-slate-700">Activepieces API Key</span>
+            <input
+              type="password"
+              value={apApiKey}
+              onChange={e => setApApiKey(e.target.value)}
+              className="w-64 px-2 py-1.5 text-sm bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-accent-500"
+              placeholder="sk-..."
+            />
+          </label>
+        </div>
+        <p className="text-micro text-slate-500 mt-2">Configure your Activepieces connection to enable webhook tools for your agents.</p>
       </div>
 
       <BoardColumnsEditor columns={cols} onChange={setCols} />
