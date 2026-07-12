@@ -57,6 +57,11 @@ vi.mock('@codesandbox/sandpack-react', async () => {
   };
 });
 
+// StudioNavbar needs Router + ProjectProvider context; it is not under test here.
+vi.mock('../../../components/navigation/StudioNavbar', () => ({
+  StudioNavbar: () => <div data-testid="mock-studio-navbar" />,
+}));
+
 // FileChat mock: capture the props the drawer passes; expose a spy-backed chat store so the
 // SelectionContextBridge's tag() calls can be asserted.
 vi.mock('../../tasks/components/FileChat', () => ({

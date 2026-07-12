@@ -14,6 +14,7 @@ import { DevicePreset, VisualTweaks } from './types';
 import { TweaksSidebar } from './components/TweaksSidebar';
 import { AgentPromptBar } from './components/AgentPromptBar';
 import { ViewportContainer } from './components/ViewportContainer';
+import { StudioNavbar } from '../../components/navigation/StudioNavbar';
 import { AiAssistantDrawer, AI_DRAWER_STORAGE_KEY } from './components/AiAssistantDrawer';
 
 const buildDynamicCSS = (t: VisualTweaks) => `:root {
@@ -252,6 +253,7 @@ export const VisualDesignerPage: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-slate-950 text-slate-100 overflow-hidden">
+      <StudioNavbar />
       <ProjectBar />
 
       {/* Top Header Bar */}

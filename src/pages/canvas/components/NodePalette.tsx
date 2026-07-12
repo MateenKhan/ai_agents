@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import {
   Cloud, Database, Layers, ChevronDown, ChevronRight, Plus, Search,
   GripVertical, Box, Share2, Server, Globe, Shield, Activity,
-  HardDrive, Zap, Workflow, Bot, Sparkles, Router
+  HardDrive, Zap, Workflow, Bot, Sparkles, Router,
+  GitBranch, Repeat, ShieldAlert, GitFork
 } from 'lucide-react';
 import {
   FaAws, FaMicrosoft, FaGoogle, FaDocker, FaReact
@@ -17,7 +18,7 @@ import {
 export type CategoryName =
   | 'AWS' | 'Azure' | 'GCP' | 'Containers/DevOps' | 'Databases'
   | 'Messaging' | 'Gateways' | 'Frameworks' | 'AI/Vector DBs'
-  | 'Cloud Providers' | 'Containers';
+  | 'Cloud Providers' | 'Containers' | 'Control Flow / Sagas';
 
 export interface PaletteItem {
   id: string;
@@ -81,6 +82,10 @@ export const renderServiceIcon = (iconType: string, color: string, size = 16) =>
     case 'activity': return <Activity {...props} />;
     case 'router': return <Router {...props} />;
     case 'sparkles': return <Sparkles {...props} />;
+    case 'gitBranch': return <GitBranch {...props} />;
+    case 'repeat': return <Repeat {...props} />;
+    case 'shieldAlert': return <ShieldAlert {...props} />;
+    case 'gitFork': return <GitFork {...props} />;
     default: return <Cloud {...props} />;
   }
 };
@@ -705,6 +710,52 @@ export const PALETTE_CATEGORIES: PaletteCategory[] = [
 ]
   },
   {
+    name: 'Control Flow / Sagas',
+    icon: <GitBranch size={16} className="text-orange-500" />,
+    items: [
+      {
+            "id": "controlFlowGateway",
+            "label": "Decision Gateway",
+            "category": "Control Flow / Sagas",
+            "type": "controlFlowGateway",
+            "color": "#f97316",
+            "badgeColor": "bg-amber-100 text-amber-800 border-amber-200",
+            "description": "Conditional control flow routing (IF/ELSE rules)",
+            "iconType": "gitBranch"
+      },
+      {
+            "id": "sagaOrchestrator",
+            "label": "Saga Orchestrator",
+            "category": "Control Flow / Sagas",
+            "type": "sagaOrchestrator",
+            "color": "#8b5cf6",
+            "badgeColor": "bg-purple-100 text-purple-800 border-purple-200",
+            "description": "Distributed transaction saga with compensations",
+            "iconType": "repeat"
+      },
+      {
+            "id": "resilienceGateway",
+            "label": "Circuit Breaker",
+            "category": "Control Flow / Sagas",
+            "type": "resilienceGateway",
+            "color": "#ef4444",
+            "badgeColor": "bg-rose-100 text-rose-800 border-rose-200",
+            "description": "Circuit breaker and retry resilience gateway",
+            "iconType": "shieldAlert"
+      },
+      {
+            "id": "forkJoinGateway",
+            "label": "Fork / Join",
+            "category": "Control Flow / Sagas",
+            "type": "forkJoinGateway",
+            "color": "#06b6d4",
+            "badgeColor": "bg-cyan-100 text-cyan-800 border-cyan-200",
+            "description": "Parallel fan-out control flow with join strategy",
+            "iconType": "gitFork"
+      }
+]
+  },
+  {
     name: 'AI/Vector DBs',
     icon: <Sparkles size={16} className="text-rose-500" />,
     items: [
@@ -768,6 +819,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode }) => {
     'Messaging': true,
     'Gateways': true,
     'Frameworks': true,
+    'Control Flow / Sagas': true,
     'AI/Vector DBs': true,
   });
 

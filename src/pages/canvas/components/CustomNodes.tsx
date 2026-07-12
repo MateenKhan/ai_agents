@@ -47,8 +47,35 @@ export const DatabaseNode = ({ data }: NodeProps) => {
   );
 };
 
+/** Shared frame for the four control-flow / saga gateway node types. */
+const makeControlFlowNode = (title: string, borderColor: string) => {
+  const ControlFlowNode = ({ data }: NodeProps) => {
+    return (
+      <div style={{ ...nodeStyle, borderColor, borderStyle: 'dashed' }}>
+        <Handle type="target" position={Position.Top} />
+        <div style={{ fontWeight: 'bold', borderBottom: '1px solid #ddd', paddingBottom: 5, marginBottom: 5, color: borderColor }}>
+          {title}
+        </div>
+        <div style={{ fontSize: '12px' }}>{data.label as string}</div>
+        <Handle type="source" position={Position.Bottom} />
+      </div>
+    );
+  };
+  ControlFlowNode.displayName = `${title.replace(/[^a-zA-Z]/g, '')}Node`;
+  return ControlFlowNode;
+};
+
+export const ControlFlowGatewayNode = makeControlFlowNode('Decision Gateway', '#f97316');
+export const SagaOrchestratorNode = makeControlFlowNode('Saga Orchestrator', '#8b5cf6');
+export const ResilienceGatewayNode = makeControlFlowNode('Circuit Breaker', '#ef4444');
+export const ForkJoinGatewayNode = makeControlFlowNode('Fork / Join', '#06b6d4');
+
 export const nodeTypes = {
   gateway: GatewayNode,
   springBoot: SpringBootNode,
   database: DatabaseNode,
+  controlFlowGateway: ControlFlowGatewayNode,
+  sagaOrchestrator: SagaOrchestratorNode,
+  resilienceGateway: ResilienceGatewayNode,
+  forkJoinGateway: ForkJoinGatewayNode,
 };

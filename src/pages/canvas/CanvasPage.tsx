@@ -19,6 +19,9 @@ import { InspectorPanel } from './components/InspectorPanel';
 import { NodePalette, PaletteItem } from './components/NodePalette';
 import { TrafficFlowEdge } from './components/TrafficFlowEdge';
 import { EdgeInspector } from './components/EdgeInspector';
+import { CatalogInspector, hasCatalogForNodeType } from './components/CatalogInspector';
+import { ControlFlowInspector, isControlFlowNodeType } from './components/ControlFlowInspector';
+import { StudioNavbar } from '../../components/navigation/StudioNavbar';
 
 const edgeTypes = {
   trafficFlow: TrafficFlowEdge,
@@ -221,6 +224,7 @@ const CanvasPage = () => {
 
   return (
     <div className="h-dvh flex flex-col bg-slate-100">
+      <StudioNavbar />
       <div className="h-14 shrink-0 bg-white border-b flex items-center justify-between px-4">
         <Link
           to="/tasks"
@@ -253,8 +257,34 @@ const CanvasPage = () => {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Exhaustive Categorized Node Palette on the left */}
-        <NodePalette onAddNode={handleAddNodeFromPalette} />
+        {/* Context-aware left panel: the palette by default; when a node is selected it
+            swaps to that node type's configuration — the exhaustive framework catalog
+            for spring-boot/nestjs/nextjs/fastapi nodes, or the bespoke control-flow
+            forms for gateway/saga/circuit-breaker/fork-join nodes. */}
+        {selectedNode && hasCatalogForNodeType(selectedNode.type) ? (
+          <CatalogInspector
+            key={selectedNode.id}
+            nodeId={selectedNode.id}
+            nodeType={selectedNode.type!}
+            nodeData={selectedNode.data as Record<string, unknown>}
+            onUpdateNode={updateNodeData}
+            onClose={() => setSelectedNodeId(null)}
+          />
+        ) : selectedNode && isControlFlowNodeType(selectedNode.type) ? (
+          <ControlFlowInspector
+            key={selectedNode.id}
+            nodeId={selectedNode.id}
+            nodeType={selectedNode.type}
+            nodeData={selectedNode.data as Record<string, unknown>}
+            targetNodes={nodes
+              .filter((n) => n.id !== selectedNode.id)
+              .map((n) => ({ id: n.id, label: (n.data.label as string) || n.id }))}
+            onUpdateNode={updateNodeData}
+            onClose={() => setSelectedNodeId(null)}
+          />
+        ) : (
+          <NodePalette onAddNode={handleAddNodeFromPalette} />
+        )}
 
         {/* Interactive ReactFlow Canvas */}
         <div
