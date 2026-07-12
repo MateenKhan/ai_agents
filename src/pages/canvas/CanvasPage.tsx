@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { ReactFlow, MiniMap, Controls, Background, useNodesState, useEdgesState, addEdge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, Save } from 'lucide-react';
+import { ChevronLeft, Save, Code, RefreshCw, Loader2 } from 'lucide-react';
 import { nodeTypes } from './components/CustomNodes';
 import { InspectorPanel } from './components/InspectorPanel';
 
@@ -23,6 +23,24 @@ const CanvasPage = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleGenerateCode = async () => {
+    setIsGenerating(true);
+    // Simulate sending canvas JSON to backend parser
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    setIsGenerating(false);
+    alert('Code generation triggered successfully!');
+  };
+
+  const handleSyncRepo = async () => {
+    setIsSyncing(true);
+    // Simulate fetching JSON from backend scanner
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    setIsSyncing(false);
+    alert('Canvas synced with repository successfully!');
+  };
 
   const onConnect = useCallback((params: any) => setEdges((eds) => addEdge(params, eds)), [setEdges]);
 
@@ -52,9 +70,27 @@ const CanvasPage = () => {
           <ChevronLeft size={16} className="mr-1" /> Back to Tasks Board
         </Link>
         <div className="text-sm font-bold text-slate-800">Architecture Canvas</div>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-600 text-white text-xs font-bold rounded shadow-sm hover:bg-accent-500">
-          <Save size={14} /> Build / Verify
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleSyncRepo}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-bold rounded shadow-sm hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          >
+            {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            Sync from Repository
+          </button>
+          <button 
+            onClick={handleGenerateCode}
+            disabled={isGenerating}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded shadow-sm hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+          >
+            {isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Code size={14} />}
+            Generate Code
+          </button>
+          <button className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-600 text-white text-xs font-bold rounded shadow-sm hover:bg-accent-500 transition-colors">
+            <Save size={14} /> Build / Verify
+          </button>
+        </div>
       </div>
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 relative">
