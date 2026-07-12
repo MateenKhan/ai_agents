@@ -80,6 +80,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
     "@huggingface/transformers": "^4.2.0",
+    "@monaco-editor/react": "^4.7.0",
     "@typescript-eslint/typescript-estree": "^8.59.0",
     "@xyflow/react": "^12.11.2",
     "dotenv": "^17.4.1",
