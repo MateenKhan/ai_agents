@@ -9,8 +9,8 @@ import { getDb, getDbFor, resetDb, resetDbFor } from './db.js';
 import { fromBuffer, cosine } from './embedder.js';
 // Shared code index (Postgres + pgvector) — only used when getBackendConfig().kind==='postgres'.
 import { codeIndexIsPostgres, pgSemanticSearch } from './indexPg.js';
-import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync } from 'fs';
-import { join, dirname, resolve, isAbsolute } from 'path';
+import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync, renameSync } from 'fs';
+import { join, dirname, resolve, isAbsolute, basename } from 'path';
 import { store } from '../agentic/db/tasks.js';
 
 const PORT = parseInt(process.env.DB_SERVER_PORT ?? '6952');
@@ -3354,6 +3354,180 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // then those routes 501 under Postgres. Everything else already runs on both.
       res.end(JSON.stringify(masked));
     } catch (e: any) { res.statusCode = 400; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── FS APIs ────────────────────────────────────────────────────────────────
+  const parsedUrl = new URL(req.url || '', 'http://x');
+  const pathPart = parsedUrl.pathname;
+
+  if (req.method === 'GET' && pathPart === '/api/fs/list') {
+    try {
+      const dirPath = parsedUrl.searchParams.get('dir') || process.cwd();
+      const walk = (dir) => {
+        const stats = statSync(dir);
+        if (!stats.isDirectory()) {
+          return { name: basename(dir), path: dir, type: 'file', size: stats.size };
+        }
+        const children = [];
+        const items = readdirSync(dir);
+        for (const child of items) {
+          if (child === '.git' || child === 'node_modules') continue;
+          children.push(walk(join(dir, child)));
+        }
+        return { name: basename(dir), path: dir, type: 'directory', children };
+      };
+      res.end(JSON.stringify(walk(dirPath)));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'GET' && pathPart === '/api/fs/read') {
+    try {
+      const filePath = parsedUrl.searchParams.get('path');
+      if (!filePath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
+      const fileContent = readFileSync(filePath, 'utf-8');
+      res.end(JSON.stringify({ content: fileContent }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'POST' && pathPart === '/api/fs/write') {
+    try {
+      const body = JSON.parse(await readBody(req) || '{}');
+      if (!body.path || typeof body.content !== 'string') { res.statusCode = 400; res.end(JSON.stringify({ error: 'path and content are required' })); return; }
+      mkdirSync(dirname(body.path), { recursive: true });
+      writeFileSync(body.path, body.content, 'utf-8');
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'PUT' && pathPart === '/api/fs/rename') {
+    try {
+      const body = JSON.parse(await readBody(req) || '{}');
+      if (!body.oldPath || !body.newPath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'oldPath and newPath are required' })); return; }
+      renameSync(body.oldPath, body.newPath);
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'DELETE' && pathPart === '/api/fs/delete') {
+    try {
+      const filePath = parsedUrl.searchParams.get('path');
+      if (!filePath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
+      if (existsSync(filePath)) {
+        const stats = statSync(filePath);
+        if (stats.isDirectory()) {
+          rmSync(filePath, { recursive: true, force: true });
+        } else {
+          unlinkSync(filePath);
+        }
+      }
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'POST' && pathPart === '/api/fs/run') {
+    try {
+      const body = JSON.parse(await readBody(req) || '{}');
+      if (!body.command) { res.statusCode = 400; res.end(JSON.stringify({ error: 'command is required' })); return; }
+      const child = spawnSync(body.command, { shell: true, cwd: body.cwd || process.cwd() });
+      res.end(JSON.stringify({
+        stdout: child.stdout ? child.stdout.toString() : '',
+        stderr: child.stderr ? child.stderr.toString() : '',
+        exitCode: child.status
+      }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  // ── FS APIs ────────────────────────────────────────────────────────────────
+  const parsedUrl = new URL(req.url || '', 'http://x');
+  const pathPart = parsedUrl.pathname;
+
+  if (req.method === 'GET' && pathPart === '/api/fs/list') {
+    try {
+      const dirPath = parsedUrl.searchParams.get('dir') || process.cwd();
+      const walk = (dir) => {
+        const stats = statSync(dir);
+        if (!stats.isDirectory()) {
+          return { name: basename(dir), path: dir, type: 'file', size: stats.size };
+        }
+        const children = [];
+        const items = readdirSync(dir);
+        for (const child of items) {
+          if (child === '.git' || child === 'node_modules') continue;
+          children.push(walk(join(dir, child)));
+        }
+        return { name: basename(dir), path: dir, type: 'directory', children };
+      };
+      res.end(JSON.stringify(walk(dirPath)));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'GET' && pathPart === '/api/fs/read') {
+    try {
+      const filePath = parsedUrl.searchParams.get('path');
+      if (!filePath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
+      const fileContent = readFileSync(filePath, 'utf-8');
+      res.end(JSON.stringify({ content: fileContent }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'POST' && pathPart === '/api/fs/write') {
+    try {
+      const body = JSON.parse(await readBody(req) || '{}');
+      if (!body.path || typeof body.content !== 'string') { res.statusCode = 400; res.end(JSON.stringify({ error: 'path and content are required' })); return; }
+      mkdirSync(dirname(body.path), { recursive: true });
+      writeFileSync(body.path, body.content, 'utf-8');
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'PUT' && pathPart === '/api/fs/rename') {
+    try {
+      const body = JSON.parse(await readBody(req) || '{}');
+      if (!body.oldPath || !body.newPath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'oldPath and newPath are required' })); return; }
+      renameSync(body.oldPath, body.newPath);
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'DELETE' && pathPart === '/api/fs/delete') {
+    try {
+      const filePath = parsedUrl.searchParams.get('path');
+      if (!filePath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
+      if (existsSync(filePath)) {
+        const stats = statSync(filePath);
+        if (stats.isDirectory()) {
+          rmSync(filePath, { recursive: true, force: true });
+        } else {
+          unlinkSync(filePath);
+        }
+      }
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    return;
+  }
+
+  if (req.method === 'POST' && pathPart === '/api/fs/run') {
+    try {
+      const body = JSON.parse(await readBody(req) || '{}');
+      if (!body.command) { res.statusCode = 400; res.end(JSON.stringify({ error: 'command is required' })); return; }
+      const child = spawnSync(body.command, { shell: true, cwd: body.cwd || process.cwd() });
+      res.end(JSON.stringify({
+        stdout: child.stdout ? child.stdout.toString() : '',
+        stderr: child.stderr ? child.stderr.toString() : '',
+        exitCode: child.status
+      }));
+    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
 
