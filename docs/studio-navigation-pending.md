@@ -1,16 +1,35 @@
 # Unified Studio Navigation & Consolidated IDE Logs Plan
 
-## 1. Problem Statement
-- Currently, navigation buttons between `/tasks`, `/canvas`, `/designer`, and `/ide` are scattered ("one icon here, one icon there").
-- Visiting a sub-studio (`/designer`, `/canvas`, `/ide`) lacks a consistent top navigation bar to switch between persona studios or return to the main board.
-- The `/ide` page uses a stripped-down `LogConsole` instead of Piranha's full `AgentLogsPanel`, `EventsFeed`, and `FileChat` drawer.
+## 1. Git Worktree & Subagent Assignment
+- **Assigned Role:** `Studio Navigation Engineer`
+- **Git Branch:** `subagent-studio-navigation`
+- **Worktree Directory:** `.system_generated/worktrees/subagent-studio-navigation`
+- **Status:** PENDING EXECUTION
 
-## 2. Proposed Architecture & Solution
-- Create a global **`StudioNavbar.tsx`** component included at the top of every route:
-  - Active project badge + Git status
-  - 4 Persona Studio Tabs:
-    1. Swarm Board (`/tasks`)
-    2. Architecture Canvas (`/canvas`)
-    3. Visual React Studio (`/designer`)
-    4. Code IDE & Swarm Logs (`/ide`)
-- In `/ide`, replace `<LogConsole />` with full `<AgentLogsPanel />` + `<FileChat />`.
+---
+
+## 2. User Feedback & Documented Requirements
+1. **Scattered Navigation ("One icon here, one icon there"):**
+   - Right now, buttons to `/designer` ("Studio") and `/canvas` ("Architecture Canvas") are scattered in different parts of the `/tasks` board.
+   - When a user navigates to `/designer`, `/canvas`, or `/ide`, there is no consistent top navbar to switch between studios or return to the main board.
+2. **IDE Logs Consolidation:**
+   - The `/ide` page currently uses a basic `<LogConsole />` text box.
+   - It should expose Piranha's rich `AgentLogsPanel`, `EventsFeed`, and interactive `FileChat` drawer so developers have full visibility into swarm activity directly from the IDE.
+
+---
+
+## 3. Detailed Architectural Plan
+1. **Create `src/components/navigation/StudioNavbar.tsx`:**
+   - A universal top app bar rendered across `/tasks`, `/canvas`, `/designer`, `/ide`.
+   - **Left:** Piranha Logo + Project Repository Badge (`remote_manufacturing`).
+   - **Center Tabs (4 Persona Studios):**
+     - 📋 **Swarm Board (`/tasks`)** — PM Kanban, Agent Swarm, Analytics
+     - 🏛️ **Architecture Canvas (`/canvas`)** — Enterprise Architects
+     - 🎨 **Visual React Studio (`/designer`)** — Full-Stack UI Designers
+     - 💻 **Code IDE (`/ide`)** — Developers & QA Automation
+   - **Right:** Live Backend Health Indicator (`127.0.0.1:6952 API: UP`) + Quick Action shortcuts.
+2. **Upgrade `/ide` Page (`src/pages/ide/index.tsx`):**
+   - Embed `StudioNavbar` at the top.
+   - Replace basic `LogConsole` with `AgentLogsPanel` and add a collapsible `FileChat` panel.
+3. **Automated Verification:**
+   - Add Playwright E2E assertions verifying navigation between `/tasks`, `/canvas`, `/designer`, and `/ide` via the `StudioNavbar`.
