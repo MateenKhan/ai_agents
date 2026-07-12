@@ -56,6 +56,7 @@ interface Agent {
   role: string; label: string; enabled: number; model: string;
   worktreeMode: string; ord: number; isSystem: number; promptTemplate: string;
   mergePromptTemplate?: string;
+  webhookTools?: string[];
 }
 
 export default function AgentsTab() {
@@ -69,6 +70,7 @@ export default function AgentsTab() {
   // Free-text filter across the card grid (item 58).
   const [query, setQuery] = useState('');
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [apTools, setApTools] = useState<{id: string; name: string}[]>([]);
   const [openGuard, setOpenGuard] = useState<string | null>(null);
   const [openStep, setOpenStep] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -573,6 +575,35 @@ export default function AgentsTab() {
                   </label>
                 </div>
               </div>
+              {apTools.length > 0 && !editing.isSystem && (
+                <div>
+                  <label className="eyebrow">Webhook Tools (Activepieces)</label>
+                  <div className="flex flex-wrap gap-3 mt-1.5">
+                    {apTools.map(t => {
+                      const isChecked = (editing.webhookTools || []).includes(t.id);
+                      return (
+                        <label key={t.id} className="flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={e => {
+                              const checked = e.target.checked;
+                              setEditing({
+                                ...editing,
+                                webhookTools: checked
+                                  ? [...(editing.webhookTools || []), t.id]
+                                  : (editing.webhookTools || []).filter(x => x !== t.id)
+                              });
+                            }}
+                            className="w-4 h-4 accent-emerald-600"
+                          />
+                          {t.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="eyebrow">{editing.role === 'architect' ? 'Plan prompt (job 1: planning)' : 'Prompt template'}</label>
                 <textarea value={editing.promptTemplate} onChange={e => setEditing({ ...editing, promptTemplate: e.target.value })} rows={editing.role === 'architect' ? 12 : 16} className={`${textareaCls} mt-1 text-xs font-mono`} />
