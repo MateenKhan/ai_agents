@@ -54,7 +54,7 @@ export default function IDEPage() {
         });
       }
     } catch (e: any) {
-      setLogs(l => [...l, Run error: {e.message}]);
+      setLogs(l => [...l, `Run error: ${e.message}`]);
     } finally {
       setRunning(false);
     }
@@ -74,7 +74,7 @@ export default function IDEPage() {
             {openFiles.map(f => (
               <div 
                 key={f.path} 
-                className={lex items-center gap-2 px-3 py-1.5 text-xs border rounded-t-md cursor-pointer transition-colors }
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs border rounded-t-md cursor-pointer transition-colors ${f.path === activeFile ? 'bg-white text-slate-800' : 'bg-slate-100 text-slate-500'}`}
                 style={{ marginBottom: '-1px' }}
                 onClick={() => setActiveFile(f.path)}
               >

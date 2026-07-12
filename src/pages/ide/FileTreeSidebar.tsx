@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
-import { API_BASE } from '../../../apiBase';
+import { API_BASE } from '../../apiBase';
 import { FileCode, Folder, ChevronRight } from 'lucide-react';
 
 interface FileTreeSidebarProps {
@@ -56,7 +56,7 @@ export default function FileTreeSidebar({ onFileSelect }: FileTreeSidebarProps) 
             style={{ paddingLeft: 8 + depth * 12 }}
             onClick={() => toggle(n.path)}
           >
-            <ChevronRight size={12} className={	ransition-transform } />
+            <ChevronRight size={12} className={`transition-transform ${isOpen ? 'rotate-90' : ''}`} />
             <Folder size={13} className="text-amber-500" />
             <span className="truncate">{n.name}</span>
           </button>
