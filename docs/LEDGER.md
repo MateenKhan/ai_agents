@@ -1,5 +1,14 @@
 # Dispatch ledger — Canvas exhaustive catalog + context-aware inspector wave
 
+## WAVE COMPLETE — 2026-07-12
+All 9 tasks shipped, integrated, gated (typecheck clean, 802/802 unit, 12/12 e2e live, audit 0) and
+pushed: 66cf491 (catalogs), f331bbe (engine P0.3+P0.4, UI, deps, doc), 9b90d13 (canvas UI + navbar
+wiring). Integration fixes by governor: designer test mocks StudioNavbar (needs router context);
+e2e selector strictness. Follow-ups carried: verify which runner path (SDK loop vs CLI) is live and
+whether generated worktree settings apply to it; remaining skip-flag sites (db/server.ts:124,1396,
+db/brief.ts:94, Dockerfile:21, .env.example:10); revisit dompurify override on monaco upgrade;
+SPEC P0 items 1,2,5,6 + P1 auth still open.
+
 _Operational state for the current agent wave. A resumed session reads THIS file first and
 continues from "Next actions". Spec: docs/canvas-control-flow-pending.md plus the user's
 2026-07-12 instruction: exhaustive options from the OFFICIAL sources (start.spring.io
