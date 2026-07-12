@@ -269,6 +269,8 @@ export interface Methodology {
   /** Prompt preamble instructing the agent which skills to use for this role.
    *  Accepts a plain string so CUSTOM roles (not just architect/dev/qa) resolve too. */
   preambleFor(role: AgentRole | string): string;
+  /** Custom tools to inject into the agent's context, as JSON schemas. */
+  toolsFor?(role: AgentRole | string): Record<string, any>[];
 }
 
 /** Control/reach layer (borrowed from hermes): chat notifications + scheduling. */
@@ -341,3 +343,26 @@ export interface AgenticConfig {
     lint?: string;
   };
 }
+
+/**
+ * Tool schema for triggering Activepieces workflows.
+ * Injected by the methodology layer when an agent needs integration capabilities.
+ */
+export const TRIGGER_ACTIVEPIECES_WEBHOOK_SCHEMA = {
+  name: 'trigger_activepieces_webhook',
+  description: 'Trigger an Activepieces webhook to run a remote workflow.',
+  parameters: {
+    type: 'object',
+    properties: {
+      webhookUrl: {
+        type: 'string',
+        description: 'The full URL of the Activepieces webhook to call.'
+      },
+      payload: {
+        type: 'object',
+        description: 'JSON payload to send to the workflow.'
+      }
+    },
+    required: ['webhookUrl', 'payload']
+  }
+};
