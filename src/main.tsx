@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { MotionConfig } from 'framer-motion';
 import TasksPage from './pages/TasksPage';
 import WorkflowPage from './pages/WorkflowPage';
+import CanvasPage from './pages/canvas/CanvasPage';
 import { ProjectProvider } from './pages/tasks/projectContext';
 import { ToastProvider } from './pages/tasks/components/Toast';
 import { ConfirmProvider } from './pages/tasks/components/ConfirmProvider';
@@ -33,6 +34,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/" element={<Navigate to="/tasks" replace />} />
                 <Route path="/tasks" element={<TasksPage />} />
                 <Route path="/tasks/:tab" element={<TasksPage />} />
+                <Route path="/canvas" element={<CanvasPage />} />
                 {/* Preview: the editor renders and saves to localStorage, but the engine still
                     runs its built-in pipeline. Wiring it up needs the /workflow endpoint. */}
                 <Route path="/workflow" element={<WorkflowPage />} />
