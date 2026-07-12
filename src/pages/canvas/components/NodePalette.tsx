@@ -10,7 +10,7 @@ import {
 import {
   SiPostgresql, SiMysql, SiMongodb, SiRedis, SiApachecassandra, SiElasticsearch,
   SiSupabase, SiKubernetes, SiHelm, SiArgo, SiIstio, SiApachekafka, SiRabbitmq,
-  SiNats, SiApachepulsar, SiNginx, SiTraefikproxy, SiKong, SiCloudflare,
+  SiNatsdotio, SiApachepulsar, SiNginx, SiTraefikproxy, SiKong, SiCloudflare,
   SiSpringboot, SiExpress, SiNestjs, SiFastapi, SiDjango, SiNextdotjs, SiAnthropic
 } from 'react-icons/si';
 
@@ -56,7 +56,7 @@ export const renderServiceIcon = (iconType: string, color: string, size = 16) =>
     case 'supabase': return <SiSupabase {...props} />;
     case 'kafka': return <SiApachekafka {...props} />;
     case 'rabbitmq': return <SiRabbitmq {...props} />;
-    case 'nats': return <SiNats {...props} />;
+    case 'nats': return <SiNatsdotio {...props} />;
     case 'pulsar': return <SiApachepulsar {...props} />;
     case 'nginx': return <SiNginx {...props} />;
     case 'traefik': return <SiTraefikproxy {...props} />;

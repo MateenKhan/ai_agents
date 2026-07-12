@@ -12,9 +12,14 @@ import { codeIndexIsPostgres, pgSemanticSearch } from './indexPg.js';
 import { readFileSync, writeFileSync, existsSync, appendFileSync, symlinkSync, readdirSync, statSync, unlinkSync, openSync, mkdirSync, rmSync, renameSync } from 'fs';
 import { join, dirname, resolve, isAbsolute, basename } from 'path';
 import { store } from '../agentic/db/tasks.js';
+import { Router } from './router.js';
+import { registerSystemRoutes } from './routes/system.js';
+
+export const appRouter = new Router();
+registerSystemRoutes(appRouter);
 
 const PORT = parseInt(process.env.DB_SERVER_PORT ?? '6952');
-const ACTIVE_AGENTS = new Set<string>();
+export const ACTIVE_AGENTS = new Set<string>();
 const LOGS_DIR = join(process.cwd(), '.agent_logs');
 
 const VERSION_INFO = (() => {
@@ -160,12 +165,12 @@ function safeLogName(name: string): string | null {
 }
 
 
-function projectIdOf(req: IncomingMessage, body?: any): string {
+export function projectIdOf(req: IncomingMessage, body?: any): string {
   try { const p = new URL(req.url!, 'http://x').searchParams.get('project'); if (p) return p; } catch { /* bad url */ }
   if (body && body.projectId) return String(body.projectId);
   return 'default';
 }
-async function projectRepoPath(projectId: string): Promise<string> {
+export async function projectRepoPath(projectId: string): Promise<string> {
   try { const p = await getProject(projectId); if (p?.repoPath) return p.repoPath; } catch { /* no db */ }
   return process.cwd();
 }
@@ -307,7 +312,7 @@ try { const cleared = pruneAgentLogs(new Set()); if (cleared) console.log(`[db-s
 //    so nothing reads or writes a malformed board. Clears itself when healthy.
 //  • CODE INDEX (local.db) is derived → on corruption we auto-rebuild it via
 //    `db:build`, PAUSE /search while it rebuilds, then drop the stale handle.
-let boardCorrupt: string | null = null;   // e.g. 'tasks.db' — pauses get/update
+export let boardCorrupt: string | null = null;   // e.g. 'tasks.db' — pauses get/update
 // Per-project code-index rebuild flags — a project's index-<pid>.db rebuild in flight.
 // While ANY project is rebuilding, /search is paused (the gate runs before the body,
 // so it can't know which project a POST /search targets).
@@ -348,14 +353,14 @@ function pushIndexLog(pid: string, chunk: string) {
   for (const seg of chunk.split(/\r?\n/)) { const s = seg.trim(); if (s) arr.push(s); }
   if (arr.length > 500) indexLogs.set(pid, arr.slice(-500));
 }
-const isRebuilding = (pid: string): boolean => indexRebuilding.get(pid) === true;
+export const isRebuilding = (pid: string): boolean => indexRebuilding.get(pid) === true;
 const anyRebuilding = (): boolean => { for (const v of indexRebuilding.values()) if (v) return true; return false; };
 
 // ── system activity ── what the orchestrator/db-server is doing right now, surfaced
 // to the UI's bottom-right status widget (cloning, reading/remembering a repo, etc).
 // Keyed per project so each project's widget reflects its own clone/index activity.
 type Activity = { kind: string; label: string; detail?: string; since: number };
-const systemActivity = new Map<string, Activity>();
+export const systemActivity = new Map<string, Activity>();
 function setActivity(projectId: string, kind: string, label: string, detail?: string) { systemActivity.set(projectId, { kind, label, detail, since: Date.now() }); }
 function clearActivity(projectId: string, kind: string) { if (systemActivity.get(projectId)?.kind === kind) systemActivity.delete(projectId); }
 
@@ -644,6 +649,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  // --- NEW ROUTER ---
+  const handled = await appRouter.handle(req as any, res as any);
+  if (handled) return;
+  // ------------------
+
   res.setHeader('Content-Type', 'application/json');
 
   // DB self-heal gate — pause only the affected DB requests while a DB is unavailable.
@@ -699,8 +709,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (!projectId && !agentRole) {
         res.statusCode = 400; res.end(JSON.stringify({ error: 'Must provide projectId or agentRole' })); return;
       }
-      const { getTasksDb } = await import('./tasks.js');
-      const db = getTasksDb();
+      const { store } = await import('../agentic/db/tasks.js');
+      const db = await store();
       let row;
       if (projectId) {
         row = await db.get(`SELECT * FROM activepieces_webhooks WHERE projectId = ?`, [projectId]);
@@ -721,8 +731,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (!webhookUrl) {
         res.statusCode = 400; res.end(JSON.stringify({ error: 'Must provide webhookUrl' })); return;
       }
-      const { getTasksDb } = await import('./tasks.js');
-      const db = getTasksDb();
+      const { store } = await import('../agentic/db/tasks.js');
+      const db = await store();
       const now = new Date().toISOString();
       if (projectId) {
         await db.run(`DELETE FROM activepieces_webhooks WHERE projectId = ?`, [projectId]);
@@ -3232,90 +3242,6 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
-  // ── system status ── one poll for the UI's live activity widget (per project). ──
-  // Delete one event from the status-widget feed (a logs.db row). id in the path.
-  {
-    const m = (req.url || '').split('?')[0].match(/^\/system-status\/events\/(\d+)$/);
-    if (req.method === 'DELETE' && m) {
-      try {
-        const { deleteAgentLog } = await import('../agentic/db/logs.js');
-        const removed = await deleteAgentLog(Number(m[1]));
-        res.end(JSON.stringify({ ok: true, removed }));
-      } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-      return;
-    }
-  }
-  // Clear the event feed for the project the board is showing (plus the engine-wide
-  // '__system__' lines it displays). Other projects' history is not touched.
-  if (req.method === 'DELETE' && (req.url || '').split('?')[0] === '/system-status/events') {
-    try {
-      const { clearAgentLogs } = await import('../agentic/db/logs.js');
-      const removed = await clearAgentLogs(projectIdOf(req));
-      res.end(JSON.stringify({ ok: true, removed }));
-    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'GET' && req.url?.startsWith('/system-status')) {
-    try {
-      const pid = projectIdOf(req);
-      let hb: any = null;
-      try { hb = await getHeartbeat(); } catch { /* optional */ }
-      const ci = await getCodeIndexConfig(pid);
-      const root = ci.root || await projectRepoPath(pid);
-      // Highest-priority current activity: explicit op → index rebuild → agents → idle.
-      let activity: Activity | undefined = systemActivity.get(pid);
-      if (!activity && isRebuilding(pid)) activity = { kind: 'indexing', label: 'Reading & remembering repo', detail: root, since: Date.now() };
-      if (!activity && ACTIVE_AGENTS.size > 0) activity = { kind: 'agents', label: `${ACTIVE_AGENTS.size} agent(s) working`, detail: [...ACTIVE_AGENTS].join(', '), since: Date.now() };
-
-      // Orchestrator liveness + always-on human-readable status line (from the heartbeat).
-      let settings: any = {};
-      try { settings = await getBoardSettings() || {}; } catch { /* optional */ }
-      const lastBeatAt = hb?.lastBeatAt || null;
-      const ageSec = lastBeatAt ? Math.round((Date.now() - new Date(lastBeatAt).getTime()) / 1000) : null;
-      const orchestrator = {
-        agentStatus: settings.agentStatus || null,
-        statusLine: hb?.statusLine || null,
-        lastBeatAt,
-        ageSec,
-        up: ageSec != null && ageSec < 30,
-      };
-
-      // Per-project task counts for the board summary.
-      let counts = { pending: 0, working: 0, testing: 0, done: 0 };
-      try {
-        const tasks = await getAllTasks(pid);
-        counts = {
-          pending: tasks.filter((t: any) => t.status === 'WORKING' && !t.started).length,
-          working: tasks.filter((t: any) => t.status === 'WORKING' && t.started).length,
-          testing: tasks.filter((t: any) => t.status === 'TESTING').length,
-          done: tasks.filter((t: any) => t.status === 'DONE').length,
-        };
-      } catch { /* optional */ }
-
-      // Most recent log rows (newest-first) for the live event feed, scoped to the project the
-      // board is showing. Unscoped, one project's failures scrolled through another's feed.
-      // Engine-wide '__system__' lines are still included by getRecentLogs.
-      let events: Array<{ id: number; ts: string; taskId: string; msg: string; type: string; projectId: string | null }> = [];
-      try { events = await getRecentLogs(15, pid); } catch { /* logs.db optional */ }
-
-      res.end(JSON.stringify({
-        ok: true,
-        activity: activity || { kind: 'idle', label: 'Idle', since: Date.now() },
-        indexRebuilding: isRebuilding(pid),
-        boardCorrupt,
-        activeAgents: [...ACTIVE_AGENTS],
-        circuit: hb?.circuit || null,
-        mode: hb?.mode || null,
-        indexRoot: root,
-        orchestrator,
-        counts,
-        events,
-      }));
-    } catch (e: any) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
   // ── Datastore backend ────────────────────────────────────────────────────────
   // Selects/records the datastore backend and (for Postgres) its ENCRYPTED URL.
   // The adapter IS built: at boot, configureBackend() points the async Store layer
@@ -3354,93 +3280,6 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // then those routes 501 under Postgres. Everything else already runs on both.
       res.end(JSON.stringify(masked));
     } catch (e: any) { res.statusCode = 400; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  // ── FS APIs ────────────────────────────────────────────────────────────────
-  const parsedUrl = new URL(req.url || '', 'http://x');
-  const pathPart = parsedUrl.pathname;
-
-  if (req.method === 'GET' && pathPart === '/api/fs/list') {
-    try {
-      const dirPath = parsedUrl.searchParams.get('dir') || process.cwd();
-      const walk = (dir) => {
-        const stats = statSync(dir);
-        if (!stats.isDirectory()) {
-          return { name: basename(dir), path: dir, type: 'file', size: stats.size };
-        }
-        const children = [];
-        const items = readdirSync(dir);
-        for (const child of items) {
-          if (child === '.git' || child === 'node_modules') continue;
-          children.push(walk(join(dir, child)));
-        }
-        return { name: basename(dir), path: dir, type: 'directory', children };
-      };
-      res.end(JSON.stringify(walk(dirPath)));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'GET' && pathPart === '/api/fs/read') {
-    try {
-      const filePath = parsedUrl.searchParams.get('path');
-      if (!filePath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
-      const fileContent = readFileSync(filePath, 'utf-8');
-      res.end(JSON.stringify({ content: fileContent }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'POST' && pathPart === '/api/fs/write') {
-    try {
-      const body = JSON.parse(await readBody(req) || '{}');
-      if (!body.path || typeof body.content !== 'string') { res.statusCode = 400; res.end(JSON.stringify({ error: 'path and content are required' })); return; }
-      mkdirSync(dirname(body.path), { recursive: true });
-      writeFileSync(body.path, body.content, 'utf-8');
-      res.end(JSON.stringify({ ok: true }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'PUT' && pathPart === '/api/fs/rename') {
-    try {
-      const body = JSON.parse(await readBody(req) || '{}');
-      if (!body.oldPath || !body.newPath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'oldPath and newPath are required' })); return; }
-      renameSync(body.oldPath, body.newPath);
-      res.end(JSON.stringify({ ok: true }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'DELETE' && pathPart === '/api/fs/delete') {
-    try {
-      const filePath = parsedUrl.searchParams.get('path');
-      if (!filePath) { res.statusCode = 400; res.end(JSON.stringify({ error: 'path is required' })); return; }
-      if (existsSync(filePath)) {
-        const stats = statSync(filePath);
-        if (stats.isDirectory()) {
-          rmSync(filePath, { recursive: true, force: true });
-        } else {
-          unlinkSync(filePath);
-        }
-      }
-      res.end(JSON.stringify({ ok: true }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
-    return;
-  }
-
-  if (req.method === 'POST' && pathPart === '/api/fs/run') {
-    try {
-      const body = JSON.parse(await readBody(req) || '{}');
-      if (!body.command) { res.statusCode = 400; res.end(JSON.stringify({ error: 'command is required' })); return; }
-      const child = spawnSync(body.command, { shell: true, cwd: body.cwd || process.cwd() });
-      res.end(JSON.stringify({
-        stdout: child.stdout ? child.stdout.toString() : '',
-        stderr: child.stderr ? child.stderr.toString() : '',
-        exitCode: child.status
-      }));
-    } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
     return;
   }
 

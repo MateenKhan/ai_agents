@@ -402,6 +402,18 @@ export function ProjectBar(
           {open ? <ChevronDown size={16} className="text-slate-400 shrink-0" /> : <ChevronRight size={16} className="text-slate-400 shrink-0" />}
           </button>
 
+          {/* Visual React Studio Designer Link */}
+          <Tooltip label="Visual React Studio Designer">
+            <Link
+              to="/designer"
+              data-feature-id="tasks-open-designer"
+              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-2xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 sm:hover:bg-indigo-100 transition-colors"
+            >
+              <Columns size={14} />
+              <span>Studio</span>
+            </Link>
+          </Tooltip>
+
           {/* Git — top-right. A project IS a git repo, so its Git panel lives on the project bar. */}
           {onOpenGit && (
             <Tooltip label="Git — repos, branches & tokens"><button

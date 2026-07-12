@@ -9,10 +9,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { spawn, execSync, type ChildProcess } from 'node:child_process';
-import { mkdirSync, existsSync, writeFileSync, appendFileSync, symlinkSync } from 'node:fs';
+import { mkdirSync, existsSync, writeFileSync, appendFileSync, symlinkSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { RunResult, FailureKind, WorktreeMode, AgentRole } from '../types';
 import { getConfig } from '../runtime-context';
+import Anthropic from '@anthropic-ai/sdk';
 import { resolveAgentToken, gitAuthEnv, getTask, getProject, updateTask } from '../db/tasks';
 import { taskLogPath } from './task-log-file';
 
@@ -46,7 +47,7 @@ export interface SpawnOptions {
 }
 
 interface RunningAgent {
-  proc: ChildProcess;
+  abortController: AbortController;
   taskId: string;
   startedAt: number;
   lastOutputAt: number;
@@ -409,7 +410,7 @@ export function agentIdleMs(agentName: string): number {
 export function killAgent(agentName: string): void {
   const r = running.get(agentName);
   if (!r) return;
-  try { clearTimeout(r.timer); r.proc.kill('SIGKILL'); } catch { /* gone */ }
+  try { clearTimeout(r.timer); r.abortController.abort(); } catch { /* gone */ }
   running.delete(agentName);
 }
 
