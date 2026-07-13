@@ -801,15 +801,18 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
     if (d.error) throw new Error(d.error);
     return d;
   };
-  const deleteRepo = () => {
-    const dir = cloneDir.trim(); if (!dir) return;
+  // Shared by the Clone tab (defaults to cloneDir) and the Repo tab (passes repoPath explicitly)
+  // — deleting "the repo you're looking at" shouldn't require re-typing its path elsewhere.
+  const deleteRepo = (dir: string = cloneDir.trim()) => {
+    if (!dir) return;
     (async () => {
       const ok = await confirm({ title: 'Delete this repo?', message: `Permanently delete “${dir}” from disk and everything for its project — tasks, logs, context memory, and the code index. This cannot be undone.`, confirmLabel: 'Delete', tone: 'danger' });
       if (!ok) return;
       setDeletingRepo(true);
       try {
         const d = await deleteRepoDir(dir);
-        setCloneLog([]); setCloneMsg(null); setCloneDir(''); setCloneUrl('');
+        if (cloneDir.trim() === dir) { setCloneLog([]); setCloneMsg(null); setCloneDir(''); setCloneUrl(''); }
+        if (repoPath.trim() === dir) { setStatus(null); setSelectedFile(null); setDiff(null); }
         if (d.existed) toast.success('Repo deleted', d.deleted || dir);
         else toast.info('Already deleted', `Nothing to remove — “${dir}” was already gone`);
         // Drop the dangling project + refresh the switcher; leave the active project sane.
@@ -1033,6 +1036,18 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                       <button onClick={doPull} disabled={acting} className={`${btnSm} shrink-0`}><DownloadCloud size={14} /> Pull</button>
                       <button onClick={doPush} disabled={acting} className={`${btnPrimarySm} shrink-0`}><Upload size={14} /> Push</button>
                     </div>
+                    {/* delete — same destructive action as the Clone tab's, targeting THIS repo
+                        (repoPath) directly instead of making you re-type the path over there. */}
+                    <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                      <Tooltip label="Permanently delete this repo folder (removes the cloned repo)"><button
+                        onClick={() => deleteRepo(repoPath.trim())}
+                        disabled={deletingRepo || acting || !repoPath.trim()}
+                        data-feature-id="repo-delete"
+                        className={`${btnSm} shrink-0 text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100`}
+                      >
+                        {deletingRepo ? <span className="w-3 h-3 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" /> : <Trash2 size={14} />} Delete repo
+                      </button></Tooltip>
+                    </div>
                     {msgBox(actMsg)}
                   </div>
                 </>
@@ -1045,12 +1060,13 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
             <div className="space-y-3">
               <p className="text-2xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">Pick a token first — for a GitHub App it lists the repos you can clone. Leave token blank only for public repos (then paste the URL).</p>
               {/* 1) token — everything below depends on it */}
-              <div className="flex flex-wrap items-center gap-2"><label className="eyebrow shrink-0">Token</label>
-                <div className="flex-1 min-w-[10rem]">{tokens.length === 0 ? (
+              <div><label className="eyebrow block mb-1">Token</label>
+                {tokens.length === 0 ? (
                   <button onClick={() => setTab('tokens')} className={`${btnSm} w-full justify-start`}>
                     <KeyRound size={15} /> No credentials yet — connect GitHub or add a token →
                   </button>
-                ) : tokenOptions(cloneToken, setCloneToken)}</div></div>
+                ) : tokenOptions(cloneToken, setCloneToken)}
+              </div>
               {/* 2) repo picker — populated from the GitHub App installation's accessible repos */}
               {cloneToken.startsWith('app:') && (
                 <div>
@@ -1077,17 +1093,18 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 </div>
               )}
               {/* 3) URL — auto-filled by the repo picker; editable for public/manual clones */}
-              <div className="flex flex-wrap items-center gap-2"><label className="eyebrow shrink-0">URL</label>
+              <div><label className="eyebrow block mb-1">URL</label>
                 <input value={cloneUrl} onChange={e => setCloneUrl(e.target.value)} placeholder="https://github.com/owner/repo.git"
                   aria-invalid={cloneUrl.trim() !== '' && !isGitUrl(cloneUrl)}
-                  className={`${inputSm} flex-1 min-w-[10rem] font-mono text-xs sm:text-sm ${cloneUrl.trim() && !isGitUrl(cloneUrl) ? 'border-rose-300 focus:ring-rose-300' : ''}`} /></div>
+                  className={`${inputSm} w-full font-mono text-xs sm:text-sm ${cloneUrl.trim() && !isGitUrl(cloneUrl) ? 'border-rose-300 focus:ring-rose-300' : ''}`} />
+              </div>
               {cloneUrl.trim() !== '' && !isGitUrl(cloneUrl) && (
                 <p className="text-2xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">That doesn't look like a git URL — use <span className="font-mono">https://host/owner/repo(.git)</span>, <span className="font-mono">git@host:owner/repo</span>, or <span className="font-mono">owner/repo</span>.</p>
               )}
               {/* 4) target dir — auto-suggested from the repo name */}
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="eyebrow block mb-1">Target directory</label>
-                  <input value={cloneDir} onChange={e => setCloneDir(e.target.value)} placeholder="C:\code\my-repo" className={`${inputSm} font-mono text-xs sm:text-sm`} /></div>
+                  <input value={cloneDir} onChange={e => setCloneDir(e.target.value)} placeholder="C:\code\my-repo" className={`${inputSm} w-full font-mono text-xs sm:text-sm`} /></div>
                 <div><label className="eyebrow block mb-1">Branch <span className="text-slate-500 normal-case font-normal tracking-normal">{rbBusy ? '— loading…' : '(searchable)'}</span></label>
                   <SearchSelect
                     value={cloneBranch}
@@ -1100,7 +1117,7 @@ export function GitPanel({ isOpen, onClose, activeId }: GitPanelProps) {
                 </div>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <Tooltip label="Delete the target directory (removes the cloned repo)"><button onClick={deleteRepo} disabled={deletingRepo || cloning || !cloneDir.trim()} className={`${btnSm} text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100`}>
+                <Tooltip label="Delete the target directory (removes the cloned repo)"><button onClick={() => deleteRepo()} disabled={deletingRepo || cloning || !cloneDir.trim()} className={`${btnSm} text-rose-600 border-rose-200 bg-rose-50 hover:bg-rose-100`}>
                   {deletingRepo ? <span className="w-3 h-3 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" /> : <Trash2 size={15} />} Delete repo
                 </button></Tooltip>
                 <button onClick={doClone} disabled={cloning || !cloneUrl.trim() || !isGitUrl(cloneUrl)} className={btnPrimarySm}>{cloning && <span className="w-3 h-3 border-2 border-white/60 border-t-transparent rounded-full animate-spin" />}<DownloadCloud size={15} /> Clone</button>

@@ -21,6 +21,7 @@
 
 <p align="center">
   <a href="#-quick-start"><b>Quick start</b></a> ·
+  <a href="./docs/SPEC.md">Spec</a> ·
   <a href="./ROADMAP.md">Roadmap</a> ·
   <a href="./SECURITY.md">Security</a>
 </p>
@@ -190,7 +191,8 @@ Before exposing it on a LAN/VPS (`HOST=0.0.0.0`), or reporting a vulnerability, 
 - **Single-user / local.** No multi-user auth or shared cloud board yet. See [SECURITY.md](./SECURITY.md) before exposing it beyond loopback.
 - **Self-hosted control plane.** You run it on your machine or your own VPS with your own API key. An optional hosted control plane (session-/seat-based, on a VPS) is on the roadmap.
 
-See the full plan in **[ROADMAP.md](./ROADMAP.md)**.
+See the full plan in **[ROADMAP.md](./ROADMAP.md)** — and the detailed product spec (releases,
+backlog, working agreements) in **[docs/SPEC.md](./docs/SPEC.md)**.
 
 ## Run it headless (no UI)
 

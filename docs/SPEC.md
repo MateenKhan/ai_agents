@@ -147,6 +147,34 @@ usable and safe out-of-box experience. Everything below is ordered by priority.
 17. Type-safety debt: the load-bearing `any`s (db-browser rows, `/changes` response,
     workflow doc, agent report bodies at the PUT boundary).
 18. Dead-code sweep, `noUnusedLocals`, CHANGELOG per release.
+19. **Autonomous finder (opt-in backlog refill).** A per-project finder that keeps the board fed
+    when it runs dry — **off by default**; when on, it tops the backlog up to a high-watermark,
+    then sleeps.
+    - **Watermark refill:** `FINDER_TARGET` (default 50) / `FINDER_LOW` (default 20). When
+      open+queued tasks ≤ `FINDER_LOW`, file up to `TARGET − current` findings, then sleep until
+      the count falls back to the low mark. Backpressure both ways — never starves, never floods.
+    - **Findings land in a `triage` lane, never straight into `build`** — a human (or the P2.15
+      auto-refine pass) promotes them. Keeps the human-gate ethos intact with autonomy on.
+    - **Dedup via the existing per-project embedding index:** embed each finding and drop anything
+      cosine-close to an open task, so sweeps don't re-file the same bug.
+    - **Runs on Haiku, under the P0.4 cost cap:** a second sleep condition — pause when the daily
+      budget is near, not only on the watermark.
+    - Findings pass the same intake gate as manual/AI tasks (GIVEN/WHEN/THEN + DoD).
+    - Fleet note: guard with a per-project **finder lease** (reuse the merge-lock pattern, R2) so
+      N workers don't all find at once; a single machine needs no lease.
+20. **Task-difficulty model/effort pre-classifier.** Before dispatch, set the task's model+effort
+    from its content (cheap heuristic or one small model pass): trivial → Haiku/low; gnarly
+    (geometry/multi-file/reopened) → Sonnet/high — overriding the static per-role default. Directly
+    lowers the P0.4 daily spend. Always **overridable per task in the UI** (the auto pick is a
+    default, not a lock). No Opus-lockout — the architect role is meant to run Opus.
+21. **Dead-letter "why-stuck" classifier.** On dead-letter only, one Haiku pass turns the typed
+    failure kind + last output into a one-sentence human reason, surfaced on the card and in the
+    Events feed. Complements the mechanical failure *kinds* (P0.8) with the *why*. Read-only, no
+    dispatch impact.
+22. **Internal periodic-trigger runner (NOT a dispatch scheduler).** A tiny interval loop that
+    drives the finder tick (19) and named maintenance jobs (WAL checkpoint / VACUUM / backup
+    rotation, P1.11). Explicitly **not** a hub dispatch scheduler — dispatch stays
+    atomic-claim/pull ("keep the hub dumb"). A timer for background chores, not for handing out work.
 
 ---
 
@@ -181,7 +209,8 @@ machine merges at a time.
   worker — tasks are prompts are shell commands.
 - **Phase 4 — fleet polish.** Workers panel in the UI (who's alive, chewing what); fleet-wide
   cost budget (sum over the shared PG); per-worker capacity (`MAX_AGENTS`); fleet-level 429
-  backoff flag (10 machines on one Max plan share its rate limits).
+  backoff flag (10 machines on one Max plan share its rate limits); a per-project **finder lease**
+  (reuse the merge lock) so only one worker runs the autonomous finder (§2 P2.19) per project at a time.
 
 **Design rule:** keep the hub dumb. No scheduler, no capability matching — the atomic claim IS
 the scheduler. Pull, don't push.
